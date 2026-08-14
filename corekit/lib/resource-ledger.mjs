@@ -333,7 +333,7 @@ export function mergeResources(existing, found, opts = {}) {
  * same way. Two callers need it at different moments: the PLANNER needs a seeded
  * ledger before it writes a single task (a planner that cannot see a verified id
  * types one from memory, and a one-character slip becomes a pinned task that fails
- * identically forever), and the EXECUTOR needs it for the process-engine path that
+ * identically forever), and the EXECUTOR needs it for the resume-from-spine path that
  * never passes through plan structuring.
  *
  * Seeding FILLS GAPS ONLY — an existing entry is never overwritten. Prose states a

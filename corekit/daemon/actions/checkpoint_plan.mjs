@@ -312,9 +312,8 @@ export async function handleCheckpointPlan(ctx, deps) {
       if (!hasApprovalGate) {
         // BOUNDED (WS-4): nudge for a missing approval_gate at most ONCE per mission. The old
         // unbounded form returned {continue:true} every iteration a destructive_or_public part
-        // lacked a gate — if cortex kept not adding one it burned all MAX_ITERATIONS and fell
-        // back to a follow_process that ran the risky action locally and unverified (the live
-        // false-complete). We detect a prior nudge in priorResults (which carries across
+        // lacked a gate — if cortex kept not adding one it burned all MAX_ITERATIONS and
+        // stalled with the risky action unverified (the live false-complete). We detect a prior nudge in priorResults (which carries across
         // iterations) and, after one, PROCEED with the plan as-is — the checkpoint executor +
         // cerebellum honesty backstop verify the outcome regardless. Flag-gated (default on);
         // classification of what IS destructive stays in the organ SOUL (C-28), not here.
@@ -337,7 +336,7 @@ export async function handleCheckpointPlan(ctx, deps) {
     }
   }
 
-  // ---- Plan-Process alignment: nudge prefrontal toward existing processes ----
+  // ---- Plan-Process alignment: surface relevant process PLAYBOOKS (narratives) ----
   let processMatchHint = '';
   if (PROCESSES && Object.keys(PROCESSES).length > 0) {
     const planGoalText = (decision.goal || decision.instruction || decision.reasoning || envelope.instruction || '').toLowerCase();
@@ -348,7 +347,7 @@ export async function handleCheckpointPlan(ctx, deps) {
     });
     if (matchingProcesses.length > 0) {
       log('INFO', `[checkpoint_plan] Process match: found ${matchingProcesses.length} matching process(es): ${matchingProcesses.map(p => p.id).join(', ')}`);
-      processMatchHint = `\n\n[EXISTING PROCESSES] The following processes may cover this work:\n${matchingProcesses.map(p => `- ${p.id}: ${p.name} (${(p.steps || []).length} steps) — ${(p.description || '').substring(0, 150)}`).join('\n')}\nConsider using follow_process to invoke these rather than re-inventing their steps. If you use checkpoint_plan, incorporate the process steps.`;
+      processMatchHint = `\n\n[PROCESS PLAYBOOKS] A remembered narrative may cover this work:\n${matchingProcesses.map(p => `- ${p.id}: ${p.name} — ${(p.narrative || p.description || '').substring(0, 200)}`).join('\n')}\nTreat any that fits as guidance and fold it into your OWN checkpoints — adapt it, keep full control.`;
     }
   }
 
@@ -599,7 +598,7 @@ export async function handleCheckpointPlan(ctx, deps) {
     log('ERROR', `Checkpoint plan has no valid checkpoints (even after prefrontal structuring)`);
     return {
       continue: true,
-      priorResultsAppend: [{ agent: 'system', result: '[SYSTEM] checkpoint_plan failed to produce a valid plan structure. Try follow_process instead, or provide checkpoints with at least one task per checkpoint.' }]
+      priorResultsAppend: [{ agent: 'system', result: '[SYSTEM] checkpoint_plan failed to produce a valid plan structure. Provide checkpoints with at least one task per checkpoint.' }]
     };
   }
 

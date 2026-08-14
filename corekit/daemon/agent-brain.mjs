@@ -37,7 +37,7 @@ import { createClient as createFirestoreClient, firestoreEncode, firestoreDecode
 import { parseJsonResponse } from '../corekit/lib/json-repair.mjs';
 import { createVertexText, CORTEX_SCHEMAS, smartTruncate } from '../corekit/lib/vertex-text.mjs';
 import { createProjectRegistry } from '../corekit/lib/projects.mjs';
-import { createProcessEngine } from '../corekit/lib/process-engine.mjs';
+import { createProcessRegistry } from '../corekit/lib/process-registry.mjs';
 import { createScheduler } from '../corekit/lib/scheduler.mjs';
 import { createApprovalChecker, scopeApprovalsToAgent } from '../corekit/lib/approvals.mjs';
 import { createArchivalSweeper } from '../corekit/lib/archival.mjs';
@@ -69,7 +69,6 @@ import {
   handleNeedsInput,
   handleStatusUpdate,
   handleSynthesizeWithFailure,
-  handleFollowProcess,
   handleDelegate,
   handleCheckpointPlan,
   handleWait,
@@ -117,14 +116,6 @@ if (process.env.AGENT_REDELEG_CAP) {
   CONTRACTS.dispatch = CONTRACTS.dispatch || {};
   CONTRACTS.dispatch.redelegation_cap_enabled = process.env.AGENT_REDELEG_CAP === 'on';
   console.log(`[brain] redelegation_cap_enabled override from env: ${process.env.AGENT_REDELEG_CAP}`);
-}
-// Per-VM override for process-as-narrative — canary WITHOUT a global flip.
-// `AGENT_PROCESS_AS_NARRATIVE=1` (or =on) makes processes RECALLED narratives that inform the
-// agent's OWN checkpoint_plan instead of follow_process step-execution (RFC PROCESS_AS_NARRATIVE.md).
-if (process.env.AGENT_PROCESS_AS_NARRATIVE) {
-  CONTRACTS.dispatch = CONTRACTS.dispatch || {};
-  CONTRACTS.dispatch.process_as_narrative = process.env.AGENT_PROCESS_AS_NARRATIVE === '1' || process.env.AGENT_PROCESS_AS_NARRATIVE === 'on';
-  console.log(`[brain] process_as_narrative override from env: ${process.env.AGENT_PROCESS_AS_NARRATIVE}`);
 }
 // Per-VM override for temporal-memory context auto-maintenance — canary WITHOUT a global flip.
 // `AGENT_CONTEXT_MAINTENANCE=1|on` makes a completed project-touching mission refresh that project's
@@ -559,218 +550,38 @@ async function suggestContextPromotions(envelope) {
   await _projects.suggestContextPromotions(envelope);
 }
 
-// ---- Process engine (via corekit/lib/process-engine.mjs, Phase 1B extraction) ----
-// NOTE: _engine is initialized lazily because it depends on brain functions
-// (callAgent, writeHistory, etc.) that are defined later in this file.
-let _engine = null;
-let PROCESSES = {}; // synced from engine for backward compat
+// ---- Process registry (via corekit/lib/process-registry.mjs) ----
+// A process is a remembered PLAYBOOK (name + description + narrative) an agent RECALLS into
+// its own checkpoint_plan — never an executable step-machine. The registry only LOADS them
+// (local CoreKit files + the tenant-global Firestore `processes` collection); the former step
+// executor (executeProcess / plan lifecycle / processToCheckpointPlan / resumeProcessPlan) was
+// removed in the process-as-narrative migration (RFC docs/proposals/PROCESS_AS_NARRATIVE.md).
+// _registry is initialized lazily (needs GCP_PROJECT/CORE_DIR resolved earlier in this file).
+let _registry = null;
+let PROCESSES = {}; // synced from the registry for the playbook-injection sites below
 
-function _initProcessEngine() {
-  _engine = createProcessEngine({
-    firestore: _db,
-    vertexText: _vtx,
-    projects: _projects,
-    agentDispatcher: callAgent,
+function _initProcessRegistry() {
+  _registry = createProcessRegistry({
     logger: log,
-    config: {
-      coreDir: CORE_DIR,
-      primeId: PRIME_ID,
-      agentId: AGENT_ID,
-      agentEmail: AGENT_EMAIL,
-      // Fleet-only capability: process delegation steps are gated on the
-      // role-scoped delegation skill being in the index (never on a Prime)
-      delegationEnabled: (SKILL_INDEX || []).some(s => s.id === 'delegation'),
-      gcpProject: GCP_PROJECT,
-    },
-    generateId,
-    writeHistory,
-    recallMemory,
-    firestoreWrite,
-    firestoreRead,
-    firestoreQuery,
-    sendNotification: async () => {}, // engine destructures but doesn't call
-    createCT,
-    suggestContextPromotions,
-    buildProjectContext,
-    completeEnvelope,
-    contracts: CONTRACTS,
-    onMissionComplete: async (mission) => {
-      // Create delegation result envelope for delivery back to the delegator
-      if (!mission.source_meta?.delegation_ref) return;
-      // B-2 (C-27): conversational result prose — the mouth voices it and appends the
-      // correlation tag. The machine trailer is dropped from the wire; recovery data
-      // (char count, artifact ref) stays in the Firestore envelope/T fields (C-5).
-      const resultBody = smartTruncate(toStr(mission.output || mission.error || mission.status), RESULT_PREVIEW_CHARS);
-      const resultOutputId = generateId('w');
-      await firestoreWrite('work', resultOutputId, {
-        id: resultOutputId,
-        type: 'T',
-        parent_id: mission.id,
-        owner: AGENT_EMAIL || AGENT_ID,
-        status: 'complete',
-        intent: 'delegation_result',
-        title: `Delegation result for ${mission.source_meta.delegation_ref}`,
-        instruction: 'Deliver delegation result (conversational)',
-        output: resultBody,
-        delegation_ref: mission.source_meta.delegation_ref,
-        delivery_status: 'pending',
-        delivery_target: mission.source_meta.delegated_from || null,
-        delivery_space_id: (mission.project_id && PROJECTS[mission.project_id]?.gchat_space_id) || null,
-        delivery_address: makeAddress('gchat', {
-          space: (mission.project_id && PROJECTS[mission.project_id]?.gchat_space_id) || null,
-        }),
-        project_id: mission.project_id || null,
-        source_channel: 'brain',
-        source_meta: { delegation_ref: mission.source_meta.delegation_ref },
-        created_at: now(),
-        updated_at: now(),
-      });
-      log('INFO', `Delegation result envelope created: ${resultOutputId} for mission ${mission.id}`);
-
-      // Cross-agent write: complete the delegation T-envelope on the sender's side
-      try {
-        const delegRef = await firestoreRead('work', mission.source_meta.delegation_ref);
-        // C-27/ME-5 (audit HIGH fix): reconcile the T from the delegate's ACTUAL terminal
-        // status — never hardcode 'complete'. Also recover a T the delegator fast-failed
-        // on a transient delivery-ping failure (delivery_fast_failed), so a delegate that
-        // did the work still completes it (closes the residual race where the child
-        // registers just after the fast-fail guard's fresh read). Deriving the status
-        // from the outcome also fixes the pre-existing mislabel where a blocked/failed
-        // delegate was written back as a phantom 'complete'. Clear the fail residue on
-        // a genuine success.
-        const delegSucceeded = !(mission.status === 'failed' || mission.status === 'blocked' || mission.status === 'needs_input');
-        if (delegRef && (delegRef.status === 'waiting' || delegRef.delivery_fast_failed === true)) {
-          await firestoreWrite('work', delegRef.id, {
-            ...delegRef,
-            status: delegSucceeded ? 'complete' : 'failed',
-            output: toStr(mission.output).substring(0, 4000),
-            error: delegSucceeded ? null : (mission.error || 'Delegate reported failure'),
-            delivery_fast_failed: false,
-            completed_at: now(),
-            updated_at: now(),
-          });
-          log('INFO', `Delegation ref ${delegRef.id} marked complete (cross-agent write)`);
-
-          // Proactive delegation recovery: check if all checkpoint siblings are now terminal
-          if (delegRef.parent_id) {
-            try {
-              const cpEnv = await firestoreRead('work', delegRef.parent_id);
-              if (cpEnv && cpEnv.type === 'C' && cpEnv.status === 'waiting') {
-                const siblings = cpEnv.children || [];
-                let allDone = true;
-                const sibResults = [];
-                for (const sibId of siblings) {
-                  if (sibId === delegRef.id) {
-                    sibResults.push({ agent: delegationResultAgent(delegRef), result: smartTruncate(toStr(mission.output), RESULT_PREVIEW_CHARS), success: true });
-                    continue;
-                  }
-                  const sib = await firestoreRead('work', sibId);
-                  // Same fast-fail transient exception (see Phase A): don't treat a delivery-
-                  // fast-failed T with a materialized child as terminal — the write-back recovers it.
-                  const _sibFastFailTransient = sib?.status === 'failed' && sib?.delivery_fast_failed === true
-                    && Array.isArray(sib?.children) && sib.children.length > 0;
-                  if (!sib || (!_sibFastFailTransient && ['complete', 'failed', 'archived', 'cancelled', 'blocked', 'needs_input'].includes(sib?.status))) {
-                    const isOk = sib?.status === 'complete' || sib?.status === 'archived';
-                    sibResults.push({ agent: delegationResultAgent(sib), result: smartTruncate(toStr(sib?.output || sib?.status || ''), RESULT_PREVIEW_CHARS), success: isOk });
-                  } else {
-                    allDone = false;
-                    break;
-                  }
-                }
-                if (allDone && siblings.length > 0) {
-                  const summary = sibResults.map((r, i) =>
-                    `Delegation ${i + 1} (${r.agent}): ${r.success ? 'SUCCESS' : 'FAILED'}\n${r.result}`
-                  ).join('\n\n');
-                  // #2 defense-in-depth (this proactive path is dead in the daemon via
-                  // !_completeEnvelope, but gate it so it can't regress): checkpoint status
-                  // tracks delegation OUTCOME, and a non-success clears the parent's
-                  // _cp_progress so cortex re-decides rather than mechanically resuming.
-                  const sibAllOk = sibResults.every(r => r.success);
-                  cpEnv.status = sibAllOk ? 'complete' : 'failed';
-                  cpEnv.output = summary;
-                  cpEnv.updated_at = now();
-                  await firestoreWrite('work', cpEnv.id, cpEnv);
-                  log('INFO', `Checkpoint ${cpEnv.id} completed proactively (all ${siblings.length} delegation children terminal, ${sibAllOk ? 'ok' : 'with failures'})`);
-                  if (cpEnv.parent_id) {
-                    const parentMission = await firestoreRead('work', cpEnv.parent_id);
-                    if (parentMission && parentMission.status === 'active') {
-                      parentMission.status = 'queued';
-                      parentMission.context_forward = `[DELEGATION RESULTS]\n${summary}`;
-                      if (!sibAllOk) parentMission._cp_progress = null;
-                      parentMission.updated_at = now();
-                      await firestoreWrite('work', parentMission.id, parentMission);
-                      log('INFO', `Mission ${parentMission.id} re-queued proactively after delegation completion (${sibAllOk ? 'ok' : 'with failures'})`);
-                    }
-                  }
-                }
-              }
-            } catch (cpErr) {
-              log('WARN', `Proactive delegation recovery failed: ${cpErr.message}`);
-            }
-          }
-        }
-      } catch (e) {
-        log('WARN', `Failed to complete delegation ref ${mission.source_meta.delegation_ref}: ${e.message}`);
-      }
-    },
+    config: { coreDir: CORE_DIR, gcpProject: GCP_PROJECT },
   });
 }
 
-function _ensureEngine() {
-  if (!_engine) _initProcessEngine();
+function _ensureRegistry() {
+  if (!_registry) _initProcessRegistry();
 }
 
 // Thin wrappers preserving existing call signatures
 async function loadProcesses() {
-  _ensureEngine();
-  await _engine.loadProcesses();
-  PROCESSES = _engine.getAllProcesses();
+  _ensureRegistry();
+  await _registry.loadProcesses();
+  PROCESSES = _registry.getAllProcesses();
 }
 
 async function ensureProcessesLoaded() {
-  _ensureEngine();
-  await _engine.ensureLoaded();
-  PROCESSES = _engine.getAllProcesses();
-}
-
-async function createPlan(processId, parameters, projectId, instruction) {
-  _ensureEngine();
-  return _engine.createPlan(processId, parameters, projectId, instruction);
-}
-
-async function approvePlan(planId, approvedBy) {
-  _ensureEngine();
-  return _engine.approvePlan(planId, approvedBy);
-}
-
-async function stampPlan(planId, intake, memoryContext) {
-  _ensureEngine();
-  return _engine.stampPlan(planId, intake, memoryContext);
-}
-
-async function amendPlan(planId, reason, changes, amendedBy) {
-  _ensureEngine();
-  return _engine.amendPlan(planId, reason, changes, amendedBy);
-}
-
-function processToCheckpointPlan(process, parameters) {
-  _ensureEngine();
-  return _engine.processToCheckpointPlan(process, parameters);
-}
-
-async function executeProcess(intake, decision, memoryContext, processId, existingEnvelope) {
-  _ensureEngine();
-  return _engine.execute(intake, decision, memoryContext, processId, existingEnvelope);
-}
-
-async function runProcessPlan(mission, checkpointEnvelopes, memoryContext, startCpIndex, startTaskIndex) {
-  _ensureEngine();
-  return _engine.runPlan(mission, checkpointEnvelopes, memoryContext, startCpIndex, startTaskIndex);
-}
-
-async function resumeProcessPlan(mission) {
-  _ensureEngine();
-  return _engine.resumePlan(mission);
+  _ensureRegistry();
+  await _registry.ensureLoaded();
+  PROCESSES = _registry.getAllProcesses();
 }
 
 // Resume a NON-process (cortex checkpoint_plan) mission after an approval gate is APPROVED.
@@ -1252,8 +1063,8 @@ async function callPrefrontal(payload) {
     if (soul) { sysParts.push(`[SOUL — analytical decomposition guidance]\n${soul}`); break; }
   }
   if (Object.keys(PROCESSES).length > 0) {
-    sysParts.push(`[PROCESS REGISTRY — known playbooks]\n${JSON.stringify(
-      Object.values(PROCESSES).map(p => ({ id: p.id, name: p.name, description: (p.description || '').substring(0, 200) })),
+    sysParts.push(`[PROCESS PLAYBOOKS — how we've done this well before]\n${JSON.stringify(
+      Object.values(PROCESSES).map(p => ({ id: p.id, name: p.name, description: (p.description || '').substring(0, 200), narrative: p.narrative || null })),
       null, 2
     )}`);
   }
@@ -1420,24 +1231,14 @@ function buildSystemBlocks(mode, payload) {
     parts.push(`[PROJECT REGISTRY â€” active work streams with context]\nEach project carries context that applies to all missions within it. When classifying or deciding, identify the relevant project and use its context.\n${JSON.stringify(projectSummary, null, 2)}`);
   }
 
-  // 6. Process registry (if any processes exist)
-  if (Object.keys(PROCESSES).length > 0 && CONTRACTS?.dispatch?.process_as_narrative === true) {
-    // Process-as-narrative: a process is a remembered PLAYBOOK (name + description + narrative)
-    // recalled as a prior for the agent's OWN checkpoint_plan — never a rigid step-execution.
+  // 6. Process playbooks (if any exist) — a process is a remembered narrative, not a program.
+  if (Object.keys(PROCESSES).length > 0) {
     const playbooks = Object.values(PROCESSES).map(p => ({
       id: p.id, name: p.name, description: p.description, narrative: p.narrative || null,
     }));
     parts.push(`[PROCESS PLAYBOOKS — how we've done this well before]
 A process is a remembered narrative, not a program. When your work resembles one, treat its narrative as guidance and plan your OWN checkpoints with it (checkpoint_plan) — adapt it, keep full control; do NOT hand execution to a rigid template. Available:
 ${JSON.stringify(playbooks, null, 2)}`);
-  } else if (Object.keys(PROCESSES).length > 0) {
-    const processSummary = Object.values(PROCESSES).map(p => ({
-      id: p.id, name: p.name, description: p.description,
-      version: p.version || 1,
-      step_count: (p.steps || []).length,
-      parameters: Object.keys(p.parameters || {}),
-    }));
-    parts.push(`[PROCESS REGISTRY — reusable playbooks]\nProcesses are stored, versioned playbooks that define step-by-step workflows. Use the "follow_process" action when work matches an existing process. Available:\n${JSON.stringify(processSummary, null, 2)}`);
   }
 
   // 6. JSON constraint. SESSION_CONTEXT_PLAN Phase 1: the mode marker lives
@@ -1553,12 +1354,11 @@ function buildModePayload(mode, payload) {
         if (block) decidePayload.known_resources = block;
       } catch { /* a bookkeeping miss must never cost a decision */ }
     }
-    // Inject available processes so Cortex can suggest follow_process
+    // Inject available process PLAYBOOKS so Cortex can recall a relevant narrative into its own plan.
     if (Object.keys(PROCESSES).length > 0) {
       decidePayload.available_processes = Object.values(PROCESSES).map(p => ({
         id: p.id, name: p.name, description: (p.description || '').substring(0, 200),
-        step_count: (p.steps || []).length,
-        parameters: p.parameters || {},
+        narrative: p.narrative || null,
         intent_keywords: p.intent_keywords || [],
       }));
     }
@@ -1624,9 +1424,7 @@ function buildModePayload(mode, payload) {
       // Project-scoped process preference
       if (envProjectId && PROJECTS[envProjectId]?.standardProcesses?.length > 0) {
         decidePayload.dispatch_guidance.process_preference = 
-          (CONTRACTS?.dispatch?.process_as_narrative === true
-            ? `Project "${PROJECTS[envProjectId].name}" has relevant process playbooks: ${PROJECTS[envProjectId].standardProcesses.join(', ')}. Treat their narrative as guidance and plan your OWN checkpoints (checkpoint_plan) — do not follow_process.`
-            : `Project "${PROJECTS[envProjectId].name}" has standard processes: ${PROJECTS[envProjectId].standardProcesses.join(', ')}. Prefer follow_process over checkpoint_plan when a standard process covers the work.`);
+          `Project "${PROJECTS[envProjectId].name}" has relevant process playbooks: ${PROJECTS[envProjectId].standardProcesses.join(', ')}. Treat their narrative as guidance and plan your OWN checkpoints (checkpoint_plan).`;
       }
     } else {
       // No Brief (non-execution-bound or analysis failed) — fall back to checkpoint_plan guidance
@@ -1647,9 +1445,7 @@ function buildModePayload(mode, payload) {
       // Project-scoped process preference
       if (envProjectId && PROJECTS[envProjectId]?.standardProcesses?.length > 0) {
         decidePayload.dispatch_guidance.process_preference =
-          (CONTRACTS?.dispatch?.process_as_narrative === true
-            ? `Project "${PROJECTS[envProjectId].name}" has relevant process playbooks: ${PROJECTS[envProjectId].standardProcesses.join(', ')}. Treat their narrative as guidance and plan your OWN checkpoints (checkpoint_plan) — do not follow_process.`
-            : `Project "${PROJECTS[envProjectId].name}" has standard processes: ${PROJECTS[envProjectId].standardProcesses.join(', ')}. Prefer follow_process over checkpoint_plan when a standard process covers the work.`);
+          `Project "${PROJECTS[envProjectId].name}" has relevant process playbooks: ${PROJECTS[envProjectId].standardProcesses.join(', ')}. Treat their narrative as guidance and plan your OWN checkpoints (checkpoint_plan).`;
       }
     }
     // When project_bootstrap is the required first step (mission on an unlinked space), REPLACE
@@ -2888,7 +2684,7 @@ async function handleApprovalResponse(intake) {
   }
 
   // Trigger the existing approval checker to pick up the flipped docs
-  // and call resumeProcessPlan (approved) or fail the envelope (rejected).
+  // and resume the approved checkpoint plan (approvals.mjs) or fail the envelope (rejected).
   // Force immediate check by resetting the throttle counter.
   if (!_approvalChecker) _initApprovals();
   // The checker normally only runs every 5th call. We need it to run NOW.
@@ -2994,7 +2790,7 @@ async function processIntake(intake) {
 
   // ---- Deterministic approval pre-check (before LLM classify) ----
   // Detects "approve"/"reject" messages and routes them to the existing
-  // approval machinery (approvals.mjs → resumeProcessPlan), bypassing
+  // approval machinery (approvals.mjs → resumeCheckpointPlan), bypassing
   // LLM classification entirely. This prevents approval messages from
   // being mis-classified as new_mission and spawning phantom work.
   const approvalResult = await handleApprovalResponse(intake);
@@ -3139,20 +2935,6 @@ async function processIntake(intake) {
       claimed_at: now(),
       quick_ack_sent: true,
     });
-  }
-
-  // ---- Process routing: deterministic execution for known processes ----
-  if (classification === 'new_mission') {
-    const processId = decision.process_id || decision.processId;
-    if (processId) {
-      await ensureProcessesLoaded();
-      if (PROCESSES[processId]) {
-        log('INFO', `Process route: '${processId}' detected â€” routing to executeProcess`);
-        const processResult = await executeProcess(intake, decision, memoryContext, processId);
-        if (processResult !== 'fallback_to_decide') return;
-        log('INFO', `Process '${processId}' fell back to decide loop â€” continuing with normal flow`);
-      }
-    }
   }
 
   // Phase 3: Handle attach classification (follow-up to existing work)
@@ -3490,9 +3272,6 @@ async function handleContinue(intake, decision, memoryContext, pendingAckText = 
   mission.delivered_channel = null;
   mission.delivery_status = 'internal'; // Reset — will become 'pending' when re-completed
   mission._swf_state = null; // Reset retry cap for new attempt
-  mission.process_id = null; // Clear so Cortex can restart processes if needed
-  mission.process_version = null;
-  mission._follow_process_force_count = 0;
   mission.updated_at = now();
   if (decision.project_id && decision.project_id !== DEFAULT_PROJECT_ID) {
     mission.project_id = decision.project_id;
@@ -3971,7 +3750,6 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId, _skipBat
     completeEnvelope,
     createCT,
     deliverStatusUpdate,
-    executeProcess,
     ensureProcessesLoaded,
     PROCESSES,
     PROJECTS,
@@ -4016,7 +3794,6 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId, _skipBat
     needs_input: handleNeedsInput,
     status_update: handleStatusUpdate,
     synthesize_with_failure: handleSynthesizeWithFailure,
-    follow_process: handleFollowProcess,
     delegate: handleDelegate,
     checkpoint_plan: handleCheckpointPlan,
     wait: handleWait,
@@ -4426,7 +4203,7 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId, _skipBat
     log('WARN', `Unknown action '${action}' — nudging Cortex`);
     priorResults.push({
       agent: 'system',
-      result: `[SYSTEM] Invalid action "${action}". Valid actions: checkpoint_plan${(SKILL_INDEX || []).some(s => s.id === 'delegation') ? ', delegate' : ''}, synthesize, synthesize_with_failure, needs_input, blocked, follow_process, status_update, wait${getTriggerableResponsibilities().length > 0 ? ', trigger_responsibility' : ''}${projectBootstrapEnabled(CONTRACTS) && (SKILL_INDEX || []).some(s => s.id === 'project-ops') ? ', project_bootstrap' : ''}.`,
+      result: `[SYSTEM] Invalid action "${action}". Valid actions: checkpoint_plan${(SKILL_INDEX || []).some(s => s.id === 'delegation') ? ', delegate' : ''}, synthesize, synthesize_with_failure, needs_input, blocked, status_update, wait${getTriggerableResponsibilities().length > 0 ? ', trigger_responsibility' : ''}${projectBootstrapEnabled(CONTRACTS) && (SKILL_INDEX || []).some(s => s.id === 'project-ops') ? ', project_bootstrap' : ''}.`,
     });
   }
 
@@ -5597,9 +5374,6 @@ function _initScheduler() {
     firestoreWrite,
     firestoreRead,
     firestoreQuery,
-    ensureProcessesLoaded,
-    getProcesses: () => PROCESSES,
-    processToCheckpointPlan,
     getDefaultProjectId: () => DEFAULT_PROJECT_ID,
     logger: log,
     config: {
@@ -5614,7 +5388,6 @@ function _initScheduler() {
 
 function _initApprovals() {
   _approvalChecker = createApprovalChecker({
-    resumeProcessPlan,
     resumeCheckpointPlan,
     processEnvelope,
     recallMemory,

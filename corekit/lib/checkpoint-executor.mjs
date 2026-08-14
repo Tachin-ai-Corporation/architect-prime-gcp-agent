@@ -1,8 +1,8 @@
 // checkpoint-executor.mjs — Shared checkpoint execution engine
 // Phase 2.5: Convergence of checkpoint execution paths
 //
-// Shared walk-checkpoints-dispatch-verify-retry pattern used by
-// both agent-brain.mjs (checkpoint_plan handler) and process-engine.mjs (runProcessPlan).
+// Shared walk-checkpoints-dispatch-verify-retry pattern used by the agent-brain.mjs
+// checkpoint_plan handler (fresh plans + approval-gate resume from a pinned spine).
 
 import { toStr } from './to-str.mjs';
 import { smartTruncate } from './vertex-text.mjs';
@@ -79,7 +79,7 @@ async function recordStep(envelope, stepKey, result, enabled, firestoreWrite, me
 
 /**
  * Execute a set of checkpoint tasks using the provided agent dispatcher.
- * Supports both pre-stamped mode (process-engine) and dynamic mode (agent-brain).
+ * Supports both pre-stamped mode (resume from a pinned spine) and dynamic mode (agent-brain checkpoint_plan).
  *
  * @param {Array} checkpoints - Array of checkpoints (layout objects OR stamped envelope entries)
  * @param {Object} opts - Execution dependencies and configuration
@@ -189,7 +189,7 @@ export async function executeCheckpoints(checkpoints, opts) {
   // stated is known; seeding costs one regex pass and removes the search entirely.
   // Idempotent: checkpoint_plan seeds this same text before it structures a plan
   // (the planner needs the ids too). This call still earns its place — the
-  // process-engine path reaches the executor without passing through planning.
+  // resume-from-spine path reaches the executor without passing through planning.
   if (RESOURCE_LEDGER_ENABLED) {
     try {
       const seedText = [envelope.instruction, envelope.source_text, envelope.context_summary]
@@ -382,8 +382,8 @@ export async function executeCheckpoints(checkpoints, opts) {
       // WS-2: route specialty-owned execution to the owning teammate. A LOCAL motor task that
       // invokes a distinctive capability THIS agent's specialty lacks but a project teammate's
       // specialty OWNS can only fail here (no skill, no perms) — convert it to a delegation so
-      // the owner runs it. Generic and fires on BOTH execution paths (checkpoint_plan and
-      // follow_process converge on this loop). It flips stepType→'delegation' + sets the target
+      // the owner runs it. Generic — fires wherever a checkpoint task reaches this loop.
+      // It flips stepType→'delegation' + sets the target
       // specialty, so the delegation branch below reuses its resolution, source handoff and
       // deploy-target injection. The mirror of the delegation-side capability guard: that one
       // catches sending work AWAY that we should do ourselves; this one catches doing work

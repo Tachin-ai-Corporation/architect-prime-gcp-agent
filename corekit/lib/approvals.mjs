@@ -1,9 +1,9 @@
 // corekit/lib/approvals.mjs — Approval gate polling and resume handler
 // Extracted from agent-brain.mjs Phase 2B
 //
-// Polls Firestore for approved/rejected approvals and resumes the
-// corresponding paused envelopes. Handles both process-based (deterministic
-// resumption) and non-process (Cortex loop) approval flows.
+// Polls Firestore for approved/rejected approvals and resumes the corresponding
+// paused envelopes by continuing their checkpoint plan (resumeCheckpointPlan), or
+// fails the envelope on reject.
 //
 // All Firestore access uses injected dependencies — no raw globals.
 
@@ -17,7 +17,6 @@ import { getGceToken } from './gce-auth.mjs';
  * @param {object}   deps.config
  * @param {string}   deps.config.primeId        - e.g. 'chuck'
  * @param {string}   deps.config.gcpProject     - GCP project ID
- * @param {function} deps.resumeProcessPlan     - async (missionEnvelope) => void — deterministic plan resumption
  * @param {function} deps.processEnvelope       - async (envelope, memory) => void — Cortex loop re-entry
  * @param {function} deps.recallMemory          - async (query, ctx) => memory
  * @param {function} deps.firestoreWrite        - async (collection, docId, data) => result
@@ -28,7 +27,6 @@ import { getGceToken } from './gce-auth.mjs';
 export function createApprovalChecker(deps) {
   const {
     config,
-    resumeProcessPlan,
     resumeCheckpointPlan,
     processEnvelope,
     recallMemory,
@@ -192,13 +190,10 @@ export function createApprovalChecker(deps) {
             continue;
           }
 
-          // Approved — resume execution
-          if (envDoc.process_id) {
-            // Process work: use deterministic resumption (no Cortex loop)
-            log('INFO', `Approved: resuming process plan for ${envelopeId}`);
-            await resumeProcessPlan(envDoc);
-          } else {
-            // Non-process work: CONTINUE the checkpoint plan from the task AFTER the
+          // Approved — resume execution. Every mission is a checkpoint_plan mission now
+          // (the process step-machine was removed in the process-as-narrative migration).
+          {
+            // CONTINUE the checkpoint plan from the task AFTER the
             // approved gate — deterministically, via resumeCheckpointPlan — NOT the Cortex
             // decide loop. Re-deciding re-plans the gate's checkpoint and re-inserts the SAME
             // approval gate, so a checkpoint bundling a gate + its gated action ("obtain

@@ -113,9 +113,6 @@ export function cronNextFire(expression) {
  * @param {function} deps.recallMemory             - async (query, ctx) => memory
  * @param {function} deps.firestoreWrite           - async (collection, docId, data) => result
  * @param {function} [deps.firestoreQuery]          - async (collection, filters) => docs[] — for singleton check
- * @param {function} deps.ensureProcessesLoaded    - async () => void
- * @param {function} deps.getProcesses             - () => object — returns current PROCESSES map
- * @param {function} deps.processToCheckpointPlan  - (process, parameters) => plan|null
  * @param {function} deps.getDefaultProjectId      - () => string|null
  * @returns {object} Scheduler API
  */
@@ -129,9 +126,6 @@ export function createScheduler(deps) {
     firestoreWrite,
     firestoreRead,
     firestoreQuery,
-    ensureProcessesLoaded,
-    getProcesses,
-    processToCheckpointPlan,
     getDefaultProjectId,
   } = deps;
 
@@ -145,11 +139,6 @@ export function createScheduler(deps) {
     gcpProject,
   } = config;
 
-  // Firestore REST base for direct process execution count updates
-  const FIRESTORE_BASE = gcpProject
-    ? `https://firestore.googleapis.com/v1/projects/${gcpProject}/databases/(default)/documents`
-    : null;
-
   // ---- Internal state ----
   let RESPONSIBILITIES = [];
   const _respLastFired = {};  // id → timestamp (ms)
@@ -159,15 +148,6 @@ export function createScheduler(deps) {
   /** ISO timestamp */
   function now() {
     return new Date().toISOString();
-  }
-
-  /**
-   * Import getGceToken lazily (only needed for process execution count updates).
-   * @returns {Promise<string|null>}
-   */
-  async function getAuthToken() {
-    const { getGceToken } = await import('./gce-auth.mjs');
-    return getGceToken();
   }
 
   // ---- Responsibility loading ----
@@ -208,161 +188,12 @@ export function createScheduler(deps) {
 
   /**
    * Fire a single responsibility — creates R→M envelope hierarchy and
-   * dispatches through processEnvelope.
-   *
-   * If the responsibility has a processRef, executes the linked process
-   * deterministically. Otherwise creates a standard mission for the Cortex loop.
+   * dispatches the mission through processEnvelope (the Cortex loop). A linked
+   * process playbook, if any, is recalled as planning context — not executed as steps.
    *
    * @param {object} resp - Responsibility definition
    */
   async function fireResponsibility(resp) {
-    // Phase 3B: If responsibility has a processRef, execute the process directly
-    if (resp.processRef) {
-      await ensureProcessesLoaded();
-      const PROCESSES = getProcesses();
-      const process = PROCESSES[resp.processRef];
-      if (process) {
-        log('INFO', `Responsibility ${resp.id}: executing linked process '${process.name}' v${process.version || 1}`);
-
-        // Build parameters: merge process defaults → responsibility overrides
-        const parameters = {};
-        for (const [key, def] of Object.entries(process.parameters || {})) {
-          if (def && typeof def === 'object' && def.default !== undefined) {
-            parameters[key] = def.default;
-          }
-        }
-        Object.assign(parameters, resp.processParameters || {});
-
-        // Validate required parameters
-        const requiredParams = Object.entries(process.parameters || {})
-          .filter(([, def]) => def && typeof def === 'object' && def.required && !def.default)
-          .map(([key]) => key);
-        const missingParams = requiredParams.filter(k => !(k in parameters));
-        if (missingParams.length > 0) {
-          log('WARN', `Responsibility ${resp.id}: process '${process.name}' missing required params: ${missingParams.join(', ')} — falling through to normal mission`);
-          // Fall through to normal responsibility firing below
-        } else {
-          // Convert process to checkpoint plan
-          const cpPlan = processToCheckpointPlan(process, parameters);
-          if (cpPlan) {
-            // Create R envelope
-            const respEnvId = generateId('w');
-            const respEnvelope = {
-              id: respEnvId,
-              type: 'R',
-              parent_id: null,
-              owner: agentEmail || agentId,
-              status: 'complete',
-              intent: 'responsibility',
-              title: resp.name || resp.id,
-              instruction: resp.instruction,
-              accept_criteria: resp.context?.success_criteria || null,
-              context_summary: `Process: ${process.name} v${process.version || 1}`,
-              output: `Responsibility ${resp.id} fired at ${now()} → process ${process.id}`,
-              children: [],
-              context_forward: null,
-              error: null,
-              source_channel: 'scheduler',
-              source_meta: { responsibility_id: resp.id, responsibility_name: resp.name, schedule: resp.schedule, process_id: process.id },
-              created_at: now(),
-              started_at: now(),
-              completed_at: now(),
-              updated_at: now(),
-              iteration: 0,
-            };
-            await firestoreWrite('work', respEnvId, respEnvelope);
-
-            // Create M mission with process already loaded
-            const missionId = generateId('w');
-            const DEFAULT_PROJECT_ID = getDefaultProjectId();
-            const missionEnvelope = {
-              id: missionId,
-              type: 'M',
-              parent_id: respEnvId,
-              owner: agentEmail || agentId,
-              status: 'active',
-              intent: 'execute',
-              title: `Execute: ${resp.name || resp.id}`,
-              instruction: resp.instruction,
-              accept_criteria: resp.context?.success_criteria || null,
-              context_summary: `Executing process: ${process.name}`,
-              output: null,
-              children: [],
-              context_forward: null,
-              error: null,
-              source_channel: 'scheduler',
-              source_meta: { responsibility_id: resp.id, responsibility_name: resp.name, fired_at: now(), process_id: process.id },
-              // NOTE: do NOT pre-set top-level process_id/process_version here. executeProcess
-              // uses decision.processId (from Cortex's follow_process), not envelope.process_id,
-              // so pre-setting gave no "which process" guarantee — it only tripped
-              // follow_process's "already executed" guard (envelope.process_id truthy) and
-              // short-circuited the process before it ran. Cortex → follow_process →
-              // executeProcess sets these fields for real once the process actually executes.
-              // (source_meta.process_id above is retained for scheduler tracking only.)
-              project_id: resp.project_id || DEFAULT_PROJECT_ID,
-              created_at: now(),
-              started_at: now(),
-              completed_at: null,
-              updated_at: now(),
-              iteration: 0,
-              delivery_status: 'internal',
-              memory_context: null,
-            };
-
-            // Merge process context template
-            if (process.contextTemplate && typeof process.contextTemplate === 'object') {
-              const templateCtx = {};
-              for (const [key, entry] of Object.entries(process.contextTemplate)) {
-                if (entry && typeof entry === 'object') {
-                  const processed = { ...entry };
-                  if (processed.name) processed.name = processed.name.replace(/\$\{(\w+)\}|\{\{(\w+)\}\}/g, (_, a, b) => parameters[a || b] || '');
-                  if (processed.summary) processed.summary = processed.summary.replace(/\$\{(\w+)\}|\{\{(\w+)\}\}/g, (_, a, b) => parameters[a || b] || '');
-                  templateCtx[key] = processed;
-                }
-              }
-              missionEnvelope.context = templateCtx;
-            }
-
-            respEnvelope.children.push(missionId);
-            await firestoreWrite('work', respEnvId, respEnvelope);
-            await firestoreWrite('work', missionId, missionEnvelope);
-            await writeHistory(missionId, null, 'active', 'scheduler', `Process ${process.id} from responsibility ${resp.id}`);
-
-            // Increment process execution count
-            try {
-              const token = await getAuthToken();
-              if (token && FIRESTORE_BASE) {
-                const procUrl = `${FIRESTORE_BASE}/processes/${process.id}`;
-                const currentCount = process.execution_count || 0;
-                await fetch(procUrl + '?updateMask.fieldPaths=execution_count&updateMask.fieldPaths=last_executed_at', {
-                  method: 'PATCH',
-                  headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
-                  body: JSON.stringify({ fields: {
-                    execution_count: { integerValue: String(currentCount + 1) },
-                    last_executed_at: { stringValue: now() },
-                  }}),
-                });
-              }
-            } catch (e) { log('DEBUG', `Process execution count update failed: ${e.message}`); }
-
-            // Recall memory then execute the checkpoint plan directly
-            const memory = await recallMemory(resp.instruction, {
-              instruction: resp.instruction,
-              context_summary: `Process: ${process.name}`,
-            });
-            missionEnvelope.memory_context = memory;
-            await firestoreWrite('work', missionId, missionEnvelope);
-            await processEnvelope(missionEnvelope, memory);
-
-            log('INFO', `Responsibility ${resp.id} → process ${process.id} execution started`);
-            return;
-          }
-        }
-      } else {
-        log('WARN', `Responsibility ${resp.id}: processRef '${resp.processRef}' not found, falling through to normal mission`);
-      }
-    }
-
     // Build rich context summary from the responsibility definition
     const contextParts = [];
     if (resp.context?.purpose) contextParts.push(`PURPOSE: ${resp.context.purpose}`);

@@ -114,7 +114,7 @@ corekit/lib/json-repair.mjs corekit/lib/json-repair.mjs
 corekit/lib/vertex-text.mjs corekit/lib/vertex-text.mjs
 corekit/lib/projects.mjs corekit/lib/projects.mjs
 corekit/lib/project-context.mjs corekit/lib/project-context.mjs
-corekit/lib/process-engine.mjs corekit/lib/process-engine.mjs
+corekit/lib/process-registry.mjs corekit/lib/process-registry.mjs
 corekit/lib/verdict.mjs corekit/lib/verdict.mjs
 corekit/lib/scheduler.mjs corekit/lib/scheduler.mjs
 corekit/lib/approvals.mjs corekit/lib/approvals.mjs
@@ -153,7 +153,6 @@ corekit/daemon/actions/blocked.mjs bin/actions/blocked.mjs
 corekit/daemon/actions/checkpoint_plan.mjs bin/actions/checkpoint_plan.mjs
 corekit/daemon/actions/delegate.mjs bin/actions/delegate.mjs
 corekit/daemon/actions/project_bootstrap.mjs bin/actions/project_bootstrap.mjs
-corekit/daemon/actions/follow_process.mjs bin/actions/follow_process.mjs
 corekit/daemon/actions/index.mjs bin/actions/index.mjs
 corekit/daemon/actions/needs_input.mjs bin/actions/needs_input.mjs
 corekit/daemon/actions/status_update.mjs bin/actions/status_update.mjs

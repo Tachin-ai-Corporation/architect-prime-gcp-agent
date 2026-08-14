@@ -7,7 +7,6 @@ import { handleBlocked } from './blocked.mjs';
 import { handleNeedsInput } from './needs_input.mjs';
 import { handleStatusUpdate } from './status_update.mjs';
 import { handleSynthesizeWithFailure } from './synthesize_with_failure.mjs';
-import { handleFollowProcess } from './follow_process.mjs';
 import { handleDelegate } from './delegate.mjs';
 import { handleCheckpointPlan } from './checkpoint_plan.mjs';
 import { handleWait } from './wait.mjs';
@@ -20,7 +19,6 @@ export {
   handleNeedsInput,
   handleStatusUpdate,
   handleSynthesizeWithFailure,
-  handleFollowProcess,
   handleDelegate,
   handleCheckpointPlan,
   handleWait,
@@ -30,6 +28,6 @@ export {
 
 export const ACTION_NAMES = [
   'synthesize', 'synthesize_with_failure', 'blocked', 'needs_input',
-  'follow_process', 'delegate', 'checkpoint_plan', 'status_update', 'wait',
+  'delegate', 'checkpoint_plan', 'status_update', 'wait',
   'trigger_responsibility', 'project_bootstrap',
 ];

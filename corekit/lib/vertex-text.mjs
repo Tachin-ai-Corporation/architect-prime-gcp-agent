@@ -62,7 +62,7 @@ export const CORTEX_SCHEMAS = {
     properties: {
       action:     { type: 'STRING', enum: [
         'checkpoint_plan', 'synthesize', 'synthesize_with_failure',
-        'needs_input', 'blocked', 'follow_process', 'status_update',
+        'needs_input', 'blocked', 'status_update',
         'delegate', 'wait', 'trigger_responsibility', 'project_bootstrap',
       ]},
       reasoning:  { type: 'STRING' },
@@ -409,7 +409,7 @@ export function createVertexText(config) {
       return { valid: true };
     }
     if (schemaName === 'decide') {
-      const allowed = ['checkpoint_plan', 'synthesize', 'synthesize_with_failure', 'needs_input', 'blocked', 'follow_process', 'status_update', 'delegate', 'wait', 'trigger_responsibility', 'project_bootstrap'];
+      const allowed = ['checkpoint_plan', 'synthesize', 'synthesize_with_failure', 'needs_input', 'blocked', 'status_update', 'delegate', 'wait', 'trigger_responsibility', 'project_bootstrap'];
       if (!allowed.includes(parsed.action)) return { valid: false, reason: `action missing or invalid: ${parsed.action}` };
       if (Array.isArray(parsed.assumptions)) {
         for (const a of parsed.assumptions) {
