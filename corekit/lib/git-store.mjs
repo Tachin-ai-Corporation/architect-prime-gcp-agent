@@ -759,9 +759,16 @@ export async function mergeBranch(repoId, sourceBranch, targetBranch, policy, ac
           });
           merged = true;
         } catch (e) {
-          log('merge: conflict:', e.message?.slice(0, 100));
+          // Capture WHICH files conflicted BEFORE aborting — a bare "failed" is unactionable.
+          let conflicts = [];
+          try {
+            conflicts = git('diff --name-only --diff-filter=U', { cwd: tmpDir })
+              .split('\n').map(s => s.trim()).filter(Boolean);
+          } catch { /* ignore */ }
+          log('merge: conflict:', `${e.message?.slice(0, 80)}` +
+            (conflicts.length ? ` [conflicting files: ${conflicts.join(', ').slice(0, 200)}]` : ''));
           try { git('merge --abort', { cwd: tmpDir }); } catch { /* ignore */ }
-          return { status: 'failed', sha: null };
+          return { status: 'failed', sha: null, reason: 'conflict', conflicts };
         }
       }
 

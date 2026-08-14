@@ -56,6 +56,12 @@ export function renderWorkspaceExcludes(existing = '', opts = {}) {
     '*.pdf', '*.docx', '*.xlsx', '*.pptx',
     ...mediaLines,
     '*.zip', '*.gz', '*.tar',
+    '# Tool caches, dependency trees, and VCS conflict artifacts — never a project artifact.',
+    '# A stray add -A must not commit a deploy cache (.firebase/) or node_modules into the',
+    '# substrate (this is how deploy scratch reached a project main). Match-anywhere (nested).',
+    '.firebase/',
+    'node_modules/',
+    '*.orig', '*.rej',
     '# Corekit mission bookkeeping the daemon writes into the tree — process notes, not',
     "# a project artifact. Root-anchored so a project's own nested paths stay safe.",
     '/MISSION.md',
@@ -469,7 +475,19 @@ export function createArtifactManager(deps) {
       }
 
       if (mergeResult.status !== 'merged') {
-        log('WARN', `Git: merge ${branch} → main returned ${mergeResult.status}`);
+        const conflicts = mergeResult.conflicts || [];
+        log('WARN', `Git: merge ${branch} → main returned ${mergeResult.status}` +
+          (conflicts.length ? ` — conflicting files: ${conflicts.join(', ')}` : '') +
+          ' (mission work is committed on the branch but NOT merged to main)');
+        // Stamp the failure so it's visible/queryable rather than silently swallowed.
+        envelope.context = envelope.context || {};
+        envelope.context.merge_failed = {
+          status: mergeResult.status,
+          reason: mergeResult.reason || null,
+          conflicts,
+          branch,
+          at: now(),
+        };
         return null;
       }
 

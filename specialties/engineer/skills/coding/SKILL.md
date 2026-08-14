@@ -84,15 +84,26 @@ If a path you were handed doesn't exist, the layout was assumed — find the act
 THAT; never `mkdir` the assumed path or create a parallel file to make a guess true. Move the
 change through the flow with the `workspace-git` tools:
 - Inspect: `work-status`, `work-diff`, `work-diff --stat`, `work-log`.
-- Commit a verified change: `work-commit "v{YYYY}.{MM}.{DD}.{index}.{subindex}: what changed" --add-all`
-  (canonical C-23 message — NOT conventional-commit `feat:`/`fix:` prefixes).
+- Commit a verified change with a canonical C-23 message (NOT conventional-commit
+  `feat:`/`fix:` prefixes): FIRST run `work-diff --stat` and confirm only your intended file(s)
+  are pending, stage just those (`git add <path>`), then
+  `work-commit "v{YYYY}.{MM}.{DD}.{index}.{subindex}: what changed"`. Reach for `--add-all`
+  ONLY when you have confirmed every pending change is yours — a blind `--add-all` sweeps
+  scratch, build caches, and rival copies of the tree into the commit and ships them.
 - Publish it: `work-sync <repoId> --branch mission/<missionId>`.
 - The daemon **merges** your mission branch on completion — you do not merge by hand unless
   asked. Never commit to `main` directly. Read the `workspace-git` skill for the tool details.
 
-When a step needs real logic (a data transform, a scripted check), write a small script to a
-temp path and run it, rather than a fragile one-liner — inspect it before you run anything that
-mutates state.
+**Keep the working tree clean — it is what gets committed and shipped.** Edit the target file
+**in place**; a small text/content change is a surgical editor edit, **never** a throwaway
+script — do not write `fix_*.py` / `check_*.py` / compare scripts to *perform* or *"verify"* an
+edit, that scatters scratch through the repo and an over-eager `--add-all` then ships it. When a
+step genuinely needs real logic (a data transform, a scripted check), write that helper to a
+path **OUTSIDE the repo clone** (e.g. `/tmp`), run it there, and inspect it before anything that
+mutates state — never inside `shared/<missionId>/`, because anything inside the clone can be
+staged, committed, and deployed. Don't keep backup copies of files you edit (`original_*.html`,
+`*-bak`) — git is your history — and don't re-clone the project into a subdir (`temp-repo/`, a
+second `public/`); you are already in the project root.
 
 ## Procedures
 
@@ -108,7 +119,8 @@ mutates state.
    it. Only intended files, no stray files/leftovers/secrets — and **no stray content**: a hunk
    that adds or removes anything OUTSIDE your intended edit (a stray `}`/quote/tag, a truncated
    region, reformatted lines) is a defect, not cosmetic — reduce the diff to exactly the change.
-6. **Commit** (`work-commit` with a C-23 message, `--add-all`) and **sync** (`work-sync`).
+6. **Commit** with a C-23 message — confirm `work-diff --stat` shows only your file(s), stage
+   just those (`git add <path>`, not a blind `--add-all`), `work-commit`, then **sync** (`work-sync`).
 7. **Report** what changed, how you verified it (the commands you ran and what they showed), and
    the commit sha.
 
@@ -166,6 +178,7 @@ When handed a design, mockup, or spec (e.g. from a designer):
 | A path you were handed doesn't exist (e.g. `sites/<name>/index.html`) | An assumed nested/monorepo layout — the auto-clone root **is** the project root | List the tree (`work-status`, `ls`); the file is usually at the workspace root. Edit the real file at its actual path. Do NOT create the assumed directory/file to make the guessed path real. |
 | Can't tell the stack / how to run it | No obvious manifest | Look wider (Makefile, Dockerfile, CI config, README); if it is plainly static assets, treat it as a static site (no build). Don't invent a toolchain. |
 | Repo is full of unrelated files/notes | A noisy or artifact-polluted repo | Identify the actual source (the files the site/app is built from) and ignore the noise; change only real source. |
+| Scratch/backup files, or a second copy of the tree, ended up committed | You edited via throwaway scripts written *inside* the clone and/or committed with a blind `--add-all` | Keep helpers in `/tmp` (outside the clone), edit target files in place, and stage only intended paths (`git add <file>`) — never a blind `--add-all`. If scratch already got committed, remove those files and commit the deletions (staging just them). |
 | Big diff for a small change | Reformatting or an editor rewrote unrelated lines | Reduce the diff to only the intended change; re-run the formatter the project uses (if any), not a different one. |
 | A one-word edit produced a huge diff, stray `\'` in the file, or the page renders blank below the fold | You edited by piping a large quoted block through inline `sed` — the shell escaped the apostrophes/quotes into the file | Make the edit surgical: match the smallest unique token, or use `writeFile`/a `python3` `.replace()` (literal, no shell escaping). See system-shell "Edit a file in place — quote trap". Verify `work-diff --stat` is minimal and `grep "\\'"` is empty. |
 | The whole page (or everything below a point) renders BLANK though the source "reads fine" | An unclosed `<style>`/`<script>` — often from a truncating or quote-"fixing" edit — swallows the rest of the document as CSS/JS text | Run the structural check: `<style>`==`</style>`, `<script>`==`</script>`, and `</head>`+`<body>` present/ordered. Close the unclosed tag, or **restore the file from the last-good commit** (`git checkout <good-sha> -- <file>`) instead of re-editing corrupted text. NEVER verify an HTML edit by read-back alone — render it and read the rendered body. |

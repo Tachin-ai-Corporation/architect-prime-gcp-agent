@@ -40,6 +40,22 @@ describe('renderWorkspaceExcludes', () => {
     }
   });
 
+  it('ignores tool caches, dep trees, and VCS conflict artifacts (deploy-scratch→main fix)', () => {
+    const { content } = renderWorkspaceExcludes('');
+    // .firebase/ (deploy cache) literally leaked into a project main; node_modules + *.orig/*.rej
+    // are never a project's committable source. Belt-and-suspenders behind stage-only-intended.
+    for (const pat of ['.firebase/', 'node_modules/', '*.orig', '*.rej']) {
+      assert.ok(content.split('\n').includes(pat), `expected ${pat} in excludes`);
+    }
+  });
+
+  it('keeps the tool-cache excludes even for an asset-bearing project (they are never source)', () => {
+    const { content } = renderWorkspaceExcludes('', { keepAssets: true });
+    for (const pat of ['.firebase/', 'node_modules/', '*.orig', '*.rej']) {
+      assert.ok(content.split('\n').includes(pat), `expected ${pat} excluded with keepAssets`);
+    }
+  });
+
   it('is idempotent — a second pass adds nothing (C-18)', () => {
     const first = renderWorkspaceExcludes('').content;
     const second = renderWorkspaceExcludes(first);
