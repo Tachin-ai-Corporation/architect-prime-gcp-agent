@@ -1,0 +1,13 @@
+{
+  "id": "process-ops",
+  "name": "Process Playbooks (capture, recall, update, discuss)",
+  "version": 1,
+  "description": "List, read, write, and retire process PLAYBOOKS (name + short description + narrative) in the one global process library — capture what worked, discuss what we have, and fold in owner feedback. Playbooks are recalled into an agent's own checkpoint plan, not executed as step-machines.",
+  "author": "architect-prime",
+  "origin": "base",
+  "category": "knowledge",
+  "agent_part": "motor",
+  "when_to_use": "When capturing a pattern that worked, listing or narrating the playbooks the fleet has, updating a playbook from owner feedback, or reading how a kind of work has been done before to inform your own plan.",
+  "scripts": ["process-ops"],
+  "requires": { "bin": ["curl", "python3"] }
+}

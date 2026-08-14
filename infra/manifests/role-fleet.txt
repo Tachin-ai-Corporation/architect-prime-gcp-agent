@@ -62,5 +62,9 @@ corekit/memory/update-deep-truths bin/update-deep-truths
 corekit/memory/session-summary bin/session-summary
 skills/memory-consolidate/SKILL.md skills/memory-consolidate/SKILL.md
 skills/memory-consolidate/skill.json skills/memory-consolidate/skill.json
+# process-ops — universal authoring of the global process PLAYBOOK library (name+description+narrative)
+corekit/memory/process-ops bin/process-ops
+skills/process-ops/SKILL.md skills/process-ops/SKILL.md
+skills/process-ops/skill.json skills/process-ops/skill.json
 corekit/brain/process-manage bin/process-manage
 

@@ -7,7 +7,7 @@
       "accent": "#38bdf8",
       "specialty": "GCP infrastructure, CI/CD pipelines, Cloud Build, Cloud Run, Terraform, monitoring, cost optimization",
       "emailPattern": "devops-agent-{name}",
-      "skills": ["web-search", "workspace-drive", "skill-introspect", "memory-consolidate", "gcloud", "gsutil", "docker", "firebase"],
+      "skills": ["web-search", "workspace-drive", "skill-introspect", "memory-consolidate", "process-ops", "gcloud", "gsutil", "docker", "firebase"],
       "brain": true
     },
     {
@@ -18,7 +18,7 @@
       "accent": "#a78bfa",
       "specialty": "Full-stack development, code review, debugging, API design, architecture, testing",
       "emailPattern": "engineer-agent-{name}",
-      "skills": ["web-search", "workspace-drive", "skill-introspect", "memory-consolidate", "coding", "code-review"],
+      "skills": ["web-search", "workspace-drive", "skill-introspect", "memory-consolidate", "process-ops", "coding", "code-review"],
       "brain": true
     },
     {
@@ -28,7 +28,7 @@
       "accent": "#2dd4bf",
       "specialty": "Test planning, test automation, regression testing, performance testing, quality gates",
       "emailPattern": "qa-agent-{name}",
-      "skills": ["web-search", "skill-introspect", "memory-consolidate", "test-runner"],
+      "skills": ["web-search", "skill-introspect", "memory-consolidate", "process-ops", "test-runner"],
       "brain": true
     },
     {
@@ -38,7 +38,7 @@
       "accent": "#fbbf24",
       "specialty": "Project planning, task breakdown, status tracking, stakeholder coordination, roadmap management",
       "emailPattern": "pm-agent-{name}",
-      "skills": ["web-search", "workspace-drive", "workspace-gmail", "workspace-docs", "workspace-sheets", "skill-introspect", "memory-consolidate", "meeting-ops"],
+      "skills": ["web-search", "workspace-drive", "workspace-gmail", "workspace-docs", "workspace-sheets", "skill-introspect", "memory-consolidate", "process-ops", "meeting-ops"],
       "brain": true
     },
     {
@@ -48,7 +48,7 @@
       "accent": "#34d399",
       "specialty": "Budget tracking, cost analysis, financial reporting, forecasting, vendor management",
       "emailPattern": "finance-agent-{name}",
-      "skills": ["web-search", "workspace-gmail", "workspace-sheets", "skill-introspect", "memory-consolidate", "billing-ops"],
+      "skills": ["web-search", "workspace-gmail", "workspace-sheets", "skill-introspect", "memory-consolidate", "process-ops", "billing-ops"],
       "brain": true
     },
     {
@@ -58,7 +58,7 @@
       "accent": "#818cf8",
       "specialty": "Data pipelines, BigQuery, ETL, data quality, analytics, dbt, Dataflow",
       "emailPattern": "data-agent-{name}",
-      "skills": ["web-search", "workspace-sheets", "skill-introspect", "memory-consolidate", "bq-ops"],
+      "skills": ["web-search", "workspace-sheets", "skill-introspect", "memory-consolidate", "process-ops", "bq-ops"],
       "brain": true
     },
     {
@@ -68,7 +68,7 @@
       "accent": "#fb7185",
       "specialty": "IAM audit, compliance, vulnerability assessment, security architecture, incident response",
       "emailPattern": "security-agent-{name}",
-      "skills": ["web-search", "workspace-gmail", "skill-introspect", "memory-consolidate", "iam-audit"],
+      "skills": ["web-search", "workspace-gmail", "skill-introspect", "memory-consolidate", "process-ops", "iam-audit"],
       "brain": true
     },
     {
@@ -78,7 +78,7 @@
       "accent": "#94a3b8",
       "specialty": "Scheduling, communications, admin tasks, document drafting, information gathering",
       "emailPattern": "assistant-agent-{name}",
-      "skills": ["web-search", "workspace-drive", "workspace-gmail", "workspace-calendar", "workspace-docs", "workspace-sheets", "workspace-slides", "skill-introspect", "memory-consolidate", "calendar-ops"],
+      "skills": ["web-search", "workspace-drive", "workspace-gmail", "workspace-calendar", "workspace-docs", "workspace-sheets", "workspace-slides", "skill-introspect", "memory-consolidate", "process-ops", "calendar-ops"],
       "brain": true
     },
     {
@@ -88,7 +88,7 @@
       "accent": "#f472b6",
       "specialty": "Product standards stewardship, codebase architecture analysis, improvement planning, engineering delegation, drift prevention",
       "emailPattern": "architect-agent-{name}",
-      "skills": ["web-search", "skill-introspect", "memory-consolidate", "project-ops", "codebase-audit"],
+      "skills": ["web-search", "skill-introspect", "memory-consolidate", "process-ops", "project-ops", "codebase-audit"],
       "brain": true
     },
     {
@@ -99,7 +99,7 @@
       "accent": "#e879f9",
       "specialty": "Branding, design systems, visual concepts, pixel-perfect implementation across Slides, Docs, and HTML/CSS",
       "emailPattern": "designer-agent-{name}",
-      "skills": ["web-search", "workspace-drive", "workspace-slides", "workspace-docs", "skill-introspect", "memory-consolidate", "design-ops", "design"],
+      "skills": ["web-search", "workspace-drive", "workspace-slides", "workspace-docs", "skill-introspect", "memory-consolidate", "process-ops", "design-ops", "design"],
       "brain": true
     },
     {
@@ -110,7 +110,7 @@
       "accent": "#b45309",
       "specialty": "Contract & document review, clause-by-clause risk flagging, surgical redlining, obligation and deadline extraction, matter organization — assist-and-escalate; a licensed human attorney makes the legal calls",
       "emailPattern": "legal-agent-{name}",
-      "skills": ["web-search", "workspace-drive", "workspace-docs", "workspace-gmail", "workspace-sheets", "skill-introspect", "memory-consolidate", "legal-ops"],
+      "skills": ["web-search", "workspace-drive", "workspace-docs", "workspace-gmail", "workspace-sheets", "skill-introspect", "memory-consolidate", "process-ops", "legal-ops"],
       "brain": true
     },
     {
@@ -121,7 +121,7 @@
       "accent": "#14b8a6",
       "specialty": "End-to-end ownership of a website surface — visual design, content/copy, code implementation, and Firebase staging→approval→production deploys plus hosting config, single-handed — and a proactive steward that reviews the site and proposes ranked improvements (prototyped on staging), calibrating how much initiative to take to the intent of the request",
       "emailPattern": "web-agent-{name}",
-      "skills": ["web-search", "workspace-drive", "skill-introspect", "memory-consolidate", "design", "design-ops", "coding", "firebase", "gcloud", "project-ops", "web-domains", "site-audit"],
+      "skills": ["web-search", "workspace-drive", "skill-introspect", "memory-consolidate", "process-ops", "design", "design-ops", "coding", "firebase", "gcloud", "project-ops", "web-domains", "site-audit"],
       "brain": true
     }
   ]

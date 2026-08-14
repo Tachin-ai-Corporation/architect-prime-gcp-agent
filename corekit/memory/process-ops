@@ -1,0 +1,124 @@
+#!/usr/bin/env bash
+# process-ops — list / read / write / retire process PLAYBOOKS in the ONE global process library.
+#
+# A process is a remembered playbook: a NAME + a SHORT DESCRIPTION + a NARRATIVE ("how we've done
+# this kind of work well before"). It is NOT a step-machine — any agent recalls a narrative into its
+# OWN checkpoint plan. The library is GLOBAL: a single tenant-wide `processes` collection shared by
+# every agent across every prime, so a pattern one agent learns, the whole fleet can reuse.
+#
+# Usage:
+#   process-ops list
+#   process-ops get <id>
+#   process-ops write <id> --name "<name>" --description "<one line>" --narrative "<prose>" [--tags a,b] [--project <projectId>]
+#   process-ops write <id> --name "<name>" --description "<one line>" --stdin      # narrative from stdin (quote-safe)
+#   process-ops retire <id>
+#
+# Free text (name/description/narrative) is passed via env vars to python (never interpolated into a
+# shell/JSON literal), so apostrophes, quotes, and $ are safe. Long/complex narratives → use --stdin.
+
+set -euo pipefail
+
+CMD="${1:-}"; shift || true
+
+PROJECT_ID=$(curl -sf -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/project/project-id" 2>/dev/null || echo "your-gcp-project")
+TOKEN=$(curl -sf -H "Metadata-Flavor: Google" "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token" | python3 -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+BASE="https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents/processes"
+AGENT="${AGENT_ID:-unknown}"
+
+case "$CMD" in
+  list)
+    curl -sf -H "Authorization: Bearer ${TOKEN}" "${BASE}?pageSize=300" | python3 -c "
+import sys, json
+d = json.load(sys.stdin); docs = d.get('documents', [])
+rows = []
+for doc in docs:
+    f = doc.get('fields', {})
+    g = lambda k: f.get(k, {}).get('stringValue', '')
+    if (g('status') or 'active') == 'deprecated': continue
+    hasn = bool(f.get('narrative', {}).get('stringValue'))
+    rows.append((g('id') or doc['name'].split('/')[-1], g('name'), hasn, g('description')))
+if not rows: print('(no processes)'); sys.exit(0)
+print(f'{len(rows)} process playbook(s):')
+for _id, name, hasn, desc in sorted(rows):
+    print(f\"  {_id:24}  {(name or '')[:34]:34}  {'[narrative]' if hasn else '[NO narrative]'}  {(desc or '')[:56]}\")
+"
+    ;;
+  get)
+    ID="${1:?usage: process-ops get <id>}"
+    curl -sf -H "Authorization: Bearer ${TOKEN}" "${BASE}/${ID}" | python3 -c "
+import sys, json
+d = json.load(sys.stdin); f = d.get('fields', {})
+g = lambda k: f.get(k, {}).get('stringValue', '')
+print('id         :', g('id')); print('name       :', g('name'))
+print('description:', g('description')); print('status     :', g('status') or 'active')
+print('updated_by :', g('updated_by'), ' updated_at:', g('updated_at'))
+print(); print('narrative:'); print(g('narrative') or '(none)')
+"
+    ;;
+  write)
+    ID="${1:?usage: process-ops write <id> --name .. --description .. (--narrative .. | --stdin)}"; shift || true
+    NAME=""; DESCRIPTION=""; NARRATIVE=""; TAGS=""; PROJECT=""; USE_STDIN=0
+    while [[ $# -gt 0 ]]; do
+      case "$1" in
+        --name)        NAME="$2";        shift 2 ;;
+        --description) DESCRIPTION="$2"; shift 2 ;;
+        --narrative)   NARRATIVE="$2";   shift 2 ;;
+        --stdin)       USE_STDIN=1;      shift ;;
+        --tags)        TAGS="$2";        shift 2 ;;
+        --project)     PROJECT="$2";     shift 2 ;;
+        *) echo "unknown option: $1" >&2; exit 1 ;;
+      esac
+    done
+    [[ "$USE_STDIN" -eq 1 ]] && NARRATIVE="$(cat)"
+    export _PO_ID="$ID" _PO_NAME="$NAME" _PO_DESC="$DESCRIPTION" _PO_NARR="$NARRATIVE" \
+           _PO_TAGS="$TAGS" _PO_PROJECT="$PROJECT" _PO_AGENT="$AGENT" \
+           _PO_TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    OUT=$(python3 -c "
+import os, json
+fields = {'id':{'stringValue':os.environ['_PO_ID']}, 'updated_by':{'stringValue':os.environ['_PO_AGENT']},
+          'updated_at':{'stringValue':os.environ['_PO_TS']}, 'status':{'stringValue':'active'}}
+mask = ['id','updated_by','updated_at','status']
+for k, env in [('name','_PO_NAME'), ('description','_PO_DESC'), ('narrative','_PO_NARR')]:
+    v = os.environ.get(env, '')
+    if v: fields[k] = {'stringValue': v}; mask.append(k)
+tags = [t.strip() for t in os.environ.get('_PO_TAGS','').split(',') if t.strip()]
+proj = os.environ.get('_PO_PROJECT','')
+if tags or proj:
+    fields['scope'] = {'mapValue':{'fields':{
+        'project_id': ({'stringValue':proj} if proj else {'nullValue':None}),
+        'tags': {'arrayValue':{'values':[{'stringValue':t} for t in tags]}}}}}
+    mask.append('scope')
+print('&'.join('updateMask.fieldPaths='+m for m in mask))
+print(json.dumps({'fields': fields}))
+")
+    MASK=$(printf '%s\n' "$OUT" | sed -n '1p')
+    DOC=$(printf '%s\n' "$OUT" | sed -n '2p')
+    if curl -sf -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+         -X PATCH "${BASE}/${ID}?${MASK}" -d "${DOC}" >/dev/null 2>&1; then
+      echo "✅ process '${ID}' written to the global library (${MASK//updateMask.fieldPaths=/ })"
+    else
+      echo "❌ write failed for '${ID}'" >&2; exit 1
+    fi
+    ;;
+  retire)
+    ID="${1:?usage: process-ops retire <id>}"
+    if curl -sf -H "Authorization: Bearer ${TOKEN}" -H "Content-Type: application/json" \
+         -X PATCH "${BASE}/${ID}?updateMask.fieldPaths=status" \
+         -d '{"fields":{"status":{"stringValue":"deprecated"}}}' >/dev/null 2>&1; then
+      echo "✅ process '${ID}' retired (status=deprecated)"
+    else
+      echo "❌ retire failed for '${ID}'" >&2; exit 1
+    fi
+    ;;
+  *)
+    cat >&2 <<'USAGE'
+process-ops — the ONE global process PLAYBOOK library (name + short description + narrative).
+  process-ops list
+  process-ops get <id>
+  process-ops write <id> --name "<name>" --description "<one line>" --narrative "<prose>" [--tags a,b] [--project <id>]
+  process-ops write <id> --name "<name>" --description "<one line>" --stdin      # narrative from stdin (quote-safe)
+  process-ops retire <id>
+USAGE
+    exit 1
+    ;;
+esac
