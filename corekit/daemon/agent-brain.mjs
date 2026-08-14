@@ -756,6 +756,53 @@ async function resumeProcessPlan(mission) {
   return _engine.resumePlan(mission);
 }
 
+// Resume a NON-process (cortex checkpoint_plan) mission after an approval gate is APPROVED.
+// CONTINUE the pinned checkpoint plan from the task AFTER the gate — deterministically, via
+// executeCheckpointPlanResume — instead of re-entering the Cortex decide loop. Re-deciding
+// re-plans the gate's checkpoint and re-inserts the SAME approval gate, so a checkpoint that
+// bundles a gate + the gated action ("obtain approval", then "promote to prod") re-gates
+// forever (observed: a prod-promote looping iter 1->2->3, a fresh apr- each approve). Works for
+// both non-prestamped (checkpoints in paused_checkpoints) and prestamped/spine missions
+// (paused_checkpoints=null -> rebuild from the pinned _cp_spine). Falls back to the legacy
+// decide-loop resume if the plan can't be reconstructed or checkpoint-resume is disabled.
+async function resumeCheckpointPlan(mission, memory) {
+  const meta = mission.source_meta || {};
+  const ci = meta.paused_checkpoint_index;
+  const ti = meta.paused_task_index;
+  const savedResults = meta.paused_all_results || [];
+  let checkpoints = meta.paused_checkpoints;
+  if ((!checkpoints || checkpoints.length === 0) && Array.isArray(mission._cp_spine) && mission._cp_spine.length) {
+    try { checkpoints = rebuildFromSpine(mission._cp_spine).checkpoints; } catch (e) { log('WARN', `resumeCheckpointPlan: rebuildFromSpine failed: ${e.message}`); }
+  }
+  const cleanPaused = (e) => {
+    if (!e.source_meta) return;
+    delete e.source_meta.paused_approval_id;
+    delete e.source_meta.paused_checkpoints;
+    delete e.source_meta.paused_checkpoint_index;
+    delete e.source_meta.paused_task_index;
+    delete e.source_meta.paused_all_results;
+  };
+  const canContinue = CHECKPOINT_RESUME_ENABLED && checkpoints && checkpoints.length > 0
+    && ci !== undefined && ci !== null && ti !== undefined && ti !== null;
+  if (!canContinue) {
+    log('WARN', `Approval resume: cannot continue plan for ${mission.id} (ci=${ci} ti=${ti} cps=${checkpoints ? checkpoints.length : 0} resume=${CHECKPOINT_RESUME_ENABLED}); falling back to decide loop`);
+    mission.status = 'active'; mission.updated_at = now();
+    cleanPaused(mission);
+    await firestoreWrite('work', mission.id, mission);
+    return processEnvelope(mission, memory);
+  }
+  mission.status = 'active'; mission.updated_at = now();
+  cleanPaused(mission);
+  await firestoreWrite('work', mission.id, mission);
+  log('INFO', `Approval resume: CONTINUING checkpoint plan at CP${ci + 1} task ${ti + 2} (the task AFTER the approved gate) — no re-plan`);
+  return executeCheckpointPlanResume(mission, {
+    checkpointIndex: ci,
+    taskIndex: ti + 1,
+    allResults: savedResults,
+    checkpoints,
+  }, memory);
+}
+
 
 
 
@@ -5500,6 +5547,7 @@ function _initScheduler() {
 function _initApprovals() {
   _approvalChecker = createApprovalChecker({
     resumeProcessPlan,
+    resumeCheckpointPlan,
     processEnvelope,
     recallMemory,
     firestoreWrite,

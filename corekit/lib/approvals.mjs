@@ -29,6 +29,7 @@ export function createApprovalChecker(deps) {
   const {
     config,
     resumeProcessPlan,
+    resumeCheckpointPlan,
     processEnvelope,
     recallMemory,
     firestoreWrite,
@@ -171,7 +172,8 @@ export function createApprovalChecker(deps) {
           const pausedTaskIndex = meta.paused_task_index;
           const pausedAllResults = meta.paused_all_results || [];
 
-          if (!pausedCheckpoints || pausedCpIndex === undefined || pausedTaskIndex === undefined) {
+          const _hasPlan = pausedCheckpoints || (Array.isArray(envDoc._cp_spine) && envDoc._cp_spine.length);
+          if (!_hasPlan || pausedCpIndex === undefined || pausedTaskIndex === undefined) {
             log('WARN', `Approval ${approvalId}: missing resume state on envelope`);
             continue;
           }
@@ -196,46 +198,33 @@ export function createApprovalChecker(deps) {
             log('INFO', `Approved: resuming process plan for ${envelopeId}`);
             await resumeProcessPlan(envDoc);
           } else {
-            // Non-process work: resume through the Cortex decide loop.
-            // ADVANCE THE SPINE at the approved gate: the human granted the approval,
-            // so the paused checkpoint's objective (obtain approval) is MET. Mark its
-            // pinned-spine entry complete BEFORE re-entering the planner — otherwise
-            // firstIncompleteIndex keeps returning THIS checkpoint, the scoped re-plan
-            // re-inserts the approval gate, and the mission re-gates forever (observed:
-            // a prod-promote looping iter 1->2->3, a fresh apr- each time) instead of
-            // advancing to the checkpoint that performs the approved action. Only when
-            // the gate was the checkpoint's LAST task (the common approval-boundary
-            // case); otherwise leave it for the planner (advancing would drop remaining
-            // tasks). Sibling of skip_advances_spine (FC-E), at the approval seam.
-            const _cpDef = Array.isArray(pausedCheckpoints) ? pausedCheckpoints[pausedCpIndex] : null;
-            const _taskCount = ((_cpDef && (_cpDef.tasks || _cpDef.steps)) || []).length;
-            const _gateWasLastTask = !_taskCount || pausedTaskIndex >= _taskCount - 1;
-            if (_gateWasLastTask && Array.isArray(envDoc._cp_spine) && envDoc._cp_spine[pausedCpIndex]
-                && envDoc._cp_spine[pausedCpIndex].status !== 'complete') {
-              envDoc._cp_spine[pausedCpIndex].status = 'complete';
-              envDoc._cp_spine[pausedCpIndex].outcome = envDoc._cp_spine[pausedCpIndex].outcome || 'Operator approval granted at the gate';
-              envDoc._cp_spine[pausedCpIndex].verdict = envDoc._cp_spine[pausedCpIndex].verdict || 'pass';
-              log('INFO', `Approval ${approvalId}: advanced spine — CP${pausedCpIndex + 1} marked complete (approval granted); planner targets the next checkpoint`);
-            }
-
-            log('INFO', `Resuming checkpoint plan after the approved gate at CP${pausedCpIndex + 1}`);
-
-            envDoc.status = 'active';
-            envDoc.updated_at = now();
-            // Clean up paused state
-            delete envDoc.source_meta.paused_approval_id;
-            delete envDoc.source_meta.paused_checkpoints;
-            delete envDoc.source_meta.paused_checkpoint_index;
-            delete envDoc.source_meta.paused_task_index;
-            delete envDoc.source_meta.paused_all_results;
-            await firestoreWrite('work', envelopeId, envDoc);
-
-            // Resume processing the envelope through the normal Cortex loop
+            // Non-process work: CONTINUE the checkpoint plan from the task AFTER the
+            // approved gate — deterministically, via resumeCheckpointPlan — NOT the Cortex
+            // decide loop. Re-deciding re-plans the gate's checkpoint and re-inserts the SAME
+            // approval gate, so a checkpoint bundling a gate + its gated action ("obtain
+            // approval" then "promote to prod") re-gates forever (observed: a prod-promote
+            // looping iter 1->2->3, a fresh apr- each approve). resumeCheckpointPlan rebuilds
+            // the plan (from paused_checkpoints, or the pinned spine when prestamped),
+            // continues at CP=ci task=ti+1, and falls back to the decide loop if it cannot.
+            log('INFO', `Approved: continuing checkpoint plan for ${envelopeId} at the task after the gate`);
             const memory = await recallMemory(envDoc.instruction, {
               instruction: envDoc.instruction,
               context_summary: (envDoc.context_summary || '').substring(0, 500),
             });
-            await processEnvelope(envDoc, memory);
+            if (typeof resumeCheckpointPlan === 'function') {
+              await resumeCheckpointPlan(envDoc, memory);
+            } else {
+              // Legacy fallback (older brain without the post-gate continue) — re-enter loop.
+              envDoc.status = 'active';
+              envDoc.updated_at = now();
+              delete envDoc.source_meta.paused_approval_id;
+              delete envDoc.source_meta.paused_checkpoints;
+              delete envDoc.source_meta.paused_checkpoint_index;
+              delete envDoc.source_meta.paused_task_index;
+              delete envDoc.source_meta.paused_all_results;
+              await firestoreWrite('work', envelopeId, envDoc);
+              await processEnvelope(envDoc, memory);
+            }
           }
         }
       }
