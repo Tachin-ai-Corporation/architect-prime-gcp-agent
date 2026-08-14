@@ -1,77 +1,15 @@
 {
   "id": "p-memory-consolidate",
   "name": "Memory Consolidation",
-  "description": "Nightly memory consolidation cycle: prune working memory, reconcile long-term Core Memory, review Deep Truths. Mirrors the r-memory-consolidation responsibility's 10-step procedure as a first-class process.",
+  "description": "Nightly memory consolidation: gather sessions and the long-term store, triage honestly, prune and promote sparingly, rewrite the memory index, and review Deep Truths.",
+  "narrative": "This is memory's own housekeeping, and it is exclusively about memory — ignore whatever other work is in flight. Gather the raw material first: recent sessions and the current long-term store, both the recent entries and the full archive. Triage it into what stays, what deserves promotion into durable memory, and what has gone stale and should be retired — then execute those retirements and promotions conservatively (a few high-value writes, never a flood). Rewrite the memory index so it reflects only what is still active. Finally, review whether any long-standing, well-evidenced fact has earned Deep-Truth status. The throughline: gather, triage honestly, prune and promote sparingly, keep the index true.",
+  "intent_keywords": [
+    "memory",
+    "consolidation",
+    "consolidate",
+    "prune",
+    "nightly"
+  ],
   "status": "active",
-  "version": 4,
-  "visibility": "standard",
-  "intent_keywords": ["memory", "consolidation", "consolidate", "prune", "nightly"],
-  "parameters": {},
-  "steps": [
-    {
-      "step": 1,
-      "agent": "temporal-memory",
-      "intent": "execute",
-      "description": "SCOPE ENFORCEMENT: This process is EXCLUSIVELY about memory management. Ignore ALL context about other work (projects, deployments, debugging, etc.). Do NOT reference any ongoing missions or external tasks.\n\nPre-flight: Read workspace/MEMORY.md with `cat MEMORY.md` and report character count with `wc -c MEMORY.md`. If MEMORY.md does not exist, create it with: `printf '# MEMORY (DevOps)\n\n## Current Focus\n\n## Active Context\n\n## Open Items\n- None\n' > MEMORY.md` then verify with `wc -c MEMORY.md`.",
-      "accept_criteria": "MEMORY.md contents shown in output. Character count reported. No references to non-memory topics."
-    },
-    {
-      "step": 2,
-      "agent": "temporal-memory",
-      "intent": "execute",
-      "description": "Gather sessions: Run `session-summary --hours 24 --limit 20 --exclude-intent memory_consolidation`. Report the number of sessions found. If the command returns 'No completed missions found', report '0 sessions in last 24 hours' — this is normal and not an error.",
-      "accept_criteria": "session-summary command executed. Session count reported (0 is acceptable)."
-    },
-    {
-      "step": 3,
-      "agent": "temporal-memory",
-      "intent": "execute",
-      "description": "Gather Core Memory (recent): Run `core-memory-read --limit 20` to pull recent long-term storage. Report the number of entries found. If the output is empty or says 'No entries found', report '0 entries' — this is normal for new agents.",
-      "accept_criteria": "core-memory-read command executed. Entry count reported (0 is acceptable).",
-      "checkpointBoundary": true
-    },
-    {
-      "step": 4,
-      "agent": "temporal-memory",
-      "intent": "execute",
-      "description": "Gather Core Memory (full archive): Run these commands one at a time:\n1. `core-memory-read --category architecture`\n2. `core-memory-read --category operations`\n3. `core-memory-read --category decisions`\n4. `core-memory-read --category patterns`\n5. `core-memory-read --category errors`\nReport the total number of active entries found across all categories.",
-      "accept_criteria": "All five core-memory-read category commands executed. Total entry count across categories reported."
-    },
-    {
-      "step": 5,
-      "agent": "temporal-memory",
-      "intent": "execute",
-      "description": "Triage and reconcile: Using MEMORY.md (from step 1), sessions (from step 2), and Core Memory (from steps 3-4), produce a triage report with TWO sections:\n\n**SECTION A — MEMORY.md Triage:** Classify each entry as ACTIVE (keep), COMPLETED (prune), STALE (prune), or PROMOTE.\n\n**SECTION B — Core Memory Triage:** For entries needing action, list the entry ID (mem-XXXXXXXX-XXXX format) and classify as CONTRADICTED, OUTDATED, REDUNDANT, or STALE with specific reasoning.\n\n**CHAT TRIAGE:** Explicitly identify and triage conversational `[chat]` sessions. Ensure chat sessions are pruned from working memory and are NOT promoted to Core Memory unless they contain persistent, high-value technical context. Conversational greetings and general Q&A should be discarded after triage.\n\nIf no entries need retirement, state 'No Core Memory entries need retirement.' If none qualify for promotion, state 'No entries qualify for promotion.'",
-      "accept_criteria": "Triage report has Section A and Section B. Each classification includes reasoning.",
-      "checkpointBoundary": true
-    },
-    {
-      "step": 6,
-      "agent": "temporal-memory",
-      "intent": "execute",
-      "description": "Execute retirements: For each entry from Section B of the triage, run `core-memory-retire --id <entry-id> --reason \"<reason>\"`. For updates, run `core-memory-write --fact \"<fact>\" --category <cat> --supersedes <old-id>`. Max 5 operations. If no retirements needed, run `echo 'No retirements needed'` and report.",
-      "accept_criteria": "Retirement commands executed with output captured, OR explicit 'no retirements needed' message."
-    },
-    {
-      "step": 7,
-      "agent": "temporal-memory",
-      "intent": "execute",
-      "description": "Execute promotions: For each PROMOTE item from the triage, run `core-memory-write --fact \"<fact>\" --category <cat> --tags \"<tags>\"`. Max 5 writes. If no promotions needed, run `echo 'No promotions needed'` and report.",
-      "accept_criteria": "Promotion commands executed with output captured, OR explicit 'no promotions needed' message."
-    },
-    {
-      "step": 8,
-      "agent": "temporal-memory",
-      "intent": "execute",
-      "description": "Rewrite MEMORY.md: You MUST use the `runCommand` tool to write the file. Keep only ACTIVE items from the triage. Do NOT use heredoc syntax (it is fragile). Instead, use this exact pattern:\n\n1. First clear the file: `printf '# MEMORY (DevOps)\n\n' > MEMORY.md`\n2. Append each section: `printf '## Current Focus\n' >> MEMORY.md`\n3. Append items one at a time: `printf '- item text here\n' >> MEMORY.md`\n4. Continue for Active Context and Open Items sections\n5. Finally verify: `wc -c MEMORY.md`\n\nThe final file MUST be under 2000 characters. Only include genuinely ACTIVE items from the triage.",
-      "accept_criteria": "runCommand used with printf to write MEMORY.md. wc -c output present showing numeric byte count under 2000."
-    },
-    {
-      "step": 9,
-      "agent": "temporal-memory",
-      "intent": "execute",
-      "description": "Deep Truths review and report: Run `update-deep-truths --list`. Check if any Core Memory facts qualify as Deep Truths (3+ sessions evidence, 7+ days stable, cite 2+ Core Memory IDs). Use `update-deep-truths --add \"<truth>\"` or `--remove \"<text>\"` if warranted (max 2 changes). Produce a consolidation summary:\n- Working memory entries triaged: X\n- Retirements: X\n- Promotions: X\n- Deep Truth changes: X\n- Final MEMORY.md size: X chars\n\nThen persist this summary as a durable artifact: write it to consolidation_report.md in the workspace (printf or writeFile) and run cat consolidation_report.md to confirm. This report file is the mission's verifiable outcome.",
-      "accept_criteria": "update-deep-truths --list output captured. A consolidation report (working-memory triaged, retirements, promotions, Deep-Truth changes, final MEMORY.md char count) is written to consolidation_report.md and shown via cat."
-    }
-  ]
+  "version": 5
 }

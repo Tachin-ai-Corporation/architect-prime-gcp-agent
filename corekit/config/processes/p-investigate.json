@@ -2,59 +2,22 @@
   "id": "p-investigate",
   "name": "Investigation",
   "description": "Structured investigation process for diagnosing issues, understanding system behavior, or answering questions. Gathers evidence, analyzes findings, and documents results. This process is READ-ONLY — it examines systems but NEVER modifies, deploys, or fixes anything.",
-  "status": "active",
-  "version": 3,
-  "visibility": "standard",
-  "intent_keywords": ["not working", "broken", "failing", "diagnose", "debug", "why", "error", "investigate", "isn't", "not served", "not accessible", "404", "timeout"],
-  "parameters": {
-    "topic": {
-      "description": "What to investigate — issue, question, or behavior to understand",
-      "required": true
-    },
-    "project_id": {
-      "description": "Project context (optional)",
-      "required": false,
-      "default": ""
-    }
-  },
   "narrative": "An investigation examines; it never fixes. Frame the precise question and scope first, then gather the real evidence — logs, code paths, config, live state — without touching anything. Weigh it against your hypotheses, separating what you verified from what you are still guessing. Close with findings, the root cause if you have it, and a recommendation. Keep the read-only line: diagnosing is not deploying.",
-  "steps": [
-    {
-      "title": "Scope & Framing",
-      "description": "⚠️ READ-ONLY STEP\n\nEstablish the precise question and scope of the investigation for ${topic}. Frame the target questions and boundaries of analysis. Formulate initial working hypotheses to guide the query.",
-      "agent": "motor",
-      "type": "standard",
-      "intent": "research",
-      "accept_criteria": "Question is precisely framed. Scope is defined. Initial hypotheses identified."
-    },
-    {
-      "title": "Evidence Gathering",
-      "description": "⚠️ READ-ONLY STEP\n\nCollect the necessary data, logs, code paths, or configuration states related to the in-scope systems for ${topic}. Avoid making any modifications to the system.",
-      "agent": "motor",
-      "type": "standard",
-      "intent": "research",
-      "accept_criteria": "Evidence gathered and findings documented.",
-      "checkpointBoundary": true
-    },
-    {
-      "title": "Diagnostic Analysis",
-      "description": "⚠️ READ-ONLY STEP\n\nEvaluate the collected evidence for ${topic} against the hypotheses to identify the root cause or answer. Differentiate between confirmed facts and unresolved questions.",
-      "agent": "motor",
-      "type": "standard",
-      "intent": "research",
-      "accept_criteria": "Root cause or answer identified with supporting evidence. Facts vs hypotheses clearly distinguished."
-    },
-    {
-      "title": "Summary & Recommendation",
-      "description": "⚠️ READ-ONLY STEP\n\nFormulate the final conclusion of the investigation for ${topic}, summarizing the findings and outlining recommendations or next steps. Do not implement any changes.",
-      "agent": "motor",
-      "type": "standard",
-      "intent": "research",
-      "accept_criteria": "Report is complete with findings, root cause, evidence, and recommendations."
-    }
+  "intent_keywords": [
+    "not working",
+    "broken",
+    "failing",
+    "diagnose",
+    "debug",
+    "why",
+    "error",
+    "investigate",
+    "isn't",
+    "not served",
+    "not accessible",
+    "404",
+    "timeout"
   ],
-  "contextTemplate": {},
-  "pre_flight": null,
-  "created_by": "system",
-  "execution_count": 0
+  "status": "active",
+  "version": 4
 }

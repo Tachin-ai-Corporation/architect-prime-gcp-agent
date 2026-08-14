@@ -2,59 +2,21 @@
   "id": "p-plan",
   "name": "Plan and Build",
   "description": "Structured planning and implementation process. Investigates the problem space, designs a plan, implements changes, validates, and commits. Use for any substantial feature, project, or multi-step task that benefits from upfront planning before execution.",
-  "status": "active",
-  "version": 4,
-  "visibility": "standard",
-  "intent_keywords": ["build", "create", "implement", "design", "plan", "set up", "deploy", "launch", "add", "develop", "configure", "install"],
-  "parameters": {
-    "goal": {
-      "description": "What to plan and build — feature, project, or multi-step task",
-      "required": true
-    },
-    "project_id": {
-      "description": "Project context (optional)",
-      "required": false,
-      "default": ""
-    }
-  },
   "narrative": "Planning-and-building goes best in a rhythm: understand the requirement and the baseline first (read the relevant skills before you touch a tool), design the approach and get it approved, then implement ONE component at a time — never the whole thing at once — verifying and committing each before the next, and reporting what remains. Small, verified steps beat a big-bang change.",
-  "steps": [
-    {
-      "title": "Context & Requirements Gathering",
-      "description": "Understand the requirements and baseline state of the target system for ${goal}. Identify constraints, dependencies, and objectives. Read relevant skill docs before using any tools.",
-      "agent": "motor",
-      "type": "standard",
-      "intent": "execute",
-      "accept_criteria": "Requirements and baseline state documented. Constraints and dependencies listed. Enough context to form a plan."
-    },
-    {
-      "title": "Technical Approach Planning",
-      "description": "Design the technical path to achieve ${goal}. Outline the changes, sequence of execution, risk mitigation, and validation criteria. Write the plan as a persistent artifact and present it for approval.",
-      "agent": "motor",
-      "type": "approval",
-      "intent": "execute",
-      "accept_criteria": "Plan exists with approach, risks, and acceptance criteria. Plan is presented for review."
-    },
-    {
-      "title": "Implementation",
-      "description": "Execute the next actionable component of the approved plan for ${goal}. Focus on one component or change at a time — do not attempt the entire implementation in a single step. If the plan has multiple components, implement only the first unfinished one and report what remains.",
-      "agent": "motor",
-      "type": "standard",
-      "intent": "execute",
-      "accept_criteria": "At least one planned component implemented. Changes follow conventions. Report lists remaining work if any."
-    },
-    {
-      "title": "Verification & Completion",
-      "description": "Verify that the implemented changes for ${goal} work as expected and introduce no regressions. Finalize the work by updating the system status and committing the changes.",
-      "agent": "motor",
-      "type": "standard",
-      "intent": "execute",
-      "accept_criteria": "Tests pass. No regressions. Changes committed.",
-      "checkpointBoundary": true
-    }
+  "intent_keywords": [
+    "build",
+    "create",
+    "implement",
+    "design",
+    "plan",
+    "set up",
+    "deploy",
+    "launch",
+    "add",
+    "develop",
+    "configure",
+    "install"
   ],
-  "contextTemplate": {},
-  "pre_flight": null,
-  "created_by": "system",
-  "execution_count": 0
+  "status": "active",
+  "version": 5
 }

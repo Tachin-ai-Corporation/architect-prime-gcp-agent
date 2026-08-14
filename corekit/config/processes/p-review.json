@@ -2,56 +2,15 @@
   "id": "p-review",
   "name": "Code Review",
   "description": "Structured code review process. Reads changes, checks correctness and conventions, and produces a structured verdict. This process is READ-ONLY — it examines code and produces feedback but NEVER modifies anything.",
-  "status": "active",
-  "version": 1,
-  "visibility": "standard",
-  "parameters": {
-    "target": {
-      "description": "What to review — PR URL, branch name, or commit range (e.g. 'main..feat/new-feature')",
-      "required": true
-    },
-    "project_id": {
-      "description": "Project context (optional)",
-      "required": false,
-      "default": ""
-    }
-  },
-  "steps": [
-    {
-      "title": "Read diff and understand changes",
-      "description": "⚠️ READ-ONLY STEP — do NOT modify, fix, or change any code.\n\nUnderstand the changes in ${target}:\n1. Get the full diff (`git diff`, `git log`, or read PR description)\n2. Identify all modified files and the scope of changes\n3. Read the surrounding context for each changed file — understand what the code does, not just what changed\n4. Summarize the intent of the changes: what problem is being solved and how\n5. Note the size and complexity of the change set\n\nOutput: summary of what changed, why, and the scope of impact.",
-      "agent": "motor",
-      "type": "standard",
-      "intent": "research",
-      "accept_criteria": "All changed files identified. Intent of changes understood. Context of surrounding code read. No files were modified."
-    },
-    {
-      "title": "Check correctness and logic",
-      "description": "⚠️ READ-ONLY STEP — do NOT modify, fix, or change any code.\n\nReview ${target} for correctness:\n1. Verify the logic is sound — does the code do what it claims to do?\n2. Check edge cases: null/undefined handling, empty collections, boundary conditions\n3. Look for potential bugs: off-by-one errors, race conditions, resource leaks, unhandled errors\n4. Verify error handling is appropriate — errors should not be silently swallowed\n5. Check that tests cover the new behavior and edge cases adequately\n6. Look for security concerns: injection, auth bypass, data exposure\n\nOutput: list of correctness findings, each with severity (critical/warning/nit) and specific line references.",
-      "agent": "motor",
-      "type": "standard",
-      "intent": "research",
-      "accept_criteria": "Logic reviewed for soundness. Edge cases and error handling checked. Security concerns evaluated. Findings documented with severity and line references. No files were modified."
-    },
-    {
-      "title": "Check conventions and patterns",
-      "description": "⚠️ READ-ONLY STEP — do NOT modify, fix, or change any code.\n\nReview ${target} for consistency with project conventions:\n1. Naming conventions — variables, functions, files follow existing patterns\n2. Code organization — new code placed in appropriate modules/directories\n3. Style consistency — matches the surrounding code style (not just linter rules)\n4. Documentation — public APIs, complex logic, and non-obvious decisions are documented\n5. Dependencies — no unnecessary new dependencies introduced\n6. Performance — no obvious performance regressions (unnecessary loops, missing indexes, unbounded queries)\n\nOutput: list of convention findings, each with severity (warning/nit) and specific suggestions.",
-      "agent": "motor",
-      "type": "standard",
-      "intent": "research",
-      "accept_criteria": "Naming, organization, style, and documentation checked against project conventions. Findings documented with severity. No files were modified."
-    },
-    {
-      "title": "Produce review verdict",
-      "description": "⚠️ READ-ONLY STEP — do NOT modify, fix, or change any code.\n\nProduce a structured review verdict for ${target}:\n\n1. **Verdict**: One of: `APPROVE`, `REQUEST_CHANGES`, or `REJECT`\n   - APPROVE: No critical issues, code is ready to merge (nits are acceptable)\n   - REQUEST_CHANGES: Issues found that should be fixed before merge\n   - REJECT: Fundamental design or approach problems requiring rework\n\n2. **Summary**: 2-3 sentence overview of the changes and review outcome\n\n3. **Critical Issues**: Must-fix items blocking approval (if any)\n\n4. **Suggestions**: Non-blocking improvements (if any)\n\n5. **Nits**: Minor style/preference items (if any)\n\nFormat the verdict clearly so it can be posted as a review comment.\n\nWrite the review verdict as a markdown file in the shared workspace directory (e.g., `review_verdict.md`).",
-      "agent": "motor",
-      "type": "standard",
-      "intent": "research",
-      "accept_criteria": "Review verdict written as a file in the shared workspace. Structured verdict with clear APPROVE/REQUEST_CHANGES/REJECT decision. All findings from previous steps incorporated. Verdict is actionable and specific. No files were modified."
-    }
+  "narrative": "A review examines a change and judges it; it never edits the code. Read the whole diff first and understand what the change is trying to do, then weigh it on two axes: is it correct (does the logic do what it claims, are the edge cases handled), and is it consistent (naming, patterns, and conventions the rest of the codebase already follows). Close with a clear verdict — approve, approve-with-nits, or request-changes — and make every objection specific enough to act on. Reviewing is read-only: you produce feedback, not commits.",
+  "intent_keywords": [
+    "review",
+    "code review",
+    "diff",
+    "pull request",
+    "review the changes",
+    "verdict"
   ],
-  "contextTemplate": {},
-  "pre_flight": null,
-  "created_by": "system",
-  "execution_count": 0
+  "status": "active",
+  "version": 2
 }

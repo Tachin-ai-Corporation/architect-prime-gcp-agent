@@ -2,77 +2,14 @@
   "id": "p-implement-verify",
   "name": "Implement and Verify",
   "description": "Engineer-side process for the improvement loop. Implements changes within scope globs, runs pre-commit gates, provisions a test agent for live verification, exercises canned test missions, opens a PR, and tears down the test agent. Designed to be invoked via delegation from a product-architect agent.",
-  "status": "active",
-  "version": 1,
-  "visibility": "standard",
-  "parameters": {
-    "scope_globs": {
-      "description": "File patterns the implementation may touch (e.g., 'corekit/lib/scheduler.mjs')",
-      "required": true
-    },
-    "acceptance_criteria": {
-      "description": "Testable criteria from the architect's proposal",
-      "required": true
-    },
-    "proposal_link": {
-      "description": "Drive link to the architect's proposal document",
-      "required": false,
-      "default": ""
-    },
-    "branch_slug": {
-      "description": "Short slug for the branch name (e.g., 'dedup-scheduler')",
-      "required": false,
-      "default": "improvement"
-    }
-  },
-  "steps": [
-    {
-      "title": "Set up workspace and implement changes",
-      "description": "Review the proposal document (${proposal_link}) to understand the change and its rationale. Set up the workspace with a feature branch named after ${branch_slug}. Read and understand all files within scope (${scope_globs}). Implement the improvement strictly within scope — do not modify files outside the declared globs. Write clear, atomic commits explaining why each change was made.\n\nScope constraint: ${scope_globs}\nAcceptance criteria: ${acceptance_criteria}\n\nOutput: list of files changed with a summary of each change.",
-      "agent": "motor",
-      "type": "standard",
-      "intent": "execute",
-      "accept_criteria": "Changes implemented within scope globs. Feature branch created. All changes committed with clear messages. No files outside scope were modified.",
-      "checkpointBoundary": true
-    },
-    {
-      "title": "Run pre-commit validation",
-      "description": "Run all applicable pre-commit checks on the implementation: JSON validity for any changed .json files, contract validation if contracts were modified, the full test suite, manifest integrity if manifests were changed. Verify that only in-scope files were modified and no debug artifacts (stray logging, debugger statements, unresolved TODOs) were introduced.\n\nIf any check fails, fix the issue and re-run. Do not proceed with failures.\n\nOutput: gate results (pass/fail for each check), test output summary.",
-      "agent": "motor",
-      "type": "standard",
-      "intent": "execute",
-      "accept_criteria": "All pre-commit gates pass: tests pass, no out-of-scope changes, no debug artifacts. Gate results documented.",
-      "checkpointBoundary": true
-    },
-    {
-      "title": "Provision and verify test agent",
-      "description": "Push the feature branch to remote. Provision a temporary test agent with the engineer specialty running the feature branch code. Wait for the agent to come online, then verify it is healthy. Retry verification up to 5 times with reasonable intervals.\n\nIf provisioning fails, check prerequisites and retry once. If health checks fail after all retries, report blocked.\n\nOutput: test agent name, online status, verification results.",
-      "agent": "motor",
-      "type": "standard",
-      "intent": "execute",
-      "accept_criteria": "Test agent provisioned and online. Health checks pass. Agent is running the feature branch code.",
-      "checkpointBoundary": true
-    },
-    {
-      "title": "Exercise test agent with canned missions",
-      "description": "Send three canned test missions to the test agent to validate end-to-end behavior:\n\n**Mission 1 — Simple Q&A:** Send a direct question and verify a timely response. Confirm a mission was created and completed.\n\n**Mission 2 — Process execution:** Ask the test agent to execute a process. Verify it loads and completes at least the first checkpoint.\n\n**Mission 3 — Memory round-trip:** Ask the test agent to write a test fact to Core Memory and read it back. Verify the write and retrieval succeeded.\n\nFor each mission, check completion logs and error logs. If a mission fails, fix the code, push the fix, re-deploy to the test agent, and retry (max 3 iterations). If still failing, report blocked with evidence.\n\nOutput: mission results (pass/fail for each), evidence from logs.",
-      "agent": "motor",
-      "type": "standard",
-      "intent": "execute",
-      "accept_criteria": "All 3 canned missions completed successfully. Evidence collected from logs. Any failures were fixed and re-verified.",
-      "checkpointBoundary": true
-    },
-    {
-      "title": "Open PR and teardown test agent",
-      "description": "Open a pull request with the feature branch targeting main. Include the scope block, test-agent evidence (mission IDs), and a QA summary in the PR body. Confirm CI passes.\n\nTear down the test agent — never leave a branch-ref agent running. If teardown fails, retry and escalate to force-removal.\n\nSend the delegation result back to the architect agent with: PR URL, test evidence, QA summary, and final status.\n\nOutput: PR URL, CI status, teardown confirmation, delegation result sent.",
-      "agent": "motor",
-      "type": "standard",
-      "intent": "execute",
-      "accept_criteria": "PR opened with scope block and test evidence. CI green. Test agent torn down. Delegation result sent to the architect agent."
-    }
+  "narrative": "This is the engineer's half of an improvement loop, usually arriving by delegation with a proposal. Work on a feature branch scoped to exactly what the proposal covers and nothing wider. Implement, then run every pre-commit gate that applies (config validity, contract validation, tests) before you trust the change. Prove it live: stand up a temporary test agent on the branch and exercise it end-to-end with a few canned missions, not just unit checks. Then open a pull request that carries the scope, the test evidence, and a QA summary — and tear the test agent down. The discipline is: scope tight, verify live, leave a reviewable trail.",
+  "intent_keywords": [
+    "implement and verify",
+    "feature branch",
+    "pre-commit",
+    "open a pr",
+    "engineer the change"
   ],
-  "contextTemplate": {},
-  "pre_flight": null,
-  "created_by": "system",
-  "execution_count": 0
+  "status": "active",
+  "version": 2
 }

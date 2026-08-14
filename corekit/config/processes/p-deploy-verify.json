@@ -2,62 +2,15 @@
   "id": "p-deploy-verify",
   "name": "Deployment Verification",
   "description": "Post-deployment verification process. Health checks, smoke tests, and regression checks to confirm a deployment is working correctly. This process is READ-ONLY — it verifies and reports but NEVER fixes issues or modifies systems.",
-  "status": "active",
-  "version": 1,
-  "visibility": "standard",
-  "parameters": {
-    "target": {
-      "description": "What was deployed — service name, version, or deployment identifier",
-      "required": true
-    },
-    "environment": {
-      "description": "Deployment environment",
-      "required": false,
-      "default": "production"
-    },
-    "project_id": {
-      "description": "Project context (optional)",
-      "required": false,
-      "default": ""
-    }
-  },
-  "steps": [
-    {
-      "title": "Health check",
-      "description": "⚠️ READ-ONLY STEP — do NOT modify, fix, restart, or change anything.\n\nVerify ${target} is running in ${environment}:\n1. Check that the service/process is up and responding (curl health endpoints, check process status)\n2. Verify the correct version is deployed (check version endpoints, deployment labels, or container tags)\n3. Check resource utilization — CPU, memory, disk are within normal ranges\n4. Verify connectivity to dependencies (databases, APIs, queues) — read-only checks only\n5. Check for error spikes in recent logs (last 5-10 minutes)\n\nDo NOT restart services or modify configurations. Only observe and report.\n\nOutput: health status for each check (PASS/FAIL/WARN) with details.",
-      "agent": "motor",
-      "type": "standard",
-      "intent": "research",
-      "accept_criteria": "Service is confirmed running or failure is documented. Version is verified. Resource utilization checked. Dependency connectivity verified. No systems were modified."
-    },
-    {
-      "title": "Smoke test",
-      "description": "⚠️ READ-ONLY STEP — do NOT modify, fix, restart, or change anything.\n\nTest core functionality of ${target} in ${environment}:\n1. Exercise the primary user-facing endpoints or functions (read-only operations)\n2. Verify responses are correct — expected status codes, response formats, data integrity\n3. Check latency — responses should be within acceptable thresholds\n4. Test authentication/authorization flows if applicable (verify they work, don't change them)\n5. Verify any critical integrations are functioning (webhooks, event processing, data sync)\n\nUse only read-only operations (GET requests, read queries). Do NOT write test data to production.\n\nOutput: smoke test results for each core function (PASS/FAIL) with response details.",
-      "agent": "motor",
-      "type": "standard",
-      "intent": "research",
-      "accept_criteria": "Core functionality tested with read-only operations. Each test has a PASS/FAIL result with details. Latency is within acceptable range. No data was written or modified.",
-      "checkpointBoundary": true
-    },
-    {
-      "title": "Regression check",
-      "description": "⚠️ READ-ONLY STEP — do NOT modify, fix, restart, or change anything.\n\nCheck for regressions in ${target} after deployment to ${environment}:\n1. Compare current behavior against known previous behavior (check project context for baseline)\n2. Verify that features which worked before the deployment still work\n3. Check error rates — compare current error rate against pre-deployment baseline\n4. Look for new error types or warning patterns in logs\n5. Verify data consistency — no corruption or missing records\n6. Check that configuration values match expectations (not overwritten by deployment)\n\nDo NOT fix any regressions found — only document them.\n\nOutput: regression check results (PASS/FAIL) with any regressions detailed.",
-      "agent": "motor",
-      "type": "standard",
-      "intent": "research",
-      "accept_criteria": "Previous functionality verified against baseline. Error rates compared. No new error types or regressions, or regressions are clearly documented. No systems were modified."
-    },
-    {
-      "title": "Produce verification report",
-      "description": "⚠️ READ-ONLY STEP — do NOT modify, fix, restart, or change anything.\n\nProduce a structured deployment verification report for ${target} in ${environment}:\n\n1. **Overall Verdict**: One of: `HEALTHY`, `DEGRADED`, or `FAILED`\n   - HEALTHY: All checks pass, deployment is good\n   - DEGRADED: Some non-critical issues detected, service is functional but needs attention\n   - FAILED: Critical issues detected, deployment may need rollback\n\n2. **Health Check Results**: Status of each health check\n3. **Smoke Test Results**: Status of each functional test\n4. **Regression Results**: Any regressions detected\n5. **Action Items**: What needs attention (but do NOT take action)\n\nStore results in project context if project_id is available.\n\nWrite the verification report as a markdown file in the shared workspace directory (e.g., `deploy_verify_report.md`).\n\nIMPORTANT: Do NOT attempt to fix issues or roll back. Only report the deployment status.",
-      "agent": "motor",
-      "type": "standard",
-      "intent": "research",
-      "accept_criteria": "Verification report written as a file in the shared workspace. Report has clear HEALTHY/DEGRADED/FAILED verdict. All check results included. Action items listed if applicable. No systems were modified."
-    }
+  "narrative": "Verification confirms a deployment is healthy; it never fixes what it finds. Check three things in order: that the thing is actually running (health), that its core functions work (a smoke test of the primary paths), and that nothing that used to work broke (regression). Report a clear pass or fail with the evidence for each. If something is wrong, that is a finding for someone else to act on — verification stays read-only, so a broken check becomes a report, not a repair.",
+  "intent_keywords": [
+    "verify the deployment",
+    "post-deploy",
+    "smoke test",
+    "regression check",
+    "confirm the deploy",
+    "deployment healthy"
   ],
-  "contextTemplate": {},
-  "pre_flight": null,
-  "created_by": "system",
-  "execution_count": 0
+  "status": "active",
+  "version": 2
 }

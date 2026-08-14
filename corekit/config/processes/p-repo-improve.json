@@ -2,78 +2,14 @@
   "id": "p-repo-improve",
   "name": "Repository Improvement Cycle",
   "description": "Audit the codebase against canon, propose the single highest-value improvement, delegate implementation to engineering, and verify the result.",
-  "status": "active",
-  "version": 2,
-  "visibility": "standard",
-  "parameters": {
-    "focus_area": {
-      "description": "Audit focus area: brain, lib, daemon, or infra",
-      "required": false,
-      "default": "brain"
-    },
-    "project_id": {
-      "description": "Project context for improvement tracking",
-      "required": false,
-      "default": ""
-    }
-  },
-  "steps": [
-    {
-      "title": "Understand current standards",
-      "description": "Review the product and brain canon documents. Recall any prior improvement learnings from memory and responsibility history.",
-      "agent": "motor",
-      "type": "standard",
-      "intent": "research",
-      "accept_criteria": "Canon invariants and quality axes are understood. Prior learnings reviewed."
-    },
-    {
-      "title": "Audit the focus area",
-      "description": "Inspect the current focus area of the codebase. Identify gaps, inefficiencies, structural issues, or canon violations. Score findings by impact and feasibility. Select the single highest-value improvement.",
-      "agent": "motor",
-      "type": "standard",
-      "intent": "research",
-      "accept_criteria": "Focus area audited. Findings ranked. Single highest-value improvement selected with clear justification.",
-      "checkpointBoundary": true
-    },
-    {
-      "title": "Write improvement proposal",
-      "description": "Create a structured proposal: what to change, why it matters, expected impact, scope, acceptance criteria, risk notes, and an implementation outline for the engineer.",
-      "agent": "motor",
-      "type": "standard",
-      "intent": "execute",
-      "accept_criteria": "Proposal document created with scope, justification, acceptance criteria, and implementation outline.",
-      "checkpointBoundary": true
-    },
-    {
-      "title": "Get approval",
-      "description": "Present the proposal for operator approval before proceeding with implementation.",
-      "type": "approval_gate",
-      "approval_message": "🏗️ **Improvement proposed**: Review the proposal above. Approve to delegate implementation to an engineer, or reject to skip this cycle.",
-      "agent": "motor",
-      "intent": "approval_gate",
-      "accept_criteria": "Operator has approved or rejected the proposal."
-    },
-    {
-      "title": "Delegate implementation",
-      "description": "Delegate the approved improvement to an engineer on the project team. Provide the proposal, scope, and acceptance criteria.",
-      "agent": "motor",
-      "type": "delegation",
-      "specialty": "engineer",
-      "intent": "delegation",
-      "accept_criteria": "Delegation sent to engineer. Implementation work initiated.",
-      "checkpointBoundary": true
-    },
-    {
-      "title": "Verify and learn",
-      "description": "Review the engineer's work against canon standards. Verify the improvement was delivered as proposed. Record what was learned for future improvement cycles.",
-      "agent": "motor",
-      "type": "standard",
-      "intent": "execute",
-      "accept_criteria": "Results verified against canon. Learnings recorded for future cycles."
-    }
+  "narrative": "This cycle turns \"the codebase could be better\" into one shipped, verified improvement. Ground yourself first in the canon and in what past cycles already learned, so you do not re-propose a solved problem. Audit the focus area and score findings by impact and feasibility — the goal is the single highest-value change, not a laundry list. Write a real proposal (what, why, expected impact, scope, acceptance criteria, risks) and get operator approval before building. Delegate the implementation to an engineer with the scope and criteria in hand, then verify their work against the standard and record what you learned for the next cycle. One high-value change, approved before it is built, verified after.",
+  "intent_keywords": [
+    "improve the repo",
+    "improvement cycle",
+    "repo improvement",
+    "highest-value improvement",
+    "propose an improvement"
   ],
-  "contextTemplate": {},
-  "pre_flight": null,
-  "created_by": "system",
-  "execution_count": 0
+  "status": "active",
+  "version": 3
 }
