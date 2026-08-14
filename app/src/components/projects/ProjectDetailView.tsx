@@ -376,7 +376,7 @@ export function ProjectDetailView({ primeId, projectId }: ProjectDetailViewProps
                     onClick={() => handleLinkProcess(proc.id)}
                   >
                     <span className={styles.processDropdownName}>{proc.name}</span>
-                    <span className={styles.processDropdownMeta}>v{proc.version} · {proc.steps?.length ?? 0} steps</span>
+                    <span className={styles.processDropdownMeta}>v{proc.version}</span>
                   </button>
                 ))}
               </div>
@@ -400,7 +400,7 @@ export function ProjectDetailView({ primeId, projectId }: ProjectDetailViewProps
                 </div>
                 <div className={styles.processCardMeta}>
                   <span className={styles.processVersionBadge}>v{proc.version}</span>
-                  <span className={styles.processCardSteps}>{proc.steps?.length ?? 0} steps</span>
+                  <span className={styles.processCardSteps}>{proc.status}</span>
                 </div>
               </div>
             ))}

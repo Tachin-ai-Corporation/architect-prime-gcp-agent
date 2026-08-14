@@ -328,6 +328,18 @@
   letter-spacing: -0.01em;
 }
 
+/* ---- Narrative prose ---- */
+.narrative {
+  font-size: 15px;
+  color: var(--mist);
+  line-height: 1.7;
+  white-space: pre-wrap;
+  padding: 20px;
+  background: var(--charcoal);
+  border: 1px solid rgba(86, 99, 115, 0.2);
+  border-radius: var(--radius-sm);
+}
+
 /* ================================================================
    Step Timeline
    ================================================================ */

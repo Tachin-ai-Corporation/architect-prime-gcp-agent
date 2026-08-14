@@ -2,20 +2,9 @@
 
 import React, { useState, useCallback } from "react";
 import { api } from "@/lib/api";
-import { StepEditor } from "./StepEditor";
-import { ParamEditor } from "./ParamEditor";
-import type { ProcessSummary, StepDef, ParamDef } from "./types";
+import type { ProcessSummary } from "./types";
 import styles from "@/app/p/[id]/processes/page.module.css";
 import { Modal } from "@/components/ui/Modal";
-
-const BLANK_STEP: StepDef = {
-  title: "",
-  description: "",
-  agent: "",
-  type: "standard",
-  optional: false,
-  checkpointBoundary: false,
-};
 
 interface CreateProcessModalProps {
   primeId: string;
@@ -27,26 +16,13 @@ export function CreateProcessModal({ primeId, onClose, onCreated }: CreateProces
   const [id, setId] = useState("");
   const [name, setName] = useState("");
   const [description, setDescription] = useState("");
+  const [narrative, setNarrative] = useState("");
   const [intentKeywords, setIntentKeywords] = useState("");
-  const [steps, setSteps] = useState<StepDef[]>([{ ...BLANK_STEP }]);
-  const [params, setParams] = useState<ParamDef[]>([]);
   const [creating, setCreating] = useState(false);
 
   const handleCreate = useCallback(async () => {
-    if (!id.trim() || !name.trim() || steps.length === 0) return;
+    if (!id.trim() || !name.trim() || !narrative.trim()) return;
     setCreating(true);
-
-    // Build parameters object
-    const parametersObj: Record<string, Omit<ParamDef, "key">> = {};
-    params.forEach((p) => {
-      if (p.key.trim()) {
-        parametersObj[p.key.trim()] = {
-          type: p.type,
-          default: p.default,
-          description: p.description,
-        };
-      }
-    });
 
     const result = await api<{ process: ProcessSummary }>(`/api/primes/${primeId}/processes`, {
       method: "POST",
@@ -54,10 +30,9 @@ export function CreateProcessModal({ primeId, onClose, onCreated }: CreateProces
       body: JSON.stringify({
         id: id.trim(),
         name: name.trim(),
-        description,
+        description: description.trim(),
+        narrative: narrative.trim(),
         intent_keywords: intentKeywords.split(",").map((k) => k.trim()).filter(Boolean),
-        steps,
-        parameters: Object.keys(parametersObj).length > 0 ? parametersObj : undefined,
       }),
     });
     if (result?.process) {
@@ -65,7 +40,7 @@ export function CreateProcessModal({ primeId, onClose, onCreated }: CreateProces
       onClose();
     }
     setCreating(false);
-  }, [id, name, description, intentKeywords, steps, params, primeId, onCreated, onClose]);
+  }, [id, name, description, narrative, intentKeywords, primeId, onCreated, onClose]);
 
   return (
     <Modal onClose={onClose} overlayClassName={styles.overlay} className={styles.modal}>
@@ -80,7 +55,7 @@ export function CreateProcessModal({ primeId, onClose, onCreated }: CreateProces
             className={styles.fieldInput}
             value={id}
             onChange={(e) => setId(e.target.value)}
-            placeholder="e.g. deploy-agent-v2"
+            placeholder="e.g. ship-a-website"
           />
 
           <label className={styles.fieldLabel}>Name</label>
@@ -96,8 +71,17 @@ export function CreateProcessModal({ primeId, onClose, onCreated }: CreateProces
             className={styles.fieldTextarea}
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            rows={3}
-            placeholder="What does this process do?"
+            rows={2}
+            placeholder="One line: what kind of work is this?"
+          />
+
+          <label className={styles.fieldLabel}>Narrative</label>
+          <textarea
+            className={styles.fieldTextarea}
+            value={narrative}
+            onChange={(e) => setNarrative(e.target.value)}
+            rows={8}
+            placeholder="How we've done this kind of work well before — the approach, in prose."
           />
 
           <label className={styles.fieldLabel}>Intent Keywords (comma-separated)</label>
@@ -107,22 +91,6 @@ export function CreateProcessModal({ primeId, onClose, onCreated }: CreateProces
             onChange={(e) => setIntentKeywords(e.target.value)}
             placeholder="e.g. deploy, build, compile, snapshot"
           />
-
-          {/* ---- Step Builder ---- */}
-          <label className={styles.fieldLabel}>Steps</label>
-          <StepEditor
-            isEditing={true}
-            steps={steps}
-            onChange={setSteps}
-          />
-
-          {/* ---- Parameter Builder ---- */}
-          <label className={styles.fieldLabel}>Parameters (Optional)</label>
-          <ParamEditor
-            isEditing={true}
-            parameters={params}
-            onChange={setParams}
-          />
         </div>
 
         <div className={styles.modalFooter}>
@@ -130,7 +98,7 @@ export function CreateProcessModal({ primeId, onClose, onCreated }: CreateProces
           <button
             className={styles.createBtn}
             onClick={handleCreate}
-            disabled={!id.trim() || !name.trim() || steps.length === 0 || !steps[0].title.trim() || creating}
+            disabled={!id.trim() || !name.trim() || !narrative.trim() || creating}
           >
             {creating ? "Creating…" : "Create Process"}
           </button>

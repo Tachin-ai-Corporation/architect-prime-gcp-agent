@@ -14,13 +14,13 @@ export interface ProcessSummary {
   id: string;
   name: string;
   description: string;
+  narrative?: string;
   status: "active" | "deprecated";
   version: number;
-  execution_count: number;
-  steps: { title: string; agent?: string }[];
   subscribers?: string[];
   intent_keywords?: string[];
-  created_at: string;
+  updated_at?: string;
+  updated_by?: string;
 }
 
 interface ProcessesResponse {
@@ -133,7 +133,6 @@ export function AgentProcesses({ primeId, agentEmail }: AgentProcessesProps) {
       <div className={styles.itemGrid}>
       {displayed.map((proc) => {
         const subscribed = resolveSubscribed(proc);
-        const stepCount = proc.steps?.length ?? 0;
 
         return (
           <div
@@ -179,13 +178,9 @@ export function AgentProcesses({ primeId, agentEmail }: AgentProcessesProps) {
 
             {/* Meta */}
             <div className={styles.cardMeta}>
-              <span className={styles.metaItem}>
-                📝 {stepCount} step{stepCount !== 1 ? "s" : ""}
-              </span>
-              <span className={styles.metaItem}>
-                🔄 {proc.execution_count} run
-                {proc.execution_count !== 1 ? "s" : ""}
-              </span>
+              {proc.updated_by && (
+                <span className={styles.metaItem}>👤 {proc.updated_by}</span>
+              )}
 
               {/* Subscribe / Unsubscribe button */}
               <button

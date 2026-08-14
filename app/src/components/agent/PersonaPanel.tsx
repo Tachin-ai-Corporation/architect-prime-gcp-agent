@@ -42,7 +42,6 @@ interface Responsibility {
   min_spacing_minutes: number;
   instruction: string;
   has_process: boolean;
-  process_steps: number;
   source: string;
 }
 
@@ -134,7 +133,7 @@ export function PersonaPanel({ primeId, agentName, workspaceFiles, workspaceLoad
       lines.push(`Schedule: ${r.schedule}`);
       lines.push(`Enabled: ${r.enabled ? "yes" : "no"}`);
       if (r.min_spacing_minutes) lines.push(`Min spacing: ${r.min_spacing_minutes} min`);
-      if (r.has_process) lines.push(`Process: ${r.process_steps} steps`);
+      if (r.has_process) lines.push("Process: attached");
       lines.push(`Source: ${r.source}`);
       lines.push("");
       lines.push("--- Instruction ---");

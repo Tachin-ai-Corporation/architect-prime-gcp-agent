@@ -44,12 +44,12 @@ export interface ProcessSummary {
   id: string;
   name: string;
   description: string;
+  narrative?: string;
   status: "active" | "deprecated";
   version: number;
-  execution_count: number;
-  created_by: string;
-  created_at: string;
-  steps: { title: string }[];
+  intent_keywords?: string[];
+  updated_at?: string;
+  updated_by?: string;
 }
 
 export interface PromotionEntry {

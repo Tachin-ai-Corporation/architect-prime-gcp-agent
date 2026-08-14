@@ -51,7 +51,7 @@ export function ProcessListView({ primeId, router }: ProcessListViewProps) {
         <span className={styles.countPill}>{processes.length} total</span>
       </div>
       <div className={styles.pgSub}>
-        Define repeatable workflows with ordered steps, parameters, and context templates
+        Narrative playbooks — how we&apos;ve done this kind of work well before
       </div>
 
       {/* ---- Grid ---- */}
@@ -76,9 +76,9 @@ export function ProcessListView({ primeId, router }: ProcessListViewProps) {
 
             <div className={styles.cardMeta}>
               <span className={styles.versionBadge}>v{proc.version}</span>
-              <span className={styles.cardMetaItem}>{proc.steps?.length ?? 0} steps</span>
-              <span className={styles.cardMetaItem}>⚡ {proc.execution_count} runs</span>
-              <span className={styles.cardMetaItem}>by {proc.created_by}</span>
+              {proc.updated_by && (
+                <span className={styles.cardMetaItem}>by {proc.updated_by}</span>
+              )}
             </div>
           </button>
         ))}

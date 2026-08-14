@@ -3,10 +3,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import type { useRouter } from "next/navigation";
 import { api } from "@/lib/api";
-import { StepEditor } from "./StepEditor";
-import { ParamEditor } from "./ParamEditor";
-import { ContextEditor } from "@/components/projects/ContextEditor";
-import type { ProcessDetail, StepDef, ParamDef } from "./types";
+import type { ProcessDetail } from "./types";
 import styles from "@/app/p/[id]/processes/page.module.css";
 
 interface ProcessDetailViewProps {
@@ -23,9 +20,8 @@ export function ProcessDetailView({ primeId, processId, router }: ProcessDetailV
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState("");
   const [editDesc, setEditDesc] = useState("");
+  const [editNarrative, setEditNarrative] = useState("");
   const [editIntentKeywords, setEditIntentKeywords] = useState("");
-  const [editSteps, setEditSteps] = useState<StepDef[]>([]);
-  const [editParams, setEditParams] = useState<ParamDef[]>([]);
   const [saving, setSaving] = useState(false);
 
   /* ---- Fetch process ---- */
@@ -51,16 +47,8 @@ export function ProcessDetailView({ primeId, processId, router }: ProcessDetailV
     if (!process) return;
     setEditName(process.name);
     setEditDesc(process.description);
+    setEditNarrative(process.narrative || "");
     setEditIntentKeywords((process.intent_keywords || []).join(", "));
-    setEditSteps(process.steps.map((s) => ({ ...s })));
-    // Convert parameters record to array
-    const paramArr: ParamDef[] = Object.entries(process.parameters || {}).map(([key, param]) => ({
-      key,
-      type: (param as ParamDef).type,
-      default: (param as ParamDef).default,
-      description: (param as ParamDef).description,
-    }));
-    setEditParams(paramArr);
     setIsEditing(true);
   }, [process]);
 
@@ -73,29 +61,17 @@ export function ProcessDetailView({ primeId, processId, router }: ProcessDetailV
     if (!process) return;
     setSaving(true);
 
-    const parametersObj: Record<string, Omit<ParamDef, "key">> = {};
-    editParams.forEach((p) => {
-      if (p.key.trim()) {
-        parametersObj[p.key.trim()] = {
-          type: p.type,
-          default: p.default,
-          description: p.description,
-        };
-      }
-    });
-
     const result = await api<{ process: ProcessDetail }>(`/api/primes/${primeId}/processes/${processId}`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
         name: editName.trim(),
-        description: editDesc,
+        description: editDesc.trim(),
+        narrative: editNarrative.trim(),
         intent_keywords: editIntentKeywords
           .split(",")
           .map((k) => k.trim())
           .filter(Boolean),
-        steps: editSteps,
-        parameters: parametersObj,
       }),
     });
 
@@ -104,7 +80,7 @@ export function ProcessDetailView({ primeId, processId, router }: ProcessDetailV
     }
     setIsEditing(false);
     setSaving(false);
-  }, [process, editName, editDesc, editIntentKeywords, editSteps, editParams, primeId, processId]);
+  }, [process, editName, editDesc, editNarrative, editIntentKeywords, primeId, processId]);
 
   /* ---- Deprecate ---- */
   const handleDeprecate = useCallback(async () => {
@@ -146,9 +122,6 @@ export function ProcessDetailView({ primeId, processId, router }: ProcessDetailV
     );
   }
 
-  const contextEntries = Object.entries(process.contextTemplate || {});
-  const changelog = process.changelog || [];
-
   return (
     <>
       {/* ---- Header ---- */}
@@ -189,11 +162,11 @@ export function ProcessDetailView({ primeId, processId, router }: ProcessDetailV
               className={`${styles.fieldTextarea} ${styles.editDescTextarea}`}
               value={editDesc}
               onChange={(e) => setEditDesc(e.target.value)}
-              rows={3}
-              placeholder="Process description"
+              rows={2}
+              placeholder="One line: what kind of work is this?"
             />
             <div style={{ marginTop: 12, marginBottom: 16 }}>
-              <label style={{ display: "block", fontSize: 12, color: "#AEB8C4", marginBottom: 4 }}>
+              <label style={{ display: "block", fontSize: 12, color: "var(--mist)", marginBottom: 4 }}>
                 Intent Keywords (comma-separated, matches user prompt to auto-route this process)
               </label>
               <input
@@ -219,18 +192,9 @@ export function ProcessDetailView({ primeId, processId, router }: ProcessDetailV
                   alignItems: "center",
                 }}
               >
-                <span style={{ fontSize: 12, color: "#AEB8C4" }}>Intent keywords:</span>
+                <span style={{ fontSize: 12, color: "var(--mist)" }}>Intent keywords:</span>
                 {process.intent_keywords.map((k) => (
-                  <span
-                    key={k}
-                    style={{
-                      background: "#2A3644",
-                      color: "#AEB8C4",
-                      padding: "2px 8px",
-                      borderRadius: 4,
-                      fontSize: 11,
-                    }}
-                  >
+                  <span key={k} className={styles.versionBadge}>
                     {k}
                   </span>
                 ))}
@@ -239,12 +203,18 @@ export function ProcessDetailView({ primeId, processId, router }: ProcessDetailV
           </>
         )}
 
-        <div className={styles.detailMetaRow}>
-          <span className={styles.detailMetaItem}>⚡ {process.execution_count} executions</span>
-          <span className={styles.detailMetaItem}>👤 {process.created_by}</span>
-          <span className={styles.detailMetaItem}>📅 {new Date(process.created_at).toLocaleDateString()}</span>
-          {process.visibility && <span className={styles.detailMetaItem}>👁 {process.visibility}</span>}
-        </div>
+        {(process.updated_by || process.updated_at) && !isEditing && (
+          <div className={styles.detailMetaRow}>
+            {process.updated_by && (
+              <span className={styles.detailMetaItem}>👤 {process.updated_by}</span>
+            )}
+            {process.updated_at && (
+              <span className={styles.detailMetaItem}>
+                📅 {new Date(process.updated_at).toLocaleDateString()}
+              </span>
+            )}
+          </div>
+        )}
 
         {/* ---- Action buttons ---- */}
         {isEditing && (
@@ -262,7 +232,7 @@ export function ProcessDetailView({ primeId, processId, router }: ProcessDetailV
             <button
               className={styles.createBtn}
               onClick={handleSave}
-              disabled={saving || !editName.trim() || editSteps.length === 0}
+              disabled={saving || !editName.trim() || !editNarrative.trim()}
             >
               {saving ? "Saving…" : "Save Changes"}
             </button>
@@ -270,77 +240,26 @@ export function ProcessDetailView({ primeId, processId, router }: ProcessDetailV
         )}
       </div>
 
-      {/* ---- Steps ---- */}
+      {/* ---- Narrative ---- */}
       <div className={styles.section}>
         <div className={styles.sectionHeader}>
-          <h2 className={styles.sectionTitle}>Steps</h2>
-          <span className={styles.countPill}>
-            {isEditing ? editSteps.length : process.steps.length} steps
-          </span>
+          <h2 className={styles.sectionTitle}>Narrative</h2>
         </div>
 
-        <StepEditor
-          isEditing={isEditing}
-          steps={isEditing ? editSteps : process.steps}
-          onChange={isEditing ? setEditSteps : undefined}
-        />
+        {isEditing ? (
+          <textarea
+            className={styles.fieldTextarea}
+            value={editNarrative}
+            onChange={(e) => setEditNarrative(e.target.value)}
+            rows={12}
+            placeholder="How we've done this kind of work well before — the approach, in prose."
+          />
+        ) : process.narrative ? (
+          <div className={styles.narrative}>{process.narrative}</div>
+        ) : (
+          <div className={styles.emptySection}>No narrative yet.</div>
+        )}
       </div>
-
-      {/* ---- Parameters ---- */}
-      <div className={styles.section}>
-        <div className={styles.sectionHeader}>
-          <h2 className={styles.sectionTitle}>Parameters</h2>
-        </div>
-
-        <ParamEditor
-          isEditing={isEditing}
-          parameters={
-            isEditing
-              ? editParams
-              : Object.entries(process.parameters || {}).map(([key, param]) => ({
-                  key,
-                  type: param.type,
-                  default: param.default,
-                  description: param.description,
-                }))
-          }
-          onChange={isEditing ? setEditParams : undefined}
-        />
-      </div>
-
-      {/* ---- Context Template ---- */}
-      {contextEntries.length > 0 && (
-        <div className={styles.section}>
-          <div className={styles.sectionHeader}>
-            <h2 className={styles.sectionTitle}>Context Template</h2>
-          </div>
-          <ContextEditor context={process.contextTemplate} onChange={() => {}} readOnly />
-        </div>
-      )}
-
-      {/* ---- Changelog ---- */}
-      {changelog.length > 0 && (
-        <div className={styles.section}>
-          <div className={styles.sectionHeader}>
-            <h2 className={styles.sectionTitle}>Changelog</h2>
-          </div>
-          <div className={styles.changelog}>
-            {[...changelog].reverse().map((entry, i) => (
-              <div key={i} className={styles.changelogItem}>
-                <div>
-                  <span className={styles.changelogVersion}>v{entry.version}</span>
-                  <span className={styles.changelogTime}>
-                    {new Date(entry.timestamp).toLocaleDateString()}{" "}
-                    {new Date(entry.timestamp).toLocaleTimeString()}
-                  </span>
-                </div>
-                <div className={styles.changelogSummary}>{entry.summary}</div>
-                <div className={styles.changelogAuthor}>by {entry.author}</div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
     </>
   );
 }

@@ -41,7 +41,6 @@ interface Responsibility {
   min_spacing_minutes: number;
   instruction: string;
   has_process: boolean;
-  process_steps: number;
   source: string;
 }
 

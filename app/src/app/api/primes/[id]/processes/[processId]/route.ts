@@ -28,9 +28,9 @@ export async function GET(_req: NextRequest, ctx: RouteContext) {
 }
 
 /**
- * PUT /api/primes/[id]/processes/[processId] — Update process
- * Body: partial update. Deep merge on steps, parameters, contextTemplate.
- * Auto-increments version. Appends to changelog.
+ * PUT /api/primes/[id]/processes/[processId] — Update process (narrative playbook)
+ * Body: partial update over { name, description, narrative, intent_keywords, status }.
+ * Auto-increments version and stamps updated_at / updated_by.
  */
 export async function PUT(req: NextRequest, ctx: RouteContext) {
   try {
@@ -48,40 +48,17 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
     const now = new Date().toISOString();
     const newVersion = (existingData.version || 1) + 1;
 
-
-    // Deep merge parameters at key level if provided
-    if (body.parameters && typeof body.parameters === "object") {
-      body.parameters = {
-        ...(existingData.parameters || {}),
-        ...body.parameters,
-      };
-    }
-
-    // Deep merge contextTemplate at entry level if provided
-    if (body.contextTemplate && typeof body.contextTemplate === "object") {
-      body.contextTemplate = {
-        ...(existingData.contextTemplate || {}),
-        ...body.contextTemplate,
-      };
-    }
-
-    // Build changelog entry
-    const changelogEntry = {
-      version: newVersion,
-      timestamp: now,
-      author: "operator",
-      summary: body.changelog_summary || "Updated process",
-    };
-
-    const update = {
-      ...body,
+    // Whitelist the narrative shape — no step/parameter machinery is written.
+    const update: Record<string, unknown> = {
       version: newVersion,
       updated_at: now,
-      changelog: [...(existingData.changelog || []), changelogEntry],
+      updated_by: "operator",
     };
-
-    // Remove transient fields
-    delete update.changelog_summary;
+    if (typeof body.name === "string") update.name = body.name;
+    if (typeof body.description === "string") update.description = body.description;
+    if (typeof body.narrative === "string") update.narrative = body.narrative;
+    if (Array.isArray(body.intent_keywords)) update.intent_keywords = body.intent_keywords;
+    if (body.status === "active" || body.status === "deprecated") update.status = body.status;
 
     await docRef.update(update);
 

@@ -36,17 +36,17 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
 }
 
 /**
- * POST /api/primes/[id]/processes — Create a new process
- * Body: { id, name, description, steps, parameters?, contextTemplate? }
+ * POST /api/primes/[id]/processes — Create a new process (narrative playbook)
+ * Body: { id, name, description?, narrative, intent_keywords? }
  */
 export async function POST(req: NextRequest, ctx: RouteContext) {
   try {
     const { id } = await ctx.params;
     const body = await req.json();
 
-    if (!body.id || !body.name || !body.description || !body.steps) {
+    if (!body.id || !body.name || !body.narrative) {
       return NextResponse.json(
-        { error: "Missing required fields: id, name, description, steps" },
+        { error: "Missing required fields: id, name, narrative" },
         { status: 400 }
       );
     }
@@ -55,18 +55,16 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
 
     const process = {
       name: body.name,
-      description: body.description,
+      description: body.description || "",
+      narrative: body.narrative,
       intent_keywords: body.intent_keywords || [],
-      steps: body.steps,
       status: "active",
       version: 1,
-      created_at: now,
-      created_by: "operator",
-      execution_count: 0,
       visibility: "team",
-      parameters: body.parameters || {},
-      contextTemplate: body.contextTemplate || {},
-      changelog: [],
+      // created_at is retained purely to keep the GET list ordering stable.
+      created_at: now,
+      updated_at: now,
+      updated_by: "operator",
     };
 
     const col = processesCol();
