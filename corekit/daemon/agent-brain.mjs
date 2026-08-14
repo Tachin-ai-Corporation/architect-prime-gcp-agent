@@ -125,6 +125,14 @@ if (process.env.AGENT_PROCESS_AS_NARRATIVE) {
   CONTRACTS.dispatch.process_as_narrative = process.env.AGENT_PROCESS_AS_NARRATIVE === '1' || process.env.AGENT_PROCESS_AS_NARRATIVE === 'on';
   console.log(`[brain] process_as_narrative override from env: ${process.env.AGENT_PROCESS_AS_NARRATIVE}`);
 }
+// Per-VM override for temporal-memory context auto-maintenance — canary WITHOUT a global flip.
+// `AGENT_CONTEXT_MAINTENANCE=1|on` makes a completed project-touching mission refresh that project's
+// context via the temporal-memory organ (RFC PROCESS_AS_NARRATIVE.md §6b).
+if (process.env.AGENT_CONTEXT_MAINTENANCE) {
+  CONTRACTS.dispatch = CONTRACTS.dispatch || {};
+  CONTRACTS.dispatch.context_maintenance = process.env.AGENT_CONTEXT_MAINTENANCE === '1' || process.env.AGENT_CONTEXT_MAINTENANCE === 'on';
+  console.log(`[brain] context_maintenance override from env: ${process.env.AGENT_CONTEXT_MAINTENANCE}`);
+}
 // Per-VM override for approval SCOPING — canary WITHOUT a global flip.
 // `AGENT_APPROVAL_SCOPE=on` scopes an "approve"/"reject" reply to the resolving
 // agent's OWN, in-conversation pending approvals (instead of the whole prime's
