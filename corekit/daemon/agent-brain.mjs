@@ -117,6 +117,14 @@ if (process.env.AGENT_REDELEG_CAP) {
   CONTRACTS.dispatch.redelegation_cap_enabled = process.env.AGENT_REDELEG_CAP === 'on';
   console.log(`[brain] redelegation_cap_enabled override from env: ${process.env.AGENT_REDELEG_CAP}`);
 }
+// Per-VM override for process-as-narrative — canary WITHOUT a global flip.
+// `AGENT_PROCESS_AS_NARRATIVE=1` (or =on) makes processes RECALLED narratives that inform the
+// agent's OWN checkpoint_plan instead of follow_process step-execution (RFC PROCESS_AS_NARRATIVE.md).
+if (process.env.AGENT_PROCESS_AS_NARRATIVE) {
+  CONTRACTS.dispatch = CONTRACTS.dispatch || {};
+  CONTRACTS.dispatch.process_as_narrative = process.env.AGENT_PROCESS_AS_NARRATIVE === '1' || process.env.AGENT_PROCESS_AS_NARRATIVE === 'on';
+  console.log(`[brain] process_as_narrative override from env: ${process.env.AGENT_PROCESS_AS_NARRATIVE}`);
+}
 // Per-VM override for approval SCOPING — canary WITHOUT a global flip.
 // `AGENT_APPROVAL_SCOPE=on` scopes an "approve"/"reject" reply to the resolving
 // agent's OWN, in-conversation pending approvals (instead of the whole prime's
