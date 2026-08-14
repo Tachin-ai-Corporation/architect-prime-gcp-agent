@@ -1404,7 +1404,16 @@ function buildSystemBlocks(mode, payload) {
   }
 
   // 6. Process registry (if any processes exist)
-  if (Object.keys(PROCESSES).length > 0) {
+  if (Object.keys(PROCESSES).length > 0 && CONTRACTS?.dispatch?.process_as_narrative === true) {
+    // Process-as-narrative: a process is a remembered PLAYBOOK (name + description + narrative)
+    // recalled as a prior for the agent's OWN checkpoint_plan — never a rigid step-execution.
+    const playbooks = Object.values(PROCESSES).map(p => ({
+      id: p.id, name: p.name, description: p.description, narrative: p.narrative || null,
+    }));
+    parts.push(`[PROCESS PLAYBOOKS — how we've done this well before]
+A process is a remembered narrative, not a program. When your work resembles one, treat its narrative as guidance and plan your OWN checkpoints with it (checkpoint_plan) — adapt it, keep full control; do NOT hand execution to a rigid template. Available:
+${JSON.stringify(playbooks, null, 2)}`);
+  } else if (Object.keys(PROCESSES).length > 0) {
     const processSummary = Object.values(PROCESSES).map(p => ({
       id: p.id, name: p.name, description: p.description,
       version: p.version || 1,
@@ -1598,7 +1607,9 @@ function buildModePayload(mode, payload) {
       // Project-scoped process preference
       if (envProjectId && PROJECTS[envProjectId]?.standardProcesses?.length > 0) {
         decidePayload.dispatch_guidance.process_preference = 
-          `Project "${PROJECTS[envProjectId].name}" has standard processes: ${PROJECTS[envProjectId].standardProcesses.join(', ')}. Prefer follow_process over checkpoint_plan when a standard process covers the work.`;
+          (CONTRACTS?.dispatch?.process_as_narrative === true
+            ? `Project "${PROJECTS[envProjectId].name}" has relevant process playbooks: ${PROJECTS[envProjectId].standardProcesses.join(', ')}. Treat their narrative as guidance and plan your OWN checkpoints (checkpoint_plan) — do not follow_process.`
+            : `Project "${PROJECTS[envProjectId].name}" has standard processes: ${PROJECTS[envProjectId].standardProcesses.join(', ')}. Prefer follow_process over checkpoint_plan when a standard process covers the work.`);
       }
     } else {
       // No Brief (non-execution-bound or analysis failed) — fall back to checkpoint_plan guidance
@@ -1619,7 +1630,9 @@ function buildModePayload(mode, payload) {
       // Project-scoped process preference
       if (envProjectId && PROJECTS[envProjectId]?.standardProcesses?.length > 0) {
         decidePayload.dispatch_guidance.process_preference =
-          `Project "${PROJECTS[envProjectId].name}" has standard processes: ${PROJECTS[envProjectId].standardProcesses.join(', ')}. Prefer follow_process over checkpoint_plan when a standard process covers the work.`;
+          (CONTRACTS?.dispatch?.process_as_narrative === true
+            ? `Project "${PROJECTS[envProjectId].name}" has relevant process playbooks: ${PROJECTS[envProjectId].standardProcesses.join(', ')}. Treat their narrative as guidance and plan your OWN checkpoints (checkpoint_plan) — do not follow_process.`
+            : `Project "${PROJECTS[envProjectId].name}" has standard processes: ${PROJECTS[envProjectId].standardProcesses.join(', ')}. Prefer follow_process over checkpoint_plan when a standard process covers the work.`);
       }
     }
     // When project_bootstrap is the required first step (mission on an unlinked space), REPLACE

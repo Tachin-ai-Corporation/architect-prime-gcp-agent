@@ -17,6 +17,7 @@
       "default": ""
     }
   },
+  "narrative": "An investigation examines; it never fixes. Frame the precise question and scope first, then gather the real evidence — logs, code paths, config, live state — without touching anything. Weigh it against your hypotheses, separating what you verified from what you are still guessing. Close with findings, the root cause if you have it, and a recommendation. Keep the read-only line: diagnosing is not deploying.",
   "steps": [
     {
       "title": "Scope & Framing",
