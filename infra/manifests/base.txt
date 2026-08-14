@@ -50,7 +50,6 @@ corekit/brain/task-log-write bin/task-log-write
 corekit/brain/task-log-read bin/task-log-read
 corekit/brain/responsibility-manage bin/responsibility-manage
 corekit/brain/project-manage bin/project-manage
-corekit/brain/process-manage bin/process-manage
 
 # Brain module (AI SDK gateway)
 corekit/brain/package.json corekit/brain/package.json

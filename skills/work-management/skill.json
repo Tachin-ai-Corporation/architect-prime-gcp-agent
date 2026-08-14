@@ -2,7 +2,7 @@
   "id": "work-management",
   "name": "Culture of Work Tools",
   "version": 2,
-  "description": "Manage responsibilities, projects, and processes — the R/M/C/T infrastructure. Read work and task logs.",
+  "description": "Manage responsibilities and projects — the R/M/C/T infrastructure. Read work and task logs.",
   "author": "architect-prime",
   "origin": "core",
   "category": "work",
@@ -10,12 +10,11 @@
   "scripts": [
     "responsibility-manage",
     "project-manage",
-    "process-manage",
     "work-log-read",
     "work-output-read",
     "task-log-read"
   ],
   "_scripts_note": "task-log-write is DAEMON-INTERNAL — agent-mouth calls it fire-and-forget after delivering output. It is installed by the manifest but is not an agent-facing command, so it is not declared here and not documented in SKILL.md: an agent writing its own task-lifecycle records would be writing the mouth's ledger.",
   "requires": {},
-  "when_to_use": "When creating, updating, listing, or querying responsibilities, projects, or processes."
+  "when_to_use": "When creating, updating, listing, or querying responsibilities or projects."
 }

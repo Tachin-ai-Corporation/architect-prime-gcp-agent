@@ -27,7 +27,7 @@
     "motor": {
       "route": "brain/motor",
       "intents": ["execute"],
-      "tools": ["drive-ls", "drive-upload", "drive-mkdir", "drive-mv", "drive-cat", "drive-find", "drive-meta", "drive-share", "drive-trash", "gmail-search", "gmail-read", "calendar-create", "calendar-events", "calendar-update", "calendar-delete", "calendar-search", "exec", "responsibility-manage", "project-manage", "process-manage"],
+      "tools": ["drive-ls", "drive-upload", "drive-mkdir", "drive-mv", "drive-cat", "drive-find", "drive-meta", "drive-share", "drive-trash", "gmail-search", "gmail-read", "calendar-create", "calendar-events", "calendar-update", "calendar-delete", "calendar-search", "exec", "responsibility-manage", "project-manage"],
       "description": "Autonomous execution agent. Investigates, reasons, and chains tool calls to achieve goals. Runs shell commands, manages files, Google Drive, Gmail, Calendar, and project configs.",
       "constraints": "Executes and investigates. Does not plan missions.",
       "max_tokens": 65536,

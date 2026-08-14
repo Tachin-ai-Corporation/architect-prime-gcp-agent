@@ -66,5 +66,4 @@ skills/memory-consolidate/skill.json skills/memory-consolidate/skill.json
 corekit/memory/process-ops bin/process-ops
 skills/process-ops/SKILL.md skills/process-ops/SKILL.md
 skills/process-ops/skill.json skills/process-ops/skill.json
-corekit/brain/process-manage bin/process-manage
 

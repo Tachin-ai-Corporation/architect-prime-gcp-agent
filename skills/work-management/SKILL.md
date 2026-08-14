@@ -1,7 +1,7 @@
 # Skill: Culture of Work Tools
 
 ## When to Use
-When creating, updating, listing, or querying responsibilities, projects, or processes in the R/M/C/T architecture. Also for reading work and task logs.
+When creating, updating, listing, or querying responsibilities or projects in the R/M/C/T architecture. Also for reading work and task logs.
 
 ## Commands
 
@@ -22,9 +22,6 @@ When creating, updating, listing, or querying responsibilities, projects, or pro
 - `project-manage` — Manage project details and teams in Firestore.
   - Subcommands: `list`, `get '<id>'`, `create '<json>'`, `update '<id>' '<json>'`, `complete '<id>'`, `pause '<id>'`, `archive '<id>'`, `team-add '<id>' '<json>'`, `team-remove '<id>' '<email>'`, `team-list '<id>'`, `add-context '<id>' '<key>' '<value>'`.
   - Output: Status confirmation, team lists, or project JSON.
-- `process-manage` — Manage deterministic process definitions in Firestore.
-  - Subcommands: `list`, `get '<id>'`, `create '<json>'`, `update '<id>' '<json>'`, `deprecate '<id>'`.
-  - Output: Status, version updates, or process JSON.
 
 ## Procedures
 
@@ -39,11 +36,6 @@ When creating, updating, listing, or querying responsibilities, projects, or pro
 2. Run `responsibility-manage create '<json>'` to add it.
 3. Verify: Run `responsibility-manage list` and check that the responsibility ID appears.
 4. Update the responsibility by running `responsibility-manage update '<id>' '<partial-json>'`.
-
-### Create a process definition
-1. Format process steps as a JSON array of step objects, including `title` and `description`.
-2. Run `process-manage create '<json>'` specifying `id`, `name`, `description`, and `steps`.
-3. Verify: Run `process-manage list` and confirm the process is listed.
 
 ### Query an agent's recent task history
 1. Identify the agent name (e.g., `stan`).
@@ -220,72 +212,6 @@ Context is the project's institutional memory — if a **durable** fact would sa
 #### Optional flags (create/update)
 - `--processes <comma-separated-ids>` — Set `standardProcesses` array
 - `--processes ""` — Clear the standardProcesses list
-
----
-
-### process-manage
-
-Manages process definitions stored in Firestore (`primes/{primeId}/processes/` collection).
-Processes are versioned with automatic changelog tracking.
-
-#### Subcommands
-
-**list** — List all processes
-```
-exec process-manage list
-```
-Shows: id, name, status, version, created_by.
-
-**get** — Get full process details as JSON
-```
-exec process-manage get '<id>'
-```
-
-**create** — Create a new process
-```
-exec process-manage create '<json>'
-```
-Required JSON fields: `id`, `name`, `description`, `steps` (array, at least 1)
-
-Step schema:
-```json
-{
-  "title": "Step title",
-  "description": "What to do",
-  "agent": "motor",
-  "type": "standard|delegation|spawn_responsibility|approval_gate",
-  "optional": false,
-  "checkpointBoundary": false,
-  "contextTemplate": {}
-}
-```
-Each step requires `title` and `description`; other fields have defaults.
-
-Defaults on create: `status='active'`, `version=1`, `created_at=now`, `updated_at=now`,
-`created_by='system'`, `execution_count=0`, `visibility='team'`,
-`parameters={}`, `contextTemplate={}`, `changelog=[]`.
-
-**update** — Update a process (deep merge)
-```
-exec process-manage update '<id>' '<json>'
-```
-Deep merges: `steps` (full replace), `parameters`, `contextTemplate`.
-Auto-increments `version` and appends to `changelog`.
-Pass `_changelog_message` in update JSON to set a custom changelog description.
-
-**deprecate** — Mark a process as deprecated
-```
-exec process-manage deprecate '<id>'
-```
-
-#### Process statuses
-`active`, `deprecated`
-
-#### Step types
-`standard`, `delegation`, `spawn_responsibility`, `approval_gate`
-
-Note: `delegation` steps are fleet-only and project-scoped (see the delegation
-skill). Primes never delegate — they operate fleet agents directly.
 
 ## Project Files
 Project artifacts are stored in the project's git artifact repo (C-24). The daemon

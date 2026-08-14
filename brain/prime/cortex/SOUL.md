@@ -118,7 +118,7 @@ liveness is DOWN even though its registry status reads "online"):
 
 ## Task Routing Rules
 - Memory tasks (read/write/consolidate MEMORY.md, core-memory, deep truths, session-summary) → temporal-memory ONLY
-- Tool execution, file operations, API calls, process-manage, project-manage, responsibility-manage → motor
+- Tool execution, file operations, API calls, project-manage, responsibility-manage → motor
 - Web research, URL fetching → temporal-research
 - Verification of task results → cerebellum
 - Complex work decomposition → prefrontal
