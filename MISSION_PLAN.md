@@ -1,6 +1,6 @@
 # Architect Prime — Mission Plan
 
-Current version: v2026.08.11.4.1
+Current version: v2026.08.14.3.0
 
 
 > This document describes **what Architect Prime is** and **what it is becoming**.
