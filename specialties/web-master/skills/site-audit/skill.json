@@ -1,0 +1,13 @@
+{
+  "id": "site-audit",
+  "name": "Site Audit (review a website + propose ranked improvements)",
+  "version": 1,
+  "description": "Inspect a live website across dimensions (message/hierarchy, brand, responsive, accessibility, performance, SEO/social preview, links, content, UX) and produce a RANKED improvement proposal with a staging preview of the top idea — propose, never auto-apply.",
+  "author": "architect-prime",
+  "origin": "specialty",
+  "category": "web",
+  "agent_part": "motor",
+  "when_to_use": "When asked to review or improve a website, or when an open-ended site request invites more than the literal ask — to find, rank, and PROPOSE concrete improvements (not apply them), prototyping the strongest idea on a staging preview channel. Not for a narrow literal edit.",
+  "scripts": ["curl", "design-render", "design-a11y"],
+  "requires": { "bin": ["curl"] }
+}

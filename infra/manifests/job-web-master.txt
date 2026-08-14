@@ -63,5 +63,12 @@ specialties/web-master/skills/web-domains/SKILL.md corekit/specialties/web-maste
 specialties/web-master/skills/web-domains/skill.json corekit/specialties/web-master/skills/web-domains/skill.json
 specialties/web-master/skills/web-domains/domain-connect bin/domain-connect
 
+# ── Owned skill: site-audit — review the site + propose ranked improvements (propose, never auto-apply) ──
+# Web-master-OWNED procedure skill. Generic: inspect any live site across dimensions (message/hierarchy,
+# brand, responsive, a11y, performance, SEO/social, links, content, UX), rank by impact, and PROPOSE —
+# prototyping the top idea on a staging preview. No new binary — it reuses design-render/design-a11y/curl.
+specialties/web-master/skills/site-audit/SKILL.md corekit/specialties/web-master/skills/site-audit/SKILL.md
+specialties/web-master/skills/site-audit/skill.json corekit/specialties/web-master/skills/site-audit/skill.json
+
 # Workspace skills — Google Drive (skill.json only; tools come from role-fleet)
 skills/workspace-drive/skill.json skills/workspace-drive/skill.json

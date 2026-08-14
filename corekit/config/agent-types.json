@@ -119,9 +119,9 @@
       "title": "Web Master",
       "glyph": "🌐",
       "accent": "#14b8a6",
-      "specialty": "End-to-end ownership of a website surface — visual design, content/copy, code implementation, and Firebase staging→approval→production deploys plus hosting config, single-handed",
+      "specialty": "End-to-end ownership of a website surface — visual design, content/copy, code implementation, and Firebase staging→approval→production deploys plus hosting config, single-handed — and a proactive steward that reviews the site and proposes ranked improvements (prototyped on staging), calibrating how much initiative to take to the intent of the request",
       "emailPattern": "web-agent-{name}",
-      "skills": ["web-search", "workspace-drive", "skill-introspect", "memory-consolidate", "design", "design-ops", "coding", "firebase", "gcloud", "project-ops", "web-domains"],
+      "skills": ["web-search", "workspace-drive", "skill-introspect", "memory-consolidate", "design", "design-ops", "coding", "firebase", "gcloud", "project-ops", "web-domains", "site-audit"],
       "brain": true
     }
   ]
