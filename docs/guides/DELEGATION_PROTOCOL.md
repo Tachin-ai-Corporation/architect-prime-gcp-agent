@@ -9,7 +9,7 @@ Cross-agent delegation over Google Chat. The protocol path is **fully determinis
 ```
 @target-agent [DELEGATION ref:<parentEnvelopeId> from:<senderEmail> proj:<projectId>]
 Human-readable delegation instructions.
-Scope: <glob pattern> · Run process p-implement-verify.
+Scope: <glob pattern> · Follow the p-implement-verify playbook.
 Report back with PR URL + test-agent mission IDs.
 ```
 
@@ -24,7 +24,7 @@ Human-readable result summary.
 
 ### Sender Side (Delegating Agent)
 
-1. Brain encounters delegation (process step `type: 'delegation'` OR Cortex `action: 'delegate'`)
+1. Brain encounters delegation (a delegation step in the agent's plan, or Cortex `action: 'delegate'`)
 2. Resolves target agent from project team members or fleet docs by specialty
 3. Composes marker via `composeDelegationMarker()`
 4. Creates output envelope with `delivery_target: <targetEmail>` and `delivery_status: 'pending'`

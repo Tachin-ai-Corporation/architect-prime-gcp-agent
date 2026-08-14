@@ -25,7 +25,7 @@ A Project is the **organizational container** for Missions. Projects are deploym
 ### ProjectContext — the 40,000-ft working-area view (C-28)
 
 A project is the **40,000-foot view** of a working area: what it is, who works it, the
-durable resources it lives in, and the processes that apply. It is **not** a mission ledger.
+durable resources it lives in, and the playbooks it suggests. It is **not** a mission ledger.
 `context` is a curated map of **durable resource references only** — keyed by a semantic
 slug, each value a resource packet:
 
@@ -44,11 +44,12 @@ staging/prod URL, a lasting working convention (an always-required build step, a
 requirement). **What it NEVER holds** (→ where it belongs): a specific mission's document id
 or one-off result (→ the Mission record / an Artifact); history or a failure that happened
 (→ nowhere, or a Process learning if repeatable); transient state like "repo is at commit X"
-(→ nowhere); a sequence of steps / a workflow / a procedure (→ a **Process**).
+(→ nowhere); a workflow or how-to pattern (→ a **Process** playbook, as a narrative); tool syntax (→ a **Skill**).
 
-**References to related processes** are the top-level **`standardProcesses: string[]`** field
-(process IDs), not context — managed with the `--processes` flag / `add-process`. This is how
-a project points at the processes that apply to it.
+**References to relevant playbooks** are the top-level **`standardProcesses: string[]`** field
+(process IDs), not context — managed with the `--processes` flag / `add-process`. This is how a
+project **suggests** the playbooks relevant to it: their narratives are recalled into an agent's own
+plan as priors when the work matches — never executed as step-processes.
 
 Enforcement: every writer of `context` passes it through the single validator
 `corekit/lib/project-context.mjs` (`validateContextEntry` / `filterProjectContext`), which
@@ -173,17 +174,15 @@ graph TD
   "status": "active",
   "parent_id": "proj-platform",
   "depends_on": [],
+  "team": [
+    {"email": "stan@company.com", "role": "lead", "name": "Stan", "type": "agent"},
+    {"email": "alex@company.com", "role": "reviewer", "name": "Alex", "type": "human"}
+  ],
+  "standardProcesses": ["p-plan", "p-review"],
   "context": {
-    "documentation": ["/docs/auth-spec.md", "/docs/jwt-rfc.md"],
-    "processes": ["p-plan", "p-review"],
-    "team": {
-      "lead": "stan@company.com",
-      "reviewer": "alex@company.com"
-    },
-    "configuration": {
-      "token_expiry": "15m",
-      "refresh_strategy": "sliding"
-    }
+    "auth-spec": {"kind": "doc", "ref": "1AbC...", "summary": "Auth specification"},
+    "repo": {"kind": "git", "ref": "proj-auth-v2", "summary": "Auth service artifact repo"},
+    "staging": {"kind": "url", "url": "https://staging.example.com", "summary": "Staging environment"}
   },
   "created_at": "2026-06-01T10:00:00Z",
   "updated_at": "2026-06-08T14:00:00Z"

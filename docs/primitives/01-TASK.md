@@ -25,7 +25,7 @@ The Task is the **atomic unit of work** in the Culture of Work. Every Task is di
 | `error` | `string \| null` | Error message (set on failure) |
 | `children` | `string[]` | Always `[]` for Tasks (leaf nodes) |
 | `source_channel` | `string` | Origin: `'dashboard'`, `'chat'`, `'scheduler'`, `'plan'`, `'system'` |
-| `source_meta` | `Record<string, unknown>` | Step metadata from process definition |
+| `source_meta` | `Record<string, unknown>` | Step metadata from the agent's checkpoint_plan |
 | `project_id` | `string \| null` | Inherited from parent Mission |
 | `plan_id` | `string \| null` | If created from a Plan stamp |
 | `created_at` | `string` | ISO 8601 timestamp |
@@ -37,9 +37,9 @@ The Task is the **atomic unit of work** in the Culture of Work. Every Task is di
 | `blocker_type` | `string \| null` | Blocker category |
 | `blocked_at` | `string \| null` | When blocker was set |
 
-### `source_meta` for Process-Derived Tasks
+### `source_meta` for Plan-Derived Tasks
 
-When a Task is created from a Process definition, `source_meta` carries:
+When a Task is stamped from the agent's checkpoint_plan, `source_meta` carries:
 
 ```json
 {
@@ -88,7 +88,7 @@ stateDiagram-v2
 
 The brain daemon dispatches Tasks to agents via HTTP calls to the neural gateway:
 
-1. Task is activated by the process executor (`runProcessPlan`)
+1. Task is activated by the daemon when its parent Checkpoint begins
 2. `callAgent(agentId, payload)` sends the instruction to the target agent
 3. Agent executes and returns a response
 4. Cerebellum verifies the output against `accept_criteria` (for standard dispatches)

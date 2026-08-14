@@ -18,7 +18,7 @@ Missions live in the **top-level `work/` collection**, not under a Prime subcoll
 | `parent_id` | `string \| null` | Parent Responsibility ID, or `null` for ad-hoc |
 | `owner` | `string` | Agent email or ID |
 | `status` | `string` | Current lifecycle status |
-| `intent` | `string` | `'process_execution'`, `'plan_execution'`, `'execute'`, etc. |
+| `intent` | `string` | `'execute'`, `'plan_execution'`, etc. |
 | `title` | `string` | Short human-readable title (LLM-generated) |
 | `instruction` | `string` | What the mission should accomplish (goal, not steps) |
 | `accept_criteria` | `string` | What constitutes successful completion |
@@ -31,8 +31,8 @@ Missions live in the **top-level `work/` collection**, not under a Prime subcoll
 | `source_meta` | `Record<string, unknown>` | Metadata (responsibility_id, plan_id, etc.) |
 | `project_id` | `string` | **Required.** Project this Mission belongs to. |
 | `plan_id` | `string \| null` | If created from a Plan stamp |
-| `process_id` | `string \| null` | Source process ID (if process-driven) |
-| `process_version` | `number \| null` | Source process version |
+| `process_id` | `string \| null` | ID of a playbook recalled into planning, if any |
+| `process_version` | `number \| null` | Version of the recalled playbook, if any |
 | `delivery_status` | `string \| null` | `'internal'`, `'delivered'`, etc. |
 | `memory_context` | `object \| null` | Recalled memory at creation time |
 | `context` | `object \| null` | Merged context packets |
@@ -73,12 +73,13 @@ stateDiagram-v2
 
 Missions are created through several code paths:
 
-### 1. Process Execution (`executeProcess`)
+### 1. Cortex Decide Loop (the primary path)
 
-When cortex classifies input as matching a process:
+When cortex plans work directly. If the intake resembles a known playbook, that narrative is recalled
+into the planning context as a prior; the cortex still plans its own checkpoints (C-15).
 
 ```
-Input → cortex classify → executeProcess(processId) → M→C→T stamped
+Input → cortex classify → new_mission → cortex checkpoint_plan (playbook recalled if matched) → M→C→T stamped
 ```
 
 ### 2. Plan Stamping (`stampPlan`)
@@ -94,15 +95,7 @@ Plan (approved) → stampPlan() → M→C→T stamped → Plan.mission_id linked
 When a cron schedule triggers:
 
 ```
-Cron → fireResponsibility() → R envelope → M→C→T stamped
-```
-
-### 4. Ad-hoc (Cortex Decide Loop)
-
-When cortex plans work directly:
-
-```
-Input → cortex classify → new_mission → cortex checkpoint_plan → M→C→T stamped
+Cron → fireResponsibility() → R envelope → M (cortex-planned) → M→C→T stamped
 ```
 
 ---
@@ -153,7 +146,7 @@ When any Mission completes:
 
 ## Example
 
-### Process-Driven Mission
+### Mission (playbook recalled)
 
 ```json
 {
@@ -161,15 +154,15 @@ When any Mission completes:
   "type": "M",
   "parent_id": null,
   "status": "active",
-  "intent": "process_execution",
+  "intent": "execute",
   "title": "Implement user authentication",
   "instruction": "Add JWT-based authentication to the API...",
-  "accept_criteria": "Process 'Plan and Build' completes all steps successfully.",
+  "accept_criteria": "JWT authentication implemented, tested, and merged to main.",
   "children": ["w-cp1", "w-cp2", "w-cp3"],
   "depends_on": [],
   "project_id": "proj-auth-v2",
   "process_id": "p-plan",
-  "process_version": 1,
+  "process_version": 4,
   "plan_id": null,
   "delivery_status": "internal"
 }

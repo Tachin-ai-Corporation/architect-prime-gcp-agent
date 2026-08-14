@@ -32,7 +32,7 @@ GChat message → agent-ears → intake (Firestore) → agent-brain → work env
 ### 4. Decide Loop (`processEnvelope`)
 - Iterates up to `MAX_ITERATIONS` (default 10)
 - Each iteration calls `callCortex('decide')` for next action
-- Actions: `delegate`, `follow_process`, `needs_input`, `complete`, `escalate`
+- Actions: `checkpoint_plan`, `delegate`, `synthesize`, `synthesize_with_failure`, `needs_input`, `blocked`, `status_update`, `wait`
 - Builds accumulated context from prior results each iteration
 
 ### 5. Synthesis & Delivery

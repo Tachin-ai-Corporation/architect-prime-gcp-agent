@@ -12,7 +12,7 @@ The Culture of Work is the operational framework that governs how Architect Prim
 | **Checkpoint** | `C` | Groups related Tasks; sequential execution with verification |
 | **Mission** | `M` | Self-contained goal with accept criteria |
 | **Project** | — | Organizational container (recursive, with context) |
-| **Process** | — | Reusable template that produces Plans |
+| **Process** | — | Named narrative playbook — how a recurring kind of work is done well; recalled into the agent's own plan |
 | **Plan** | — | Unexecuted Mission blueprint (M→C→T layout) |
 | **Responsibility** | `R` | Scheduled or event-triggered work |
 | **Artifact** | — | Persistent work product in git ether + Google Drive |
@@ -124,7 +124,6 @@ When no explicit project applies, the agent's **default project** (`{agent-id}/g
 
 Project ID is propagated:
 - `processIntake()` → uses cortex classification or falls back to default
-- `executeProcess()` → from decision context or default
 - `fireResponsibility()` → from `resp.project_id` or default
 - `handleAttach()` → inherited from parent Mission
 - `stampPlan()` → from Plan's `project_id`
@@ -157,11 +156,11 @@ stateDiagram-v2
 
 ### How Plans Route Through the Engine
 
-1. `createPlan(processId, parameters, projectId)` → calls `processToCheckpointPlan()`, stores the layout
+1. `createPlan(...)` → stores the M→C→T layout the agent's `checkpoint_plan` committed
 2. `approvePlan(planId, approvedBy)` → transitions to `approved`
 3. `stampPlan(planId)` → creates the full M→C→T hierarchy in Firestore, links `mission_id`
 
-For auto-approved work (simple processes, routine Responsibility firings), all three steps happen in a single call — current behavior preserved, just routed through the Plan layer.
+For auto-approved work (low-risk plans, routine Responsibility firings), all three steps happen in a single call — current behavior preserved, just routed through the Plan layer.
 
 ### Amendments
 
@@ -169,35 +168,43 @@ Plans can be amended during `draft`, `approved`, or `executing` status via `amen
 
 ---
 
-## Processes — Reusable Templates
+## Processes — Narrative Playbooks
 
-Processes are **reusable work templates** that define a sequence of steps, grouped into checkpoints. They live on disk at `corekit/config/processes/*.json` and are loaded into Firestore at `primes/{id}/processes/`.
+Processes are **narrative playbooks** — named accounts of how a recurring kind of work is done well. A
+process is not a program the daemon executes; it is a prior the agent **recalls into its own plan**. The
+source of truth is the one global, tenant-wide `processes` collection at the Firestore root, readable
+and writable by every agent across every prime; the repo seeds a few starter narratives on disk at
+`corekit/config/processes/*.json`.
 
-### How Processes Produce Plans
+A process is the sibling of a Skill: a skill teaches **how** to drive a tool (tool syntax, flags,
+procedure); a process narrates **what** has worked for a kind of work (a contextual pattern, no tool
+syntax). Its shape is exactly **name + short description + narrative**, plus `intent_keywords` for
+recall and a `version`/`status` — no `steps`, no `parameters`, no gates.
+
+### How a playbook is used
 
 ```
-Process + Parameters → processToCheckpointPlan() → Plan layout → stampPlan() → M→C→T envelopes
+Mission resembles a pattern → narrative recalled (a prior) → agent's checkpoint_plan → M→C→T envelopes
 ```
 
-Key features:
-- **Parameter substitution**: `${param}` and `{{param}}` syntax in step descriptions
-- **Checkpoint boundaries**: Steps with `checkpointBoundary: true` mark where one checkpoint ends
-- **Step types**: `standard` (default), `approval_gate` (pauses for human approval)
-- **Intent types**: `execute` (writes/changes), `research` (read-only)
-- **Sub-process composition**: Steps with `sub_process` field inline another process's steps (circular refs rejected)
+When a mission matches a known playbook (by `intent_keywords` and the recall corpus), its narrative is
+injected into the cortex's planning context. The agent then plans its own checkpoints and tasks,
+adapting the pattern with full iterative control. The narrative **guides**; it never dispatches. There
+is no `follow_process` action and no step-executor — the agent's `checkpoint_plan` is the sole path
+that structures work (C-15).
 
-### Core Processes
+### The living library
 
-| Process | ID | Purpose |
-|---------|------|---------|
-| Plan and Build | `p-plan` | Investigate → plan → approve → implement → validate → commit |
-| Code Review | `p-review` | Read diff → correctness → conventions → verdict |
-| Codebase Audit | `p-audit` | Define criteria → scan → classify → report |
-| Investigation | `p-investigate` | Frame → gather evidence → analyze → document |
-| Deployment Verification | `p-deploy-verify` | Health check → smoke test → regression |
-| Release | `p-release` | Pre-flight → **approval gate** → tag → deploy → verify → announce |
+Playbooks are agent-owned and evolving, worked through five verbs: **capture · recall · update ·
+discuss · take feedback**. Any agent — not just a PM or architect — can capture, refine, or retire a
+playbook via the base `process-ops` skill. On mission completion, a temporal-memory reflex refreshes
+the narrative of any playbook the mission actually used (bounded, conservative, honest, additive); the
+nightly consolidation dedupes and retires the stale. Starter narratives the seed library ships include
+`p-plan`, `p-review`, `p-audit`, `p-investigate`, `p-deploy-verify`, and `p-release` — but agents own
+and evolve the living set.
 
-See [AUTHORING_PROCESSES.md](guides/AUTHORING_PROCESSES.md) for the full schema reference.
+See [AUTHORING_PROCESSES.md](guides/AUTHORING_PROCESSES.md) for how to author and evolve a playbook, and
+[05-PROCESS.md](primitives/05-PROCESS.md) for the primitive definition.
 
 ---
 
@@ -211,8 +218,7 @@ Responsibilities are **scheduled or event-triggered work definitions** that prod
 2. For each responsibility whose cron expression matches: check `min_spacing_minutes`
 3. If spacing allows: fire the responsibility
 4. Firing creates an `R` envelope (immediately complete) wrapping an `M` envelope
-5. If `processRef` is set: the linked process executes deterministically
-6. If no `processRef`: the Mission is dispatched through the normal cortex decide loop
+5. The Mission is dispatched through the normal cortex decide loop — the agent plans its own checkpoints (C-15); if the work matches a known playbook, that narrative is recalled into planning as a prior, never executed as steps
 
 ### Event Triggers
 
@@ -309,18 +315,21 @@ Projects also support `depends_on` between sibling projects. A Project with unme
 
 ## The Approval Gate Mechanism
 
-Processes can include **approval gate** steps that pause execution and wait for human sign-off.
+The agent's plan can include an **approval gate** step that pauses execution and waits for human
+sign-off. The cortex places one before a destructive or public action (a `risk: destructive_or_public`
+part in the Brief — see [ANALYZE_PHASE.md](guides/ANALYZE_PHASE.md)); it is a step type of the plan, not
+a feature of any process.
 
 ### How It Works
 
-1. Process step has `"type": "approval_gate"` and `"intent": "approval_gate"`
-2. When the executor reaches this step:
+1. The plan includes a step with `"type": "approval_gate"` and `"intent": "approval_gate"`
+2. When the daemon reaches this step:
    - Generates an approval ID
    - Writes an approval document to `primes/{id}/approvals/{approvalId}`
    - Marks the Task, Checkpoint, and Mission as `awaiting_approval`
    - Sends a notification to the operator (via Mouth → dashboard/chat — the sole outbound egress, C-27)
 3. Operator approves or rejects via dashboard
-4. On approval: `resumeProcessAfterApproval()` marks the gate task complete and resumes from the next task
+4. On approval: the daemon marks the gate task complete and resumes the mission from the next step
 5. On rejection: Mission status transitions to `rejected`
 
 The approval gate is **hierarchical** — it pauses the entire M→C→T stack, not just the individual Task.

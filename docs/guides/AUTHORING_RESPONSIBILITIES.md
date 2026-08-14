@@ -63,8 +63,8 @@ Both files share the same schema. Prime-only responsibilities are loaded only on
 | `min_spacing_minutes` | `number` | ✓ | Minimum minutes between firings |
 | `instruction` | `string` | ✓ | What the agent should do. Injected into the Mission instruction. |
 | `context` | `object` | ✗ | Rich context (see below) |
-| `processRef` | `string \| null` | ✗ | Process ID to execute deterministically |
-| `processParameters` | `object \| null` | ✗ | Parameter overrides for the linked process |
+| `processRef` | `string \| null` | ✗ | Playbook ID the fired Mission recalls as a planning prior |
+| `processParameters` | `object \| null` | ✗ | Optional parameters carried with the reference |
 | `project_id` | `string \| null` | ✗ | Project for generated Missions (default: agent's default project) |
 | `trigger` | `string \| null` | ✗ | Event trigger type (see below) |
 | `singleton` | `boolean` | ✗ | If true, skip firing when a non-terminal mission exists for this responsibility |
@@ -151,7 +151,7 @@ The `context` object provides rich information to the agent when the responsibil
 
 ### Context Injection
 
-When a responsibility fires without `processRef`, the context is injected as a rich text block in the Mission's `context_summary`:
+When a responsibility fires, the context is injected as a rich text block in the Mission's `context_summary`:
 
 ```
 PURPOSE: <context.purpose>
@@ -170,9 +170,11 @@ PRIOR LEARNINGS: <context.prior_learnings>
 
 ---
 
-## processRef — Linking to a Process
+## processRef — Referencing a Playbook
 
-When `processRef` is set, the responsibility bypasses the cortex decide loop and executes the linked process deterministically:
+When `processRef` is set, the fired Mission **recalls** the named playbook's narrative as a planning
+prior. The scheduler does not run a step hierarchy — the Mission goes through the normal cortex decide
+loop and the agent plans its own checkpoints (C-15), informed by the playbook:
 
 ```json
 {
@@ -185,19 +187,14 @@ When `processRef` is set, the responsibility bypasses the cortex decide loop and
 }
 ```
 
-### Parameter Resolution
+`processParameters` is optional context carried with the reference; a narrative playbook has no
+parameters of its own, so nothing is substituted into steps (there are no steps).
 
-1. Load process definition defaults
-2. Override with `processParameters` from the responsibility
-3. Validate required parameters
+### What the reference buys you
 
-If required parameters are missing after override, the engine falls through to the normal Mission creation path.
-
-### Benefits of processRef
-
-- **Deterministic**: Process steps execute sequentially without cortex involvement
-- **Structured**: Full M→C→T hierarchy is stamped upfront
-- **Traceable**: Every execution follows the same defined steps
+- **Consistency**: the fired Mission is shaped by a proven pattern the fleet has captured
+- **Adaptable**: the agent recalls the narrative and plans its own checkpoints — never locked to a fixed sequence
+- **Traceable**: the Mission records the recalled playbook in `process_id`
 
 ---
 
@@ -328,8 +325,8 @@ Before adding a new responsibility:
 - [ ] `instruction` is a clear, complete directive
 - [ ] `context.success_criteria` defines what success looks like
 - [ ] `context.prior_learnings` captures lessons (add after first few executions)
-- [ ] `processRef` points to an existing process ID (if used)
-- [ ] `processParameters` satisfies the linked process's required parameters
+- [ ] `processRef` points to an existing playbook ID (if used)
+- [ ] `processParameters`, if set, carries only what the fired Mission actually needs (a playbook has no required parameters)
 - [ ] `project_id` is set if the work belongs to a specific project
 - [ ] `trigger` is one of `on_complete`, `on_failure`, `on_merge` **(not yet implemented)**, `on_deploy` **(not yet implemented)**, or `null`
 - [ ] Added to the correct config file (`responsibilities.json` for fleet, `responsibilities-prime.json` for prime-only)

@@ -146,7 +146,7 @@ done
 2. Query the envelope in Firestore — check `status`, `iteration`, `error`
 3. Common causes:
    - Brain restart mid-processing → envelope orphaned (startup recovery handles this now)
-   - `follow_process` parameter mismatch → falls back to decide loop
+   - Delegation target offline / no project GChat space → delegation rejected with `[SYSTEM]` feedback
    - Cortex returning invalid schema → enforceSchema retry exhaustion
 
 ### Mouth not delivering

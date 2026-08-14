@@ -84,8 +84,8 @@ Responsibility → Mission → Checkpoint → Task form the execution spine. Pro
 **Violation looks like:** a new envelope type; a "Sprint"/"Epic"/"Ticket" object in Firestore; a parallel work-tracking structure beside `work/`; a knowledge container outside Skills.
 
 ### C-15 · R→M→C→T is the execution spine; no exceptions
-All executable work flows Responsibility (optional wrapper) → Mission → Checkpoint → Task. Missions are always flat — they never nest other Missions. Projects are the **sole** recursive primitive, max depth 4. Every Mission has a `project_id`; never null.
-**Violation looks like:** a Mission spawning a child Mission; Tasks outside Checkpoints; depth-5 projects; a Mission written with `project_id: null`; work executed outside the envelope hierarchy "just this once."
+All executable work flows Responsibility (optional wrapper) → Mission → Checkpoint → Task. Missions are always flat — they never nest other Missions. Projects are the **sole** recursive primitive, max depth 4. Every Mission has a `project_id`; never null. The spine is laid out exactly one way — the agent's own `checkpoint_plan` — never by a competing step-machine; a recalled process narrative informs that plan as a prior but never dispatches it (C-28).
+**Violation looks like:** a Mission spawning a child Mission; Tasks outside Checkpoints; depth-5 projects; a Mission written with `project_id: null`; work executed outside the envelope hierarchy "just this once"; a process step-executor structuring the spine in place of the agent's own `checkpoint_plan`.
 
 ### C-16 · One envelope at a time per brain; concurrency is more agents
 A brain instance processes a single envelope at a time. Throughput problems are solved by hiring more agents, never by building concurrent envelope processing into one brain.
@@ -208,13 +208,16 @@ thing (the full map is [`docs/MODULE_CHARTER.md`](MODULE_CHARTER.md)):
 - **Projects** (Firestore `projects/{id}`) — WHERE work happens: the 40,000-foot working-area view
   (name, goal, description), team, durable resource references, and `standardProcesses[]`. Never
   mission particulars/instances, history, transient state, or process/task steps.
-- **Processes** (`corekit/config/processes/`, `operator/processes/`, Firestore `processes/`) — the
-  proven PATH for a recurring situation: human-descriptive outcome steps and gates that reference
-  skills by name and project/artifacts. Never tool syntax, agent voice/character, or an operator
-  particular.
+- **Processes** (Firestore `processes/` — the global living library; seeds in
+  `corekit/config/processes/`, `operator/processes/`) — a **named narrative playbook** of how a
+  recurring kind of work is done well: a contextual pattern narrative the agent recalls into its own
+  plan as a prior, never a step-machine the daemon executes. Never tool syntax (→ Skill), rigid steps
+  / agent-per-step / checkpoint or approval gates (→ the agent's own plan), agent voice/character, or
+  an operator particular.
 
-The dividing line, already stated for the how/when pair: *"The skill defines how; the process
-defines when and in what sequence"* ([`docs/primitives/09-SKILL.md`](primitives/09-SKILL.md)).
+The dividing line between the two know-how layers: *a skill teaches HOW to drive a tool; a process
+narrates WHAT has worked for a recurring kind of work*
+([`docs/primitives/09-SKILL.md`](primitives/09-SKILL.md)).
 Content in the wrong layer is a defect regardless of whether it "works." The layers stratify by
 volatility: organs are the frozen identity core, the other three carry all iteration.
 
@@ -227,6 +230,7 @@ flags, `p-*` ids, project tokens) in any organ body.
 
 **Violation looks like:** a `--flag` or backtick command in a SOUL; a `p-*` process id or an
 improvement-module taxonomy frozen into an organ; a mission particular, failure-mode, or transient
-state written to project context; a bash/curl block or an operator id inside a process step; a
-"skill" that governs zero tools and is really a work-path; an organ edited without re-pinning the lock.
+state written to project context; a bash/curl block or an operator id inside a process narrative; a
+process written as executable steps / agent-per-step / gates instead of a narrative; a "skill" that
+governs zero tools and is really a playbook narrative; an organ edited without re-pinning the lock.
 

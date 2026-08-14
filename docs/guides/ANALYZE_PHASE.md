@@ -29,7 +29,7 @@ The flaw predates the gate. B-10 as written places prefrontal in **ACT** — *"t
 >
 > 1. **GATHER** — assemble minimum sufficient context: temporal-memory recall, and temporal-research when (and only when) the question needs the outside world. Parallel-eligible (B-12).
 > 2. **ANALYZE** — for any intake that requires execution, prefrontal decomposes the work into a **Brief**: the work broken into its true parts, each annotated with its nature (local, or a teammate's specialty), its risk, its dependencies, its unknowns, and any matching stored process. Analysis is **unconditional** for work and **judges nothing about the turn as a whole** — it is the step that reveals the work's shape. Prefrontal proposes; it does not commit a move.
-> 3. **DECIDE** — cortex commits exactly one plan from the legal-move set (B-11), assembling the Brief's parts into an ordered set of **typed steps**: local execution, delegation, approval gate, ask, follow-process. A plan is heterogeneous by nature; **no step's type is the turn's type**.
+> 3. **DECIDE** — cortex commits exactly one plan from the legal-move set (B-11), assembling the Brief's parts into an ordered set of **typed steps**: local execution, delegation, approval gate, ask. When the Brief flags a matching playbook, its narrative is recalled into the planning context as a prior — it shapes the plan, it is never itself a step. A plan is heterogeneous by nature; **no step's type is the turn's type**.
 > 4. **ACT** — the daemon dispatches per step: motor to mutate, temporal organs to fetch, delegation outward, approval gates to the operator. Verification it adds itself where a step carries accept criteria.
 > 5. **VERIFY** — cerebellum checks results against accept criteria; verification is independent of execution by construction.
 > 6. **CLOSE or REPEAT** — the daemon applies the transition: advance the checkpoint, complete the envelope, raise `needs_input`, fail, or iterate. The iteration counter increments here and only here, bounded by the contract cap.
@@ -80,7 +80,7 @@ Brief ::= {
       "unknowns": ["…what must be resolved before this part can proceed"] },
     …
   ],
-  "process_match": "<processId>" | null   // a stored playbook that already covers this work
+  "process_match": "<processId>" | null   // a stored playbook whose narrative to recall as a planning prior
 }
 ```
 
@@ -94,7 +94,10 @@ The Brief judges parts, never the turn. A trivial intake yields one part; that i
 | **Delegation** | the delegation envelope + handoff (objective · scope · inputs · accept · expected artifact), delivered to the shared space | `ownership: teammate` → cortex selects the target from the project team |
 | **Approval / risk-escalation** | `step_type: approval_gate` — operator gate before the step runs | `risk: destructive_or_public` |
 | **Ask** | `needs_input` raised for the part | a part whose `unknowns` only the operator can resolve |
-| **Follow-process** | `follow_process` — the whole plan *is* the playbook | `process_match` set |
+
+When the Brief's `process_match` is set, the matched playbook's narrative is recalled into the planning
+context as a **prior** — it informs how cortex composes the steps above. It is not a step type of its
+own; there is no `follow_process`, and the agent always plans its own checkpoints (C-15).
 
 Sequencing follows `depends_on`: independent steps fan out (**B-12**), dependents serialize, all join before the next DECIDE.
 

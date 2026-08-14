@@ -109,9 +109,9 @@ Skills are discovered at three levels:
 
 | Primitive | Relationship |
 |-----------|-------------|
-| **Process** | Process steps reference skills by name. A step's `description` says "Using the workspace-drive skill, ..." The skill defines *how*; the process defines *when* and *in what sequence*. |
+| **Process** | A process is a narrative playbook, not a step-list — it may name a skill in prose but carries no tool syntax, and the agent recalls it into its *own* plan. A skill teaches **how** to drive a tool; a process narrates **what** has worked for a recurring kind of work. |
 | **Task** | A Task is dispatched to an organ. The organ reads the skill's SKILL.md to know how to execute. The skill's procedures define the expected approach; the task's `accept_criteria` define the expected outcome. |
-| **Responsibility** | A scheduled Responsibility may wire to a process that references skills, or may fire a task that directly uses a skill. The skill is the procedure the agent follows regardless of how the work was initiated. |
+| **Responsibility** | A scheduled Responsibility fires a Mission the agent plans itself (which may recall a relevant playbook), or a task that directly uses a skill. The skill is the procedure the agent follows regardless of how the work was initiated. |
 | **Artifact** | A skill may produce Artifacts (files in `shared/`). The skill's procedures document what artifacts to create and where to put them. |
 
 ---

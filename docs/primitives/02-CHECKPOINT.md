@@ -28,7 +28,7 @@ A Checkpoint **groups related Tasks** into a logical unit with its own accept cr
 | `source_meta` | `Record<string, unknown>` | Metadata (plan_id, checkpoint index, etc.) |
 | `project_id` | `string \| null` | Inherited from parent Mission |
 | `plan_id` | `string \| null` | If created from a Plan stamp |
-| `process_id` | `string \| null` | Source process ID |
+| `process_id` | `string \| null` | ID of a playbook recalled into planning, if the plan drew on one |
 | `created_at` | `string` | ISO 8601 timestamp |
 | `started_at` | `string \| null` | When first Task begins |
 | `completed_at` | `string \| null` | When all Tasks finish |
@@ -79,33 +79,17 @@ When a Checkpoint completes, context from its Tasks is forwarded to the next Che
 
 ---
 
-## Checkpoint Boundaries in Processes
+## Checkpoint Boundaries
 
-In Process definitions, the `checkpointBoundary` field on a step marks where one Checkpoint ends and the next begins. Steps between boundaries are grouped into the same Checkpoint.
+Checkpoints are laid out by the agent's own `checkpoint_plan` — the sole path that structures work
+(C-15). When the cortex commits a plan, it groups the mission's tasks into checkpoints at natural
+verification points (setup → implementation → validation), and the daemon stamps that structure into
+the M→C→T hierarchy. There is no process step-machine and no `checkpointBoundary` field: a recalled
+process narrative may *inform* where the agent draws its boundaries, but the boundaries belong to the
+plan, not to any playbook.
 
-```json
-{
-  "title": "Validate implementation",
-  "description": "Run tests and lint checks...",
-  "agent": "motor",
-  "accept_criteria": "All tests pass.",
-  "checkpointBoundary": true     // ← This step ends the current checkpoint
-}
-```
-
-Steps without `checkpointBoundary: true` accumulate into the current Checkpoint. The final step always ends a checkpoint (implicitly).
-
-### Grouping Example
-
-Given 5 process steps where steps 2 and 4 have `checkpointBoundary: true`:
-
-| Step | checkpointBoundary | Checkpoint |
-|------|:---:|:---:|
-| Step 1 | — | CP 1 |
-| Step 2 | ✓ | CP 1 |
-| Step 3 | — | CP 2 |
-| Step 4 | ✓ | CP 2 |
-| Step 5 | — (final) | CP 3 |
+Place a boundary wherever the milestone is genuinely verifiable — a point where cerebellum can judge an
+observable outcome before the next checkpoint begins.
 
 ---
 

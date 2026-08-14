@@ -4,7 +4,7 @@
 **Firestore path (definition):** `corekit/config/responsibilities.json`
 **Firestore path (envelope):** `work/{envelopeId}`
 
-A Responsibility is **scheduled or event-triggered work** that automatically produces R→M envelope pairs. Responsibilities are defined in JSON configuration, managed by the brain daemon's cron scheduler, and can optionally link to a Process for deterministic execution.
+A Responsibility is **scheduled or event-triggered work** that automatically produces R→M envelope pairs. Responsibilities are defined in JSON configuration, managed by the brain daemon's cron scheduler, and can optionally reference a Process (playbook) whose narrative the fired Mission recalls.
 
 ---
 
@@ -21,8 +21,8 @@ These fields are in the responsibility JSON definition (not the WorkEnvelope):
 | `min_spacing_minutes` | `number` | Minimum minutes between firings |
 | `instruction` | `string` | What the agent should do when this fires |
 | `context` | `ResponsibilityContext` | Rich context for the agent |
-| `processRef` | `string \| null` | Process ID to execute (if process-linked) |
-| `processParameters` | `Record<string, unknown> \| null` | Parameter overrides for the linked process |
+| `processRef` | `string \| null` | Playbook ID the fired Mission recalls (if referenced) |
+| `processParameters` | `Record<string, unknown> \| null` | Optional parameters carried with the reference |
 | `project_id` | `string \| null` | Project for generated Missions (falls back to default) |
 | `trigger` | `string \| null` | Event trigger: `'on_complete'`, `'on_failure'`, `'on_merge'` **(not yet implemented)**, `'on_deploy'` **(not yet implemented)**, or `null` |
 
@@ -97,13 +97,10 @@ sequenceDiagram
     Brain->>FS: Write R envelope (complete)
     Brain->>FS: Write M envelope (active)
     
-    alt processRef is set
-        Brain->>Brain: processToCheckpointPlan()
-        Brain->>FS: Stamp C + T envelopes
-        Brain->>Agent: Execute tasks sequentially
-    else No processRef
-        Brain->>Agent: Dispatch via cortex decide loop
+    opt processRef references a playbook
+        Brain->>Brain: recall playbook narrative (planning prior)
     end
+    Brain->>Agent: Dispatch via cortex decide loop (agent plans its own checkpoints)
 ```
 
 ### Scheduling Loop
@@ -114,8 +111,7 @@ sequenceDiagram
 4. Fire the responsibility:
    - Create **R envelope** (type `R`, immediately `complete`)
    - Create **M envelope** (type `M`, `active`, child of R)
-   - If `processRef` → load process, stamp C+T hierarchy, execute deterministically
-   - If no `processRef` → inject into cortex decide loop
+   - Dispatch the Mission into the cortex decide loop — the agent plans its own checkpoints (C-15); if `processRef` references a playbook, its narrative is recalled as a planning prior
 
 ### The R→M Envelope Pair
 

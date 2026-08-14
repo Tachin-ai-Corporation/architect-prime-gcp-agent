@@ -13,10 +13,10 @@ A Plan is an **unexecuted Mission blueprint**. It captures the full M→C→T la
 | `id` | `string` | Unique identifier (generated via `generateId('plan')`) |
 | `project_id` | `string` | **Required.** Project this Plan belongs to |
 | `work_id` | `string \| null` | Mission ID in the top-level `work/` collection (set when stamped) |
-| `name` | `string` | Human-readable name (process name + instruction excerpt) |
-| `process_id` | `string \| null` | Source process (if process-derived) |
-| `process_version` | `number \| null` | Version of the source process |
-| `parameters` | `Record<string, unknown>` | Parameters used to generate the layout |
+| `name` | `string` | Human-readable name (instruction excerpt) |
+| `process_id` | `string \| null` | Playbook recalled into planning, if any |
+| `process_version` | `number \| null` | Version of the recalled playbook, if any |
+| `parameters` | `Record<string, unknown>` | Optional parameters captured with the plan |
 | `layout` | `PlanLayout` | The M→C→T structure (see below) |
 | `mission_id` | `string \| null` | Linked Mission ID (set when stamped) |
 | `amendments` | `Amendment[]` | Change log (see below) |
@@ -90,15 +90,14 @@ stateDiagram-v2
 
 ## Engine Functions
 
-### `createPlan(processId, parameters, projectId, instruction)`
+### `createPlan(layout, projectId, instruction)`
 
 Creates a Plan in `draft` status:
 
-1. Loads the process definition
-2. Calls `processToCheckpointPlan()` to generate the checkpoint structure
-3. Maps the result into `PlanLayout` format
-4. Writes to Firestore at `plans/{planId}`
-5. Returns the Plan document
+1. Takes the M→C→T layout the agent's `checkpoint_plan` committed
+2. Maps it into `PlanLayout` format
+3. Writes to Firestore at `plans/{planId}`
+4. Returns the Plan document
 
 ### `approvePlan(planId, approvedBy)`
 
@@ -134,7 +133,7 @@ Records an amendment on a `draft`, `approved`, or `executing` Plan:
 
 ## Auto-Approval
 
-For routine work (simple processes, Responsibility firings), the engine may perform `createPlan` → `approvePlan` → `stampPlan` in a single call. This preserves current behavior while routing through the Plan layer for traceability.
+For routine work (low-risk plans, Responsibility firings), the engine may perform `createPlan` → `approvePlan` → `stampPlan` in a single call. This preserves current behavior while routing through the Plan layer for traceability.
 
 ---
 
@@ -157,16 +156,14 @@ This bidirectional link enables the dashboard to show the Plan alongside its exe
 {
   "id": "plan-abc123",
   "project_id": "proj-auth-v2",
-  "name": "Plan and Build: Add JWT authentication",
+  "name": "Add JWT authentication",
   "process_id": "p-plan",
-  "process_version": 1,
-  "parameters": {
-    "goal": "Add JWT-based authentication to the API"
-  },
+  "process_version": 4,
+  "parameters": {},
   "layout": {
     "mission": {
-      "instruction": "Execute process: Feature Implementation",
-      "accept_criteria": "Process 'Plan and Build' completes all steps successfully.",
+      "instruction": "Add JWT-based authentication to the API",
+      "accept_criteria": "JWT authentication implemented, tested, and merged to main.",
       "owner": "stan@company.com"
     },
     "checkpoints": [
@@ -192,7 +189,7 @@ This bidirectional link enables the dashboard to show the Plan alongside its exe
         ]
       },
       {
-        "instruction": "Process Steps",
+        "instruction": "Commit & prepare for review",
         "accept_criteria": "",
         "tasks": [
           {

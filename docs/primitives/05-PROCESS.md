@@ -1,239 +1,216 @@
 # Primitive: Process
 
-**Firestore path:** `processes/{processId}`
-**Disk path:** `corekit/config/processes/{processId}.json`
+**Firestore path:** `processes/{processId}` (one global, tenant-wide library at the database root)
+**Disk path:** `corekit/config/processes/{processId}.json` (seed narratives only)
 
-A Process is a **reusable work template** — the **proven PATH for a recurring situation**,
-captured so an agent can repeat it instead of re-deriving it. It is an ordered sequence of
-steps grouped into checkpoints, parameterized, supporting sub-process composition, that
-produces a Plan (which becomes an M→C→T hierarchy when stamped). Processes are stored in one
-shared library — there is no per-Prime duplication. A Project points at the processes that
-apply to it via its top-level `standardProcesses[]` field.
+A Process is a **narrative playbook** — a named, remembered account of *how a recurring kind of
+work has been done well before*. It is not a program the daemon executes; it is a **prior the agent
+consults**. When a mission resembles a known pattern, the playbook's narrative is recalled and
+injected into the agent's planning context ("here's how we've done this well — adapt it, keep full
+control"). The narrative **guides**; it never dispatches.
 
-### What a process holds — and what it must not (C-28)
+A process is the **sibling of a skill**. A skill teaches *how to drive a tool* — tool syntax, flags,
+procedure. A process narrates *what has worked* for a kind of work — a contextual pattern, carrying
+**no tool syntax**. Both are reusable know-how; they differ in what they hold.
 
-A process step is a **human-descriptive outcome** — *what* to achieve at that stage and how
-to know it's done — that **references skills by name** and project/artifacts by reference. A
-step reads like a good runbook a person wrote, not a tool transcript.
-
-| A process step HOLDS | It must NEVER hold → belongs to |
-|---|---|
-| a human-language outcome ("read the whole document; incorporate each redline") | tool syntax / a command / flags → the **Skill** the step names |
-| checkpoint & approval-gate structure | agent voice, emoji, persona in messages → the **Mouth** voices delivery |
-| references to skills by name, and to project resources/params | an operator particular (a firebase id, a bucket, a URL) → the **Project** context or a step `parameter` |
-| `${param}` placeholders for what varies | a specific mission's one-off detail → the Mission itself |
-
-The line, stated in canon: *"The skill defines how; the process defines when and in what
-sequence"* ([09-SKILL.md](09-SKILL.md)). If a step needs a command, it names the governing
-skill and lets the executor read that skill for syntax. See [MODULE_CHARTER](../MODULE_CHARTER.md)
-and PRODUCT_CANON **C-28**.
+| | **Skill** | **Process (playbook)** |
+|---|---|---|
+| Teaches | HOW to drive a tool / do a generic task | WHAT has worked for a recurring kind of work |
+| Content | tool syntax, flags, procedure | a contextual narrative — no tool syntax |
+| Scope | role-generic | project / context specific |
+| Author | the repo (shipped, manifest-installed) | the agent (remembered, evolved in the living store) |
 
 ---
 
-## Fields
+## The shape
+
+A process is exactly **name + short description + narrative**, plus the cues and status that let it
+be recalled and curated. Nothing else — no `steps`, no `parameters`, no `contextTemplate`, no
+per-step agent, no checkpoint boundaries, no approval gates.
+
+```json
+{
+  "id": "p-investigate",
+  "name": "Investigation",
+  "description": "How we diagnose an issue or answer a question — read-only, evidence-first.",
+  "narrative": "An investigation examines; it never fixes. Frame the precise question and scope first, then gather the real evidence — logs, code paths, config, live state — without touching anything. Weigh it against your hypotheses, separating what you verified from what you are still guessing. Close with findings, the root cause if you have it, and a recommendation. Keep the read-only line: diagnosing is not deploying.",
+  "intent_keywords": ["not working", "broken", "failing", "diagnose", "debug", "why", "error", "investigate"],
+  "status": "active",
+  "version": 4
+}
+```
+
+### Fields
 
 | Field | Type | Description |
 |-------|------|-------------|
-| `id` | `string` | Unique identifier (e.g. `p-plan`) |
-| `name` | `string` | Human-readable name |
-| `description` | `string` | What this process does and when to use it |
-| `status` | `'active' \| 'inactive'` | Whether the process is available for execution |
-| `version` | `number` | Version number (incremented on changes) |
-| `visibility` | `'standard' \| 'internal'` | Whether agents see this in `available_processes` |
-| `parameters` | `Record<string, ParameterDef>` | Named parameters with metadata |
-| `steps` | `Step[]` | Ordered sequence of work steps |
-| `contextTemplate` | `Record<string, object>` | Context packets merged into Mission at execution |
-| `pre_flight` | `string \| null` | Pre-flight check instruction (run before main steps) |
-| `created_by` | `string` | Who created this process |
-| `execution_count` | `number` | How many times this process has been executed |
-| `last_executed_at` | `string \| null` | Timestamp of last execution |
+| `id` | `string` | Unique identifier (e.g. `p-investigate`) |
+| `name` | `string` | Human-readable handle (e.g. `Investigation`, `Plan and Build`) |
+| `description` | `string` | One line: what kind of work this is and when it's relevant — the registry line the cortex sees |
+| `narrative` | `string` | Tool-syntax-free prose: the shape that works, the order, what to watch for, what **not** to do |
+| `intent_keywords` | `string[]` | Cue terms that surface this playbook when a mission resembles the pattern (drives recall matching) |
+| `status` | `'active' \| 'deprecated'` | `active` — recalled into planning. `deprecated` — retired (soft delete; no longer recalled) |
+| `version` | `number` | Bumped on each refinement |
 
-### ParameterDef
+The living store additionally stamps `updated_by` / `updated_at` on every write, and a playbook may
+carry optional `tags` (and a `project` tag) so it can be scoped to a context while still living in the
+one shared library. These are store metadata, not part of the authored shape above.
 
-```typescript
-{
-  description: string;     // What this parameter is for
-  required: boolean;       // Whether it must be provided
-  default?: string;        // Default value if not provided
-}
-```
+### What a process holds — and what it must not (C-28)
 
-### Step
+A process holds **wisdom in prose**: the disposition and pattern of a kind of work, written the way a
+seasoned teammate would tell you "here's how this usually goes well." It reads like remembered
+experience, not a runbook or a tool transcript.
 
-```typescript
-{
-  title: string;                    // Short name for the step
-  description: string;             // Full instruction (supports ${param} substitution)
-  agent: string;                   // Target agent: "motor", "cerebellum", etc.
-  type: string;                    // "standard" | "approval_gate"
-  intent: string;                  // "execute" | "research" | "approval_gate"
-  accept_criteria: string;         // What constitutes success
-  checkpointBoundary?: boolean;    // If true, ends the current checkpoint here
-  optional?: boolean;              // If true, failure doesn't fail the checkpoint
-  specialty?: string;              // Required agent specialty (if any)
-  approval_message?: string;       // Custom message for approval_gate steps
-  sub_process?: string;            // Process ID to inline (composition)
-}
-```
+| A process HOLDS | It must NEVER hold → belongs to |
+|---|---|
+| a contextual narrative ("frame the question first, gather real evidence, separate verified from guessed") | tool syntax / a command / flags → the **Skill** |
+| a pattern's disposition ("keep the read-only line; diagnosing is not deploying") | agent voice, emoji, persona → the **Mouth** voices delivery |
+| the shape and order that has worked, as prose to adapt | a rigid step list, agent-per-step, checkpoint/approval gates → **the agent's own plan** |
+| cue keywords for recall | an operator particular (a firebase id, a bucket, a URL) → the **Project** context or the Mission |
+
+See [MODULE_CHARTER](../MODULE_CHARTER.md) and PRODUCT_CANON **C-28**.
 
 ---
 
-## How Processes Execute
+## The mechanism — a process is planning CONTEXT, not an execution path
+
+There is **one** way work gets structured: the agent's own `checkpoint_plan`. A process never becomes
+a second, competing way to run work.
 
 ```mermaid
 graph LR
-    P["Process Definition"] -->|parameters| F["processToCheckpointPlan()"]
-    F --> CP["Checkpoint Plan"]
-    CP --> S["stampPlan() / executeProcess()"]
-    S --> H["M → C → T Hierarchy"]
-    H --> E["runProcessPlan()"]
-    E --> R["Sequential Execution"]
+    W["Mission resembles<br/>a known pattern"] -->|intent_keywords match| R["Recall surfaces<br/>the narrative"]
+    R -->|injected as a prior| D["Agent's checkpoint_plan<br/>(cortex commits)"]
+    D --> H["M → C → T<br/>(agent-planned)"]
 
-    style P fill:#9c27b0,color:#fff
-    style F fill:#7b1fa2,color:#fff
-    style CP fill:#6a1b9a,color:#fff
-    style S fill:#4a90d9,color:#fff
-    style H fill:#4a90d9,color:#fff
-    style E fill:#4a90d9,color:#fff
-    style R fill:#4caf50,color:#fff
+    style W fill:#9c27b0,color:#fff
+    style R fill:#7b1fa2,color:#fff
+    style D fill:#4a90d9,color:#fff
+    style H fill:#4caf50,color:#fff
 ```
 
-### 1. Parameter Substitution
+1. **Match.** A lightweight registry (name + one-line description) tells the cortex which playbooks
+   exist; `intent_keywords` and the recall corpus surface a relevant one when the work resembles it.
+2. **Recall.** The full narrative loads on demand and is injected into the planning context as a
+   prior — *"here's how we've done this well before."*
+3. **Plan.** The cortex plans its own checkpoints and tasks with full iterative control (re-plan,
+   adjust, manage the spine). The narrative informs the plan; it does not dictate it.
 
-`${param}` and `{{param}}` in step descriptions, titles, and accept criteria are replaced with parameter values:
+Because the only path that structures work is the agent's own planning, **maximum iterative control
+falls out for free**. A project or a Responsibility may *suggest* a relevant playbook, but nothing can
+force a rigid execution.
 
-```json
-{
-  "title": "Implement changes",
-  "description": "Implement ${goal} based on requirements..."
-}
-```
-
-With `parameters: { "goal": "JWT authentication" }` becomes:
-
-```
-"Implement JWT authentication based on requirements..."
-```
-
-### 2. Sub-Process Expansion
-
-Steps with `sub_process` inline another process's steps with circular reference protection:
-
-```json
-{
-  "title": "Verify deployment",
-  "sub_process": "p-deploy-verify"
-}
-```
-
-The engine (`expandSteps`) loads the referenced process, substitutes parameters, and flattens all steps into a single sequence. The output is always one flat Mission — no nested Missions.
-
-### 3. Checkpoint Grouping
-
-Steps are grouped into Checkpoints by `checkpointBoundary` markers. See [02-CHECKPOINT.md](02-CHECKPOINT.md) for details.
-
-### 4. Deterministic Execution
-
-The process executor (`runProcessPlan`) runs Tasks sequentially without Cortex involvement:
-
-1. Activate Checkpoint 1
-2. For each Task in CP1: dispatch to target agent → wait for result → verify
-3. All CP1 Tasks complete → activate CP2
-4. Continue until all Checkpoints complete or a Task fails
+> **Removed entirely.** There is no `follow_process` action, no process step-executor, no "prefer
+> follow_process over checkpoint_plan" bias, and no `required_processes` mandate. A process has no
+> steps to execute, no agent to dispatch, and no gates of its own. If you find a doc describing any of
+> these, it is stale.
 
 ---
 
-## Core Processes
+## The living lifecycle
 
-| ID | Name | Steps | Key Features |
-|----|------|:-----:|--------------|
-| `p-plan` | Plan and Build | 4 | Investigate → plan → approve → implement → validate → commit |
-| `p-review` | Code Review | 4 | All `research` intent (read-only) |
-| `p-audit` | Codebase Audit | 5 | Scan → classify → create work items → report |
-| `p-investigate` | Investigation | 4 | All `research` intent (read-only) |
-| `p-deploy-verify` | Deployment Verification | 4 | Health → smoke test → regression |
-| `p-release` | Release | 6 | Includes `approval_gate` step |
+Processes are an **agent-owned, evolving knowledge tier**, modeled on Core Memory (agents already
+write and retire facts and curate them nightly). Five verbs, all served by the
+[`process-ops`](../guides/AUTHORING_PROCESSES.md) skill:
 
----
-
-## Approval Gates
-
-A step with `"type": "approval_gate"` pauses execution until a human approves or rejects. The `approval_message` field provides a custom notification:
-
-```json
-{
-  "title": "Approve release?",
-  "type": "approval_gate",
-  "approval_message": "🚀 Release ${version} is ready. Reply approve or reject.",
-  "agent": "motor",
-  "intent": "approval_gate"
-}
-```
-
-See [CULTURE_OF_WORK.md](../CULTURE_OF_WORK.md#the-approval-gate-mechanism) for the full approval gate lifecycle.
+- **Capture** — after work that went well, an agent records the pattern as a new or updated playbook
+  ("this is how we successfully did X"). Triggered by the agent's own post-mission reflex on a clean
+  success, by the nightly consolidation curation, and/or by the user saying "remember how we did this."
+- **Recall** — when planning similar work, the relevant narrative surfaces through the same recall path
+  that surfaces memory, and is injected into the plan.
+- **Update / upgrade** — an agent refines a playbook when a later run improves the pattern or a
+  correction lands (bump `version`, restamp `updated_by`/`updated_at`).
+- **Discuss** — an agent answers "what processes do you have?" by listing name + description, and
+  narrates any one on request. A first-class conversational surface.
+- **Take feedback** — the user says "for deploys, always do X" → the agent folds it into the relevant
+  playbook's narrative and confirms. Feedback becomes a durable pattern, not a one-off correction.
 
 ---
 
-## Example Process File
+## Where they live — the global shared library
+
+A playbook is a distinct memory tier, sitting beside the ones that already exist:
+
+| Tier | What it holds | Lifetime |
+|---|---|---|
+| Working memory (`MEMORY.md`) | transient scratchpad | the day |
+| Core memory | atomic durable facts | weeks+ |
+| Deep truths (`SOUL`) | behavioral constraints | rare, evidence-gated |
+| **Playbooks / processes** | **named "how we do X well" narratives** | **evolve with the work** |
+
+The source of truth is the **living store** (Firestore), agent-writable like Core Memory — because
+agents evolve playbooks and take feedback on them. The repo **seeds a few starter narratives** (in
+`corekit/config/processes/`) as a first library, but does not own the living set; agents curate it.
+
+Scope is **one global, tenant-wide library** — a single `processes` collection at the database root,
+readable and writable by **every agent across every prime**. A pattern one agent learns is a pattern
+the whole fleet can reuse ("share what works"). A playbook may be tagged to a specific prime-project
+for context, but it still lives in the single shared library. The nightly consolidation dedupes,
+retires the stale, and keeps the library lean.
+
+---
+
+## Universal authoring
+
+Creating and editing playbooks is a **base capability for every role**, not gated to a PM or
+architect. Any agent can capture a new playbook, refine a narrative, or retire a stale one via the
+base [`process-ops`](../guides/AUTHORING_PROCESSES.md) skill — just as any agent can create a
+prime-project and keep its context current via the base `project-ops` skill. Playbooks and projects
+are both *agent-managed context*, not privileged config.
+
+The guardrail rides the memory-curation discipline: edits are **additive and curated** — refine,
+dedupe, never clobber; conservative and evidence-based, never invent (B-29). The automatic maintenance
+below is what keeps universal write access from drifting into mess.
+
+---
+
+## Automatic context maintenance
+
+A playbook's narrative should reflect *what just happened*, not the day it was written. Maintenance is
+an **automatic post-mission reflex seated in the temporal-memory organ** — a skill (the how) plus a
+personality (the disposition).
+
+- **Trigger (deterministic).** On mission completion, if the mission **used a process** (recalled its
+  narrative into planning) or **touched a project**, a completion hook fires the reflex for *those
+  specific items only* — nothing else is rewritten.
+- **Disposition (temporal-memory).** *"I keep the context of what we use current. When a mission draws
+  on a process or works a project, I refresh what we know from what just happened — tightening a
+  narrative that proved out, recording what changed — so the library and each project's context track
+  reality, not history. I update only what was used, only when something was actually learned, and I
+  refine rather than overwrite."*
+- **Mechanism (C-4 / C-5).** Temporal-memory (the intelligence) produces the updated narrative as
+  structured output; the daemon (deterministic) writes it — the organ stays pure. This is a
+  *micro-consolidation* tied to mission completion; the nightly consolidation remains the periodic deep
+  pass (dedupe, retire, keep the global library lean).
+- **Guardrails.** Bounded (only items the mission used), conservative (skip when nothing was learned —
+  no busywork edits), honest (B-29 — never fabricate a pattern), additive (refine + keep version
+  history), and it **never touches production or ships anything** — it only curates context.
+
+Net effect: the global playbook library improves on its own from real work, any agent can seed or
+correct it, and the memory organ keeps it honest and current without anyone having to ask.
+
+---
+
+## Example
+
+The `p-investigate` playbook, in full — name, description, narrative, and recall cues:
 
 ```json
 {
-  "id": "p-example",
-  "name": "Example Process",
-  "description": "Demonstrates all step features.",
+  "id": "p-investigate",
+  "name": "Investigation",
+  "description": "Structured investigation for diagnosing issues, understanding behavior, or answering questions — READ-ONLY: it examines but never modifies, deploys, or fixes.",
+  "narrative": "An investigation examines; it never fixes. Frame the precise question and scope first, then gather the real evidence — logs, code paths, config, live state — without touching anything. Weigh it against your hypotheses, separating what you verified from what you are still guessing. Close with findings, the root cause if you have it, and a recommendation. Keep the read-only line: diagnosing is not deploying.",
+  "intent_keywords": ["not working", "broken", "failing", "diagnose", "debug", "why", "error", "investigate", "404", "timeout"],
   "status": "active",
-  "version": 1,
-  "visibility": "standard",
-  "parameters": {
-    "target": {
-      "description": "What to work on",
-      "required": true
-    },
-    "project_id": {
-      "description": "Project context",
-      "required": false,
-      "default": ""
-    }
-  },
-  "steps": [
-    {
-      "title": "Research phase",
-      "description": "Investigate ${target}...",
-      "agent": "motor",
-      "type": "standard",
-      "intent": "research",
-      "accept_criteria": "Findings documented. No modifications."
-    },
-    {
-      "title": "Review checkpoint",
-      "description": "Review research findings for ${target}.",
-      "agent": "motor",
-      "type": "standard",
-      "intent": "research",
-      "accept_criteria": "Research validated.",
-      "checkpointBoundary": true
-    },
-    {
-      "title": "Approve execution?",
-      "type": "approval_gate",
-      "approval_message": "Research complete for ${target}. Proceed?",
-      "agent": "motor",
-      "intent": "approval_gate"
-    },
-    {
-      "title": "Execute changes",
-      "description": "Implement changes for ${target}.",
-      "agent": "motor",
-      "type": "standard",
-      "intent": "execute",
-      "accept_criteria": "Changes implemented and tested."
-    }
-  ],
-  "contextTemplate": {},
-  "pre_flight": null,
-  "created_by": "system",
-  "execution_count": 0
+  "version": 4
 }
 ```
 
-See [Authoring Processes](../guides/AUTHORING_PROCESSES.md) for the full schema reference and writing guide.
+When a mission reads like a diagnosis, this narrative is recalled into the cortex's planning context;
+the agent then lays out its own read-only checkpoints and tasks, adapting the pattern to the specific
+question. The playbook shaped the plan — it did not become the plan.
+
+See [Authoring Processes](../guides/AUTHORING_PROCESSES.md) for how an agent captures, updates, and
+discusses playbooks with the `process-ops` skill.
