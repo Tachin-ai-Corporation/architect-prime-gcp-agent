@@ -51,6 +51,7 @@ import { createLifecycleHandler } from '../corekit/lib/envelope-lifecycle.mjs';
 import { composeDeliverable } from '../corekit/lib/deliverable.mjs';
 import { executeCheckpoints } from '../corekit/lib/checkpoint-executor.mjs';
 import { rebuildFromSpine } from '../corekit/lib/checkpoint-spine.mjs';
+import { shouldMaintainContext, buildMaintenancePrompt, parseMaintenanceResponse } from '../corekit/lib/context-maintenance.mjs';
 import { handoffModelEnabled, decideHop, missionOriginator, effectiveAssignee } from '../corekit/lib/baton.mjs';
 import { projectBootstrapEnabled, missionOriginSpace } from '../corekit/lib/project-bootstrap.mjs';
 import { renderBlackboard } from '../corekit/lib/blackboard.mjs';
@@ -2301,6 +2302,35 @@ async function writeMemory(envelope) {
   }
 }
 
+// ---- Context auto-maintenance: temporal-memory refreshes a touched project's context ----
+// (RFC PROCESS_AS_NARRATIVE.md §6b) Best-effort, flag-gated, never throws. The organ PRODUCES the
+// note (C-5); the daemon writes it to the root `projects/<id>` doc's context.auto_maintenance.
+// Bounded (only the touched project), conservative (skips when nothing durable was learned), and
+// it never ships or touches production — it only curates context.
+async function maintainContext(mission) {
+  try {
+    const plan = shouldMaintainContext(mission, CONTRACTS);
+    if (!plan.run) return;
+    let proj = null;
+    try { proj = await firestoreRead('projects', plan.projectId); } catch { /* fall back to cache */ }
+    proj = proj || PROJECTS[plan.projectId];
+    if (!proj) { log('INFO', `[context-maintenance] project ${plan.projectId} not found — skip`); return; }
+    const result = await callAgent('temporal-memory', {
+      instruction: buildMaintenancePrompt(mission, proj),
+      accept_criteria: 'Return exactly one JSON object {"update":"<durable note, or empty string if nothing durable was learned>"}.',
+    });
+    if (!result || !result.success) { log('INFO', `[context-maintenance] no organ result for project ${plan.projectId}`); return; }
+    const { update } = parseMaintenanceResponse(toStr(result.output));
+    if (!update) { log('INFO', `[context-maintenance] nothing durable learned for project ${plan.projectId}`); return; }
+    const ctx = (proj.context && typeof proj.context === 'object' && !Array.isArray(proj.context)) ? proj.context : {};
+    ctx.auto_maintenance = { note: update, from_mission: mission.id, at: now() };
+    await firestoreWrite('projects', plan.projectId, { ...proj, context: ctx });
+    log('INFO', `[context-maintenance] refreshed project ${plan.projectId} context from ${mission.id} (${update.length} chars)`);
+  } catch (e) {
+    log('WARN', `[context-maintenance] failed (non-fatal): ${e.message}`);
+  }
+}
+
 // ---- completeEnvelope: unified completion/blocking ceremony ----
 // Phase 2.1: All terminal state transitions go through this single function.
 // Ensures consistent execution of the full lifecycle:
@@ -2412,6 +2442,15 @@ async function completeEnvelope(envelope, opts) {
   if (!skipMemory) {
     try { await writeMemory(envelope); } catch (e) {
       log('WARN', `Memory write failed during completion: ${e.message}`);
+    }
+  }
+
+  // Step 5b: Context auto-maintenance (RFC §6b) — after a completed mission that touched a project,
+  // temporal-memory refreshes that project's context from what just happened. Flag-gated + best-effort
+  // (maintainContext self-gates on dispatch.context_maintenance and never throws); never blocks completion.
+  if (status === 'complete' && envelope.type === 'M') {
+    try { await maintainContext(envelope); } catch (e) {
+      log('WARN', `[context-maintenance] hook failed (non-fatal): ${e.message}`);
     }
   }
 
