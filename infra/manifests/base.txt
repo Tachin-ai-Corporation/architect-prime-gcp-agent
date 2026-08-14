@@ -133,6 +133,7 @@ corekit/lib/result-packet.mjs corekit/lib/result-packet.mjs
 corekit/lib/blackboard.mjs corekit/lib/blackboard.mjs
 corekit/lib/resource-ledger.mjs corekit/lib/resource-ledger.mjs
 corekit/lib/checkpoint-spine.mjs corekit/lib/checkpoint-spine.mjs
+corekit/lib/context-maintenance.mjs corekit/lib/context-maintenance.mjs
 corekit/lib/baton.mjs corekit/lib/baton.mjs
 corekit/lib/project-bootstrap.mjs corekit/lib/project-bootstrap.mjs
 corekit/lib/deploy-target.mjs corekit/lib/deploy-target.mjs
