@@ -82,6 +82,46 @@ jobs:
       - name: Check manifest paths
         run: node --test test/manifest-integrity.test.mjs
 
+  codeowners:
+    name: CODEOWNERS Resolves
+    runs-on: ubuntu-latest
+    # Push only. The endpoint requires push access, and a pull_request from a
+    # fork gets a read-only token — running it there would fail for a reason that
+    # has nothing to do with CODEOWNERS.
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+
+      # A CODEOWNERS owner that does not resolve to a real GitHub user or team
+      # with access is not a weaker rule — GitHub ignores it, so the rule stops
+      # existing while still reading like one. With "require review from Code
+      # Owners" enabled, that means protection is configured and unenforced.
+      #
+      # This is also the only check a FORK gets: their copy names an org they do
+      # not own, so every rule in it is inert until they replace the owner. This
+      # job is how they find that out.
+      - name: No unresolvable owners
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          if ! body="$(gh api "repos/${GITHUB_REPOSITORY}/codeowners/errors" 2>&1)"; then
+            echo "::error::Could not query CODEOWNERS errors — failing closed."
+            echo "An unanswerable question about enforcement is not a yes."
+            echo "$body"
+            exit 1
+          fi
+          count="$(echo "$body" | jq '.errors | length')"
+          if [ "$count" != "0" ]; then
+            echo "::error::CODEOWNERS has ${count} unresolvable owner(s). Every affected rule is inert."
+            echo "$body" | jq -r '.errors[] | "  line \(.line): \(.message) — \(.suggestion // "replace with an owner that has write access")"'
+            echo ""
+            echo "If you forked this template, replace the owner in .github/CODEOWNERS"
+            echo "with a team or user in YOUR org that has write access."
+            exit 1
+          fi
+          echo "All CODEOWNERS owners resolve."
+
   boundaries:
     name: Structural Boundaries
     runs-on: ubuntu-latest

@@ -977,6 +977,25 @@ console.log(hits.length ? hits.slice(0, 8).join("\n") : "OK");
     fail "Template cleanliness: a real project id is baked into a platform file. Use a placeholder (your-gcp-project) or read the env var with no default:"
     echo "$TPL_RESULT" | head -8 | sed 's/^/    /'
   fi
+
+  # ---- Check 19: Template cleanliness — no operator identity in shipped files ----
+  # The sibling of Check 18, for people rather than projects. A concrete address
+  # in a file every fork receives ships one operator's contact details to
+  # strangers, and it arrived exactly the way these things do: inside a long
+  # explanatory comment in fleet-policy.json, which compiles into contracts.json
+  # and installs onto every VM.
+  #
+  # The detector lives in corekit/system/identity-scan.mjs so a test can import
+  # it and prove it fires — repo-only tooling, like compile-contracts, never
+  # installed onto a VM. `.github/CODEOWNERS` is exempt TEMPORARILY and the
+  # reason is written down at the exemption itself.
+  ID_RESULT=$(git ls-files 2>/dev/null | node "${REPO_ROOT}/corekit/system/identity-scan.mjs" 2>/dev/null || echo "ERROR: identity-scan did not run")
+  if [[ "$ID_RESULT" == "OK" ]]; then
+    pass "Template cleanliness — no operator identity in shipped platform files"
+  else
+    fail "Template cleanliness: a real address is shipped in a platform file. Use a placeholder domain (example.com):"
+    echo "$ID_RESULT" | head -8 | sed 's/^/    /'
+  fi
 fi
 
 # ============================================================

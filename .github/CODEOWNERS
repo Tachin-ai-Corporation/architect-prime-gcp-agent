@@ -10,6 +10,23 @@
 # This list previously covered three paths (.github, contracts.json, daemon/),
 # leaving the brain, libs, system tooling, manifests, bootstrap scripts, skills
 # and the entire dashboard unowned.
+#
+# ---------------------------------------------------------------------------
+# IF YOU FORKED THIS TEMPLATE: replace the owner below with a team or user in
+# YOUR organisation that has write access.
+#
+# An owner that does not resolve is not a weaker rule — GitHub ignores it, so
+# the rule stops existing while still reading like one. With "require review
+# from Code Owners" enabled, that leaves protection configured and unenforced,
+# which is the worst of the available states. The `CODEOWNERS Resolves` CI job
+# fails on exactly this, so a fork finds out on its first push rather than on
+# the first unreviewed merge.
+#
+# Every rule below names the same owner, so the path list adds no enforcement
+# over the `*` line — it is documentation of what counts as Foundation, and the
+# authoritative version of that list lives in docs/MODULE_CHARTER.md and is
+# enforced by test/boundaries.test.mjs.
+# ---------------------------------------------------------------------------
 
 # Default owner
 * chill@tachin.ai
