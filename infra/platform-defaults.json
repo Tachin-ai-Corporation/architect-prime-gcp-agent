@@ -1,0 +1,58 @@
+{
+  "vertex": {
+    "context_windows": {
+      "claude-opus-4-6": 200000,
+      "gemini-2.5-pro": 1048576,
+      "gemini-3.6-flash": 1048576
+    }
+  },
+  "agents": {
+    "defaultId": "cortex",
+    "subagentIds": [
+      "temporal-research",
+      "temporal-memory",
+      "prefrontal",
+      "motor",
+      "cerebellum"
+    ]
+  },
+  "gateway": {
+    "port": 18789,
+    "bind": "loopback"
+  },
+  "tools": {
+    "_comment": "Gateway tool-result discipline (B-4). A tool result IS context: bound it, ANNOUNCE the bound so the organ can re-derive instead of assuming it saw everything, and never let a binary file reach a model. An unbounded readFile on a downloaded PDF once pushed a single organ call to 877k input tokens.",
+    "output_chars": 80000,
+    "output_head_chars": 56000,
+    "output_tail_chars": 20000,
+    "timeout_ms": 120000,
+    "max_buffer_bytes": 4194304,
+    "binary_guard": true
+  },
+  "env": {
+    "GOOGLE_GENAI_USE_VERTEXAI": "True",
+    "GCE_METADATA_HOST": "metadata.google.internal"
+  },
+  "versioning": {
+    "_comment": "Canonical commit format: v{YYYY}.{MM}.{DD}.{index}.{subindex}: description. This is the FOREVER format. The extractVersion() regex in app/src/app/api/upgrade/route.ts MUST match this. A temporary vX.Y.Z format was used during v5.0-v5.3 and is supported for back-compat only.",
+    "commitFormat": "v{YYYY}.{MM}.{DD}.{index}.{subindex}: description",
+    "canonicalRegex": "^(v\\d{4}\\.\\d{2}\\.\\d{2}\\.\\d+\\.\\d+)",
+    "backcompatRegex": "^(v\\d+\\.\\d+\\.\\d+)"
+  },
+  "workspaces": {
+    "_comment": "Canonical workspace directories the daemon reads from. Manifests MUST target these paths.",
+    "cortex": "workspace",
+    "motor": "workspace-motor",
+    "cerebellum": "workspace-cerebellum",
+    "prefrontal": "workspace-prefrontal",
+    "temporal-research": "workspace-temporal-research",
+    "temporal-memory": "workspace-temporal-memory"
+  },
+  "git": {
+    "prefix": "git/",
+    "artifacts_prefix": "artifacts/",
+    "defaultBranch": "main",
+    "maxPushRetries": 5,
+    "gcBundleThreshold": 25
+  }
+}

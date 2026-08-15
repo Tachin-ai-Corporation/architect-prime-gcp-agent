@@ -1,0 +1,100 @@
+#!/usr/bin/env node
+// compile-contracts — build infra/contracts.json from its two authored sources.
+//
+//   infra/platform-defaults.json  (Foundation — platform release owns it)
+// + infra/fleet-policy.json       (deployment owns it)
+// = infra/contracts.json          (GENERATED effective snapshot, with provenance)
+//
+// Usage:
+//   corekit/system/compile-contracts            # check: fails if the artifact is stale
+//   corekit/system/compile-contracts --write    # regenerate
+//   corekit/system/compile-contracts --split    # one-time: derive the sources from the artifact
+//
+// Every consumer keeps reading one file at one path (C-7). What the split adds is
+// that a deployment can no longer redefine a platform mechanism by editing the
+// same file it uses to pick a model, and the compiled artifact records where each
+// value came from.
+
+import { readFileSync, writeFileSync, existsSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { splitContracts, compileContracts, leafPaths } from '../contracts/contract-planes.mjs';
+import { bytesDigest, canonicalJson } from '../contracts/digest.mjs';
+
+const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+const PLATFORM = join(REPO, 'infra', 'platform-defaults.json');
+const POLICY = join(REPO, 'infra', 'fleet-policy.json');
+const COMPILED = join(REPO, 'infra', 'contracts.json');
+
+const readJson = (p) => JSON.parse(readFileSync(p, 'utf8'));
+// Two-space JSON with a trailing newline — the repo's existing format, so the
+// generated artifact produces no incidental diff.
+const writeJson = (p, o) => writeFileSync(p, JSON.stringify(o, null, 2) + '\n', 'utf8');
+
+const mode = process.argv.includes('--write') ? 'write'
+  : process.argv.includes('--split') ? 'split'
+  : 'check';
+
+function build() {
+  const platform = readJson(PLATFORM);
+  const policy = readJson(POLICY);
+  const { effective, conflicts } = compileContracts(platform, policy, {
+    platformDigest: bytesDigest(readFileSync(PLATFORM)),
+    policyDigest: bytesDigest(readFileSync(POLICY)),
+  });
+  if (conflicts.length) {
+    console.error('[compile-contracts] ERROR: fleet-policy.json sets Foundation-owned paths:');
+    for (const c of conflicts) console.error(`  ${c}`);
+    console.error('  A deployment cannot redefine a platform mechanism (C-29). Move the value, or');
+    console.error('  file a Platform Finding if the mechanism genuinely needs to be tunable (C-34).');
+    process.exit(1);
+  }
+  return effective;
+}
+
+if (mode === 'split') {
+  // One-time derivation. Refuses to clobber existing sources — running it twice
+  // after hand-edits would silently discard them.
+  if (existsSync(PLATFORM) || existsSync(POLICY)) {
+    console.error('[compile-contracts] Sources already exist. Refusing to overwrite them.');
+    process.exit(1);
+  }
+  const compiled = readJson(COMPILED);
+  const { platform, policy } = splitContracts(compiled);
+
+  const before = leafPaths(compiled).filter((p) => !p.startsWith('_provenance')).sort();
+  const after = [...leafPaths(platform), ...leafPaths(policy)].sort();
+  if (canonicalJson(before) !== canonicalJson(after)) {
+    const lost = before.filter((p) => !after.includes(p));
+    const gained = after.filter((p) => !before.includes(p));
+    console.error('[compile-contracts] ERROR: the split is not lossless.');
+    if (lost.length) console.error('  lost:', lost.join(', '));
+    if (gained.length) console.error('  gained:', gained.join(', '));
+    process.exit(1);
+  }
+
+  writeJson(PLATFORM, platform);
+  writeJson(POLICY, policy);
+  console.log(`[compile-contracts] split ${before.length} values → ${leafPaths(platform).length} platform, ${leafPaths(policy).length} policy`);
+  process.exit(0);
+}
+
+const effective = build();
+
+if (mode === 'write') {
+  writeJson(COMPILED, effective);
+  console.log(`[compile-contracts] wrote ${COMPILED}`);
+  process.exit(0);
+}
+
+// check
+const current = existsSync(COMPILED) ? readFileSync(COMPILED, 'utf8') : '';
+const expected = JSON.stringify(effective, null, 2) + '\n';
+if (current === expected) {
+  console.log('[compile-contracts] ✅ infra/contracts.json is up to date with its sources');
+  process.exit(0);
+}
+console.error('[compile-contracts] ❌ infra/contracts.json is stale.');
+console.error('  It is generated from infra/platform-defaults.json + infra/fleet-policy.json.');
+console.error('  Edit a source and run: corekit/system/compile-contracts --write');
+process.exit(1);

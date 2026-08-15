@@ -114,6 +114,19 @@ corekit/lib/gce-auth.mjs corekit/lib/gce-auth.mjs
 corekit/lib/dwd-auth.mjs corekit/lib/dwd-auth.mjs
 corekit/lib/firestore.mjs corekit/lib/firestore.mjs
 corekit/lib/entity-id.mjs corekit/lib/entity-id.mjs
+
+# Contracts package (Foundation) — one executable definition of every persisted
+# shape, plus content addressing. The Fleet Definition registry and the compiler
+# both read it at runtime, so it ships to every VM. Pure: no network, no fs.
+corekit/contracts/index.mjs corekit/contracts/index.mjs
+corekit/contracts/validate.mjs corekit/contracts/validate.mjs
+corekit/contracts/digest.mjs corekit/contracts/digest.mjs
+corekit/contracts/ids.mjs corekit/contracts/ids.mjs
+corekit/contracts/contract-planes.mjs corekit/contracts/contract-planes.mjs
+corekit/contracts/schemas/definition.mjs corekit/contracts/schemas/definition.mjs
+corekit/contracts/schemas/lifecycle.mjs corekit/contracts/schemas/lifecycle.mjs
+corekit/contracts/schemas/runtime.mjs corekit/contracts/schemas/runtime.mjs
+corekit/contracts/schemas/spec.mjs corekit/contracts/schemas/spec.mjs
 corekit/lib/json-repair.mjs corekit/lib/json-repair.mjs
 corekit/lib/vertex-text.mjs corekit/lib/vertex-text.mjs
 corekit/lib/projects.mjs corekit/lib/projects.mjs

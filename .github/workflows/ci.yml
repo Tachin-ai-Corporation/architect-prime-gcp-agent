@@ -62,6 +62,12 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
+      # infra/contracts.json is generated from platform-defaults + fleet-policy.
+      # A stale artifact means the live contract and its authored sources
+      # disagree, which is exactly the drift C-7 exists to prevent.
+      - name: Compiled contract is fresh
+        run: node corekit/system/compile-contracts
+
       - name: Validate contracts
         run: bash corekit/system/validate-contracts --repo
 

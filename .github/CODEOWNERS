@@ -28,8 +28,14 @@
 /.gitattributes             chill@tachin.ai
 /.gitignore                 chill@tachin.ai
 
-# ---- Contracts: the single compiled source of cross-cutting truth (C-7) ----
-/infra/contracts.json       chill@tachin.ai
+# ---- Contracts (C-7) ----
+# platform-defaults is Foundation mechanism and changes only by platform release.
+# fleet-policy is deployment-owned but still reviewed in the template repo.
+# contracts.json is GENERATED — review the sources, not the artifact.
+/infra/platform-defaults.json  chill@tachin.ai
+/infra/fleet-policy.json       chill@tachin.ai
+/infra/contracts.json          chill@tachin.ai
+/corekit/contracts/            chill@tachin.ai
 
 # ---- Installation and activation: what may become live, and how (C-35) ----
 /infra/install.sh           chill@tachin.ai

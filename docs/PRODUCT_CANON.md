@@ -43,9 +43,17 @@ Stateless utility calls (summarization, title generation, classification) go dir
 
 ## III. Configuration & Truth
 
-### C-7 · `infra/contracts.json` is the single source of truth
-All cross-cutting values — models, ports, agent IDs, timeouts, locations, repo coordinates — live in contracts.json and nowhere else. `validate-contracts` enforces it at bootstrap and upgrade. READMEs and docs describe; contracts decide.
-**Violation looks like:** a model string, port, or timeout hardcoded in a script or prompt; a second config file duplicating a contract value; documentation cited as authority over contracts.json.
+### C-7 · One compiled effective contract, with authoritative provenance per plane
+All cross-cutting values — models, ports, agent IDs, timeouts, locations, repo coordinates — live in the contract and nowhere else. `validate-contracts` enforces it at bootstrap and upgrade. READMEs and docs describe; contracts decide.
+
+There is **one artifact** every consumer reads (`infra/contracts.json`), and it is **generated**. It is compiled from two authored sources that are owned by different planes (C-29):
+
+- `infra/platform-defaults.json` — **Foundation.** Mechanism: organ topology, gateway wiring, protocol grammar, execution ceilings, the workspace path catalog, artifact-substrate constants. Changes only through a platform release.
+- `infra/fleet-policy.json` — **deployment-owned.** Choices: models and regions, thresholds and feature flags, repo coordinates, tuning. Two unrelated deployments reasonably differ here.
+
+Policy may not set a Foundation-owned path; `compile-contracts` reports the attempt and fails rather than silently discarding the value. The compiled artifact carries a `_provenance` block recording the digest of each source and the Foundation path list, so any live value can be traced to the plane that owns it. CI fails when the artifact is stale.
+
+**Violation looks like:** a model string, port, or timeout hardcoded in a script or prompt; a second config file duplicating a contract value; documentation cited as authority over the contract; **hand-editing the generated `contracts.json`**; a deployment tuning a platform mechanism by moving its key into `fleet-policy.json`.
 
 ### C-8 · No secrets in git, on disk images, or in Firestore — ever
 Authentication is ADC via GCE metadata, DWD signJwt, and the dashboard Secret Store (payloads only in GCP Secret Manager; metadata and grants in Firestore; per-secret per-agent IAM). Tokens are minted or read at runtime, used via command substitution, and never persisted into files, remote URLs, transcripts, MEMORY.md, or Drive artifacts.
