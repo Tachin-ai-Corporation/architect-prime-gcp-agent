@@ -187,20 +187,19 @@ export function createClient(config) {
     const url = parentPath
       ? `${BASE}/${parentPath}:runQuery`
       : `${BASE}:runQuery`;
+    // An unfiltered query must omit `where` entirely. Sending a compositeFilter
+    // with an empty `filters` array is not "match everything" — Firestore
+    // rejects it, and the caller sees an empty result set rather than an error,
+    // which reads as "there is no such work" instead of "the query was malformed".
+    const conditions = (filters || []).map(f => ({
+      fieldFilter: { field: { fieldPath: f.field }, op: f.op, value: f.value },
+    }));
+
     const structuredQuery = {
       from: [{ collectionId }],
-      where: {
-        compositeFilter: {
-          op: 'AND',
-          filters: filters.map(f => ({
-            fieldFilter: {
-              field: { fieldPath: f.field },
-              op: f.op,
-              value: f.value,
-            }
-          })),
-        }
-      },
+      ...(conditions.length
+        ? { where: { compositeFilter: { op: 'AND', filters: conditions } } }
+        : {}),
       limit: opts.limit || 300,
     };
     // OrderBy requires composite indexes with multi-field where clauses.
