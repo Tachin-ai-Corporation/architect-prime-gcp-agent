@@ -270,6 +270,27 @@ test('a role compiles to a valid Effective Agent Spec with a stable digest', () 
   assert.ok(Object.keys(a.files).some((f) => f.endsWith('SKILL.md')), 'the bundle renders skills');
 });
 
+test('the spec digest identifies CONTENT, not the platform it runs on', () => {
+  // Caught by the canary: including platform_version meant every upgrade changed
+  // the digest even when no content changed, so work before and after an upgrade
+  // could never be grouped and the rollout gate saw zero missions for a release
+  // that had run several. C-32 stamps three coordinates because they answer three
+  // questions; a digest encoding the platform version makes one of them noise.
+  const role = IMPORTED_ROLES.get('assistant');
+  const base = {
+    agentId: 'millie', role, personas: [], skills: [], responsibilities: [],
+    firmware: { cortex: '# cortex' }, compiledAt: AT,
+  };
+
+  const a = compileAgentSpec({ ...base, platformVersion: 'v2026.08.15.7.0', fleetRelease: 'fr-1' });
+  const b = compileAgentSpec({ ...base, platformVersion: 'v2026.08.15.9.9', fleetRelease: 'fr-2' });
+
+  assert.equal(a.spec.digest, b.spec.digest,
+    'identical content on a different platform version and release is the same content');
+  assert.notEqual(a.spec.platform_version, b.spec.platform_version, 'the coordinates are still recorded');
+  assert.notEqual(a.spec.fleet_release, b.spec.fleet_release);
+});
+
 test('a change to any input changes the spec digest', () => {
   const role = IMPORTED_ROLES.get('assistant');
   const base = {

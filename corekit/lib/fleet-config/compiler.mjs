@@ -232,8 +232,26 @@ export function compileAgentSpec(input) {
     bundle: { tree_digest: treeDigest(files), files: fileDigests },
   };
 
-  // The digest covers everything except itself.
-  spec.digest = contentDigest(spec, { exclude: ['digest', 'compiled_at'] });
+  // ---- What the digest covers, and what it deliberately does not ----
+  //
+  // `agentSpecDigest` answers one question: *what content is this agent
+  // running*. So it covers the definition revisions, the capability closure and
+  // the rendered bundle — and excludes the platform and release coordinates.
+  //
+  // Including `platform_version` was a real error, caught by the canary: every
+  // platform upgrade changed the digest even when no content changed, so work
+  // done before and after an upgrade could never be grouped, and the rollout gate
+  // saw zero missions for a release that had run several. It also made the digest
+  // redundant — C-32 stamps three coordinates precisely because they answer three
+  // different questions, and a digest that already encoded the platform version
+  // would make the first of them noise.
+  //
+  // `fleet_release` is excluded for the same reason in the other direction: two
+  // releases that leave an agent's content identical should yield the identical
+  // digest, so "nothing changed for this agent" is visible rather than inferred.
+  spec.digest = contentDigest(spec, {
+    exclude: ['digest', 'compiled_at', 'platform_version', 'fleet_release'],
+  });
 
   assertValid(EFFECTIVE_AGENT_SPEC_SCHEMA, spec, `effectiveAgentSpec/${agentId}`);
   return { spec, files, closure, warnings };
