@@ -249,11 +249,25 @@ deployed Prime cannot write Foundation paths or use repo release credentials.
   (sha256:f9a980797b8d…) as assigned`. The dashboard had no test runner at all — Node's native
   TypeScript stripping means the pure module has 13 real tests, the first in `app/`.
 
+- **The seven exit-gate questions, as a structure** (`954ec95`). `release-view.ts` answers what
+  changed / why / who authored it / where it is active / how it performed / what approval occurred /
+  how to undo it — or returns an explicit `unknown` with a reason, with `unanswered()` naming the
+  gaps. Never-measured is distinguished from measured-zero; an unreadable change is named rather
+  than dropped; `created_by` is not passed off as the content author. Served by
+  `GET /api/fleet/releases[?id=]`.
+
+  **Run against the live registry it immediately found a real defect** — see below.
+
+- **Template cleanliness for people, not just projects** (`5e5b0ad`). `identity-scan.mjs` +
+  validate-contracts Check 19 + a `CODEOWNERS Resolves` CI job that fails closed. Caught a real
+  address shipped inside a `fleet-policy.json` comment, which compiles into `contracts.json` and
+  installs onto every VM.
+
 **Not built — no partial credit claimed:**
 
 - The Fleet Studio screens themselves (roles, souls, skills, effective agent + provenance, changes
-  and semantic diffs, releases/canaries/rollback, findings). The API answers *what is running*; there
-  is no screen yet, so the exit gate's "from one screen" is **not met**.
+  and semantic diffs, releases/canaries/rollback, findings). The APIs answer the questions; there is
+  no screen yet, so the exit gate's "from one screen" is **not met**.
 - Structured proposal cards in chat with `Run canary` / `Approve` / `Reject` / `Rollback`.
 - Replacing the GitHub-`main` catalog reads. Three routes still read the tip of `main`
   (`/api/agent-types`, `/api/contracts`, `/api/primes/[id]/brain-config`), which answers "what would
@@ -261,6 +275,33 @@ deployed Prime cannot write Foundation paths or use repo release credentials.
   they diverge, which is the whole problem. The new coordinates route is the pattern to follow.
 - IAM and egress boundary enforcement in deployment policy (the CI half is done; the deployed half
   is not).
+- The CODEOWNERS owner swap. The operator chose a team handle; landing it before the team exists
+  would reproduce the failure it exists to prevent — every rule inert while still reading as
+  enforced. `.github/CODEOWNERS` is exempt from Check 19 until then, and the reason is written at
+  the exemption rather than left as a silent hole.
+
+#### The rollback target that was never set
+
+Running the exit gate against the live registry produced this, for both releases:
+
+```
+undo : UNKNOWN — this release has no predecessor, so there is nothing to roll back to
+```
+
+`parent_release` came from `activeReleaseId()`, which matches only `status === 'active'`. A release
+reaches `active` only after a full promotion, and a canary-first rollout never takes it there — both
+live releases sit at `canary`. So every release recorded a null parent and none had anywhere to roll
+back to. C-31 makes rollback a pointer operation with a target named in advance;
+`evaluateRollout` can decide `rollback`, and `observe --apply` would then find no target and pause
+instead. **The one moment the promise matters is the one where it was missing.**
+
+`previousLiveReleaseId()` supersedes it: newest release at `active` or `canary`, excluding
+`superseded` and `rolled-back` (rolling forward onto something already rolled back would undo the
+undo). Two equality filters rather than an unfiltered read — the shape that made the rollout gate
+report zero missions.
+
+**Live data still needs a backfill:** `fr-6a524ab97fd1` carries a null `parent_release`. The code is
+fixed; the existing record is not, and no tenant data was edited to change that.
 
 ### CLEANUP — restructure, purge, redocument
 
