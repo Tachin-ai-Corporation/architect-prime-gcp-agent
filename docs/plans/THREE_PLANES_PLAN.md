@@ -263,16 +263,28 @@ deployed Prime cannot write Foundation paths or use repo release credentials.
   address shipped inside a `fleet-policy.json` comment, which compiles into `contracts.json` and
   installs onto every VM.
 
+- **The screen** (`4aea2d8`). `/p/[id]/studio` shows what each agent is running (all three
+  coordinates, desired and actual side by side) and answers the seven questions for a selected
+  release. The design rule that carries meaning rather than taste: **an unknown must not look like
+  good news** — unknowns render as a marked block with their reason, never an empty cell, and the
+  panel leads with a count of how many of the seven the record cannot answer.
+
+- **Deployed content, not `main`** (`043fbc0`). `/api/contracts` and `/api/primes/[id]/brain-config`
+  read the prime's own commit. `resolveDeployedRef` keeps a pinned 40-hex commit apart from a
+  floating branch — `coreRef` is initialised to the literal `"main"` and only becomes a commit once
+  a deploy resolves one, so the field holds two different kinds of thing. A floating ref returns
+  WITH its reason as `_source`, so a caller renders it as unpinned rather than as fact.
+
 **Not built — no partial credit claimed:**
 
-- The Fleet Studio screens themselves (roles, souls, skills, effective agent + provenance, changes
-  and semantic diffs, releases/canaries/rollback, findings). The APIs answer the questions; there is
-  no screen yet, so the exit gate's "from one screen" is **not met**.
 - Structured proposal cards in chat with `Run canary` / `Approve` / `Reject` / `Rollback`.
-- Replacing the GitHub-`main` catalog reads. Three routes still read the tip of `main`
-  (`/api/agent-types`, `/api/contracts`, `/api/primes/[id]/brain-config`), which answers "what would
-  a fresh install get today" rather than "what is this fleet running". They look identical until
-  they diverge, which is the whole problem. The new coordinates route is the pattern to follow.
+- The Studio's authoring surfaces: roles, souls, skills and semantic diffs are readable through
+  `fleet-config` but have no screen. The exit gate's read half is met; authoring is still CLI.
+- `/api/agent-types` still reads `main` — deliberately. It is a fleet-wide catalog read with no
+  single prime to resolve against, and inventing one would be worse than the honest `main`.
+- The Studio page is **not visually verified**: the dashboard is behind authentication and
+  disabling it for a screenshot is not a trade worth making. `tsc` and a production build cover
+  compilation only.
 - IAM and egress boundary enforcement in deployment policy (the CI half is done; the deployed half
   is not).
 - The CODEOWNERS owner swap. The operator chose a team handle; landing it before the team exists
