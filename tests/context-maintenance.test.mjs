@@ -1,7 +1,7 @@
 // tests/context-maintenance.test.mjs — pure-core tests for the temporal-memory auto-maintenance reflex.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { shouldMaintainContext, buildMaintenancePrompt, parseMaintenanceResponse } from '../corekit/lib/context-maintenance.mjs';
+import { shouldMaintainContext, buildMaintenancePrompt, parseMaintenanceResponse, shouldMaintainProcesses, buildProcessMaintenancePrompt } from '../corekit/lib/context-maintenance.mjs';
 
 const FLAG_ON = { dispatch: { context_maintenance: true } };
 const FLAG_OFF = { dispatch: { context_maintenance: false } };
@@ -61,7 +61,48 @@ describe('parseMaintenanceResponse', () => {
     assert.equal(parseMaintenanceResponse('').update, '');
     assert.equal(parseMaintenanceResponse('{"update": 42}').update, '');
   });
-  it('caps the update at 400 chars', () => {
+  it('caps the update at 400 chars by default', () => {
     assert.equal(parseMaintenanceResponse(JSON.stringify({ update: 'y'.repeat(900) })).update.length, 400);
+  });
+  it('honors a custom cap (playbook narratives use 700)', () => {
+    assert.equal(parseMaintenanceResponse(JSON.stringify({ update: 'y'.repeat(900) }), 700).update.length, 700);
+  });
+});
+
+const MP = (over = {}) => ({ type: 'M', status: 'complete', project_id: 'tachin-web', recalled_processes: ['p-audit', 'p-review'], ...over });
+
+describe('shouldMaintainProcesses', () => {
+  it('runs for a completed mission that recalled playbooks (flag on); dedups + bounds to 3', () => {
+    const r = shouldMaintainProcesses(MP({ recalled_processes: ['a', 'a', 'b', 'c', 'd'] }), FLAG_ON);
+    assert.equal(r.run, true);
+    assert.deepEqual(r.processIds, ['a', 'b', 'c']);
+  });
+  it('does not run with no recalled playbooks, flag off, or a non-complete mission', () => {
+    assert.equal(shouldMaintainProcesses(MP({ recalled_processes: [] }), FLAG_ON).run, false);
+    assert.equal(shouldMaintainProcesses(MP({ recalled_processes: null }), FLAG_ON).run, false);
+    assert.equal(shouldMaintainProcesses(MP(), FLAG_OFF).run, false);
+    assert.equal(shouldMaintainProcesses(MP({ status: 'blocked' }), FLAG_ON).run, false);
+  });
+  it('is null-safe and filters non-string ids', () => {
+    assert.equal(shouldMaintainProcesses(null, FLAG_ON).run, false);
+    assert.deepEqual(shouldMaintainProcesses(MP({ recalled_processes: ['ok', 42, '', null] }), FLAG_ON).processIds, ['ok']);
+  });
+});
+
+describe('buildProcessMaintenancePrompt', () => {
+  it('frames a conservative narrative refinement with the playbook, the mission, and a strict JSON contract', () => {
+    const p = buildProcessMaintenancePrompt({ id: 'p-audit', name: 'Codebase Audit', narrative: 'An audit measures.' }, MP({ title: 'Audit X', output: 'found 3 issues' }));
+    assert.match(p, /PROCESS PLAYBOOK/);
+    assert.match(p, /Codebase Audit/);
+    assert.match(p, /An audit measures/);
+    assert.match(p, /Audit X/);
+    assert.match(p, /NO tool[\s\S]*syntax/i);
+    assert.match(p, /EMPTY string to leave it as-is/i);
+    assert.match(p, /"update"/);
+  });
+  it('bounds long outcomes and is null-safe on narrative', () => {
+    const p = buildProcessMaintenancePrompt({ id: 'p' }, MP({ output: 'z'.repeat(9000) }));
+    assert.ok(p.length < 4000, 'prompt stays bounded');
+    assert.match(p, /CURRENT NARRATIVE: \(none\)/);
   });
 });

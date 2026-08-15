@@ -51,7 +51,7 @@ import { createLifecycleHandler } from '../corekit/lib/envelope-lifecycle.mjs';
 import { composeDeliverable } from '../corekit/lib/deliverable.mjs';
 import { executeCheckpoints } from '../corekit/lib/checkpoint-executor.mjs';
 import { rebuildFromSpine } from '../corekit/lib/checkpoint-spine.mjs';
-import { shouldMaintainContext, buildMaintenancePrompt, parseMaintenanceResponse } from '../corekit/lib/context-maintenance.mjs';
+import { shouldMaintainContext, buildMaintenancePrompt, parseMaintenanceResponse, shouldMaintainProcesses, buildProcessMaintenancePrompt } from '../corekit/lib/context-maintenance.mjs';
 import { handoffModelEnabled, decideHop, missionOriginator, effectiveAssignee } from '../corekit/lib/baton.mjs';
 import { projectBootstrapEnabled, missionOriginSpace } from '../corekit/lib/project-bootstrap.mjs';
 import { renderBlackboard } from '../corekit/lib/blackboard.mjs';
@@ -2104,6 +2104,14 @@ async function writeMemory(envelope) {
 // Bounded (only the touched project), conservative (skips when nothing durable was learned), and
 // it never ships or touches production — it only curates context.
 async function maintainContext(mission) {
+  // Two independent, best-effort refreshes after a mission completes: the touched PROJECT's context,
+  // and any PLAYBOOK narratives the mission drew on. Each self-gates on the flag and never throws; one
+  // failing never blocks the other, and neither ever blocks mission completion.
+  await maintainProjectContext(mission);
+  await maintainPlaybookNarratives(mission);
+}
+
+async function maintainProjectContext(mission) {
   try {
     const plan = shouldMaintainContext(mission, CONTRACTS);
     if (!plan.run) return;
@@ -2123,7 +2131,42 @@ async function maintainContext(mission) {
     await firestoreWrite('projects', plan.projectId, { ...proj, context: ctx });
     log('INFO', `[context-maintenance] refreshed project ${plan.projectId} context from ${mission.id} (${update.length} chars)`);
   } catch (e) {
-    log('WARN', `[context-maintenance] failed (non-fatal): ${e.message}`);
+    log('WARN', `[context-maintenance] project failed (non-fatal): ${e.message}`);
+  }
+}
+
+// Refine the narrative of any PLAYBOOK the mission drew on (recalled_processes, stamped by checkpoint_plan
+// when a playbook's intent_keywords matched the mission goal). Bounded (≤3), conservative (the organ
+// leaves it as-is unless the run revealed something durable), additive (writes to the living Firestore
+// store + bumps version). Never touches production; only curates the shared library.
+async function maintainPlaybookNarratives(mission) {
+  try {
+    const pplan = shouldMaintainProcesses(mission, CONTRACTS);
+    if (!pplan.run) return;
+    await ensureProcessesLoaded();
+    for (const pid of pplan.processIds) {
+      try {
+        let proc = PROCESSES[pid];
+        if (!proc) { try { proc = await firestoreRead('processes', pid); } catch { proc = null; } }
+        if (!proc || proc.status === 'deprecated') continue;
+        const r = await callAgent('temporal-memory', {
+          instruction: buildProcessMaintenancePrompt(proc, mission),
+          accept_criteria: 'Return exactly one JSON object {"update":"<the refined narrative, or empty string to leave it as-is>"}.',
+        });
+        if (!r || !r.success) continue;
+        const { update } = parseMaintenanceResponse(toStr(r.output), 700);
+        if (!update || update === String(proc.narrative || '').trim()) continue;
+        await firestoreWrite('processes', pid, {
+          ...proc, narrative: update, version: (Number(proc.version) || 1) + 1,
+          updated_at: now(), updated_by: 'temporal-memory', last_refined_from: mission.id,
+        });
+        log('INFO', `[context-maintenance] refined playbook ${pid} narrative from ${mission.id} (${update.length} chars)`);
+      } catch (e) {
+        log('WARN', `[context-maintenance] playbook ${pid} refresh failed (non-fatal): ${e.message}`);
+      }
+    }
+  } catch (e) {
+    log('WARN', `[context-maintenance] playbook maintenance failed (non-fatal): ${e.message}`);
   }
 }
 

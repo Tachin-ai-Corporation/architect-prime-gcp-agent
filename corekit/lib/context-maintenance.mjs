@@ -58,18 +58,68 @@ export function buildMaintenancePrompt(mission, project) {
 }
 
 /**
- * Parse the organ's response into a bounded context update. Pure. Never throws.
+ * Parse the organ's response into a bounded update. Pure. Never throws.
+ * @param {string} text
+ * @param {number} [maxLen=400] cap on the update length (project notes 400; playbook narratives longer)
  * @returns {{update:string}}  update is '' when nothing durable was learned (or on any parse failure).
  */
-export function parseMaintenanceResponse(text) {
+export function parseMaintenanceResponse(text, maxLen = 400) {
   if (!text) return { update: '' };
   try {
     const m = String(text).match(/\{[\s\S]*\}/);
     if (!m) return { update: '' };
     const obj = JSON.parse(m[0]);
-    const update = typeof obj.update === 'string' ? obj.update.trim().slice(0, 400) : '';
+    const update = typeof obj.update === 'string' ? obj.update.trim().slice(0, maxLen) : '';
     return { update };
   } catch {
     return { update: '' };
   }
+}
+
+/**
+ * Decide whether a completed mission should refine any PLAYBOOK narratives it drew on.
+ * Pure. Runs only when the flag is on, the envelope is a completed mission, and the planner recalled
+ * one or more playbooks (mission.recalled_processes, stamped by checkpoint_plan when a playbook's
+ * intent_keywords matched the mission goal). Bounded to at most `max` so one mission can never fan out.
+ * @returns {{run:boolean, processIds?:string[], reason?:string}}
+ */
+export function shouldMaintainProcesses(mission, contracts, max = 3) {
+  if (!contracts?.dispatch?.context_maintenance) return { run: false, reason: 'flag off' };
+  if (!mission || mission.type !== 'M') return { run: false, reason: 'not a mission' };
+  if (mission.status !== 'complete') return { run: false, reason: 'not complete' };
+  const ids = Array.isArray(mission.recalled_processes)
+    ? [...new Set(mission.recalled_processes.filter(x => typeof x === 'string' && x))].slice(0, max)
+    : [];
+  if (ids.length === 0) return { run: false, reason: 'no playbook recalled' };
+  return { run: true, processIds: ids };
+}
+
+/**
+ * Build the instruction the temporal-memory organ follows to REFINE a playbook's narrative from what
+ * a mission that drew on it just did. Same steward disposition, conservative + additive: refine ONLY if
+ * the run genuinely revealed something the pattern should carry; else leave it as-is (empty update). A
+ * playbook narrative is tool-syntax-free prose about HOW a recurring kind of work is done well. Pure.
+ */
+export function buildProcessMaintenancePrompt(process, mission) {
+  const goal = String(mission?.title || mission?.instruction || '').replace(/\s+/g, ' ').slice(0, 500);
+  const outcome = String(mission?.output || '').replace(/\s+/g, ' ').slice(0, 2000);
+  const current = String(process?.narrative || '').replace(/\s+/g, ' ').slice(0, 1200);
+  return [
+    'You are the temporal-memory organ, keeping a shared PROCESS PLAYBOOK current after a mission drew on it.',
+    'A playbook is a remembered narrative — HOW a recurring kind of work is done well, in prose, with NO tool',
+    'syntax, NO step lists, NO commands. Refine the narrative ONLY if this mission genuinely revealed something',
+    'the pattern should carry going forward (a sharper way, a pitfall worth naming, a step that proved to matter).',
+    'If the run was routine and the narrative already covers it, say nothing — silence is the honest default.',
+    'You refine and tighten; you never bloat, never restate the mission, never invent, never add tool syntax.',
+    '',
+    `PLAYBOOK: ${process?.name || process?.id || 'unknown'} (${process?.id || ''})`,
+    `CURRENT NARRATIVE: ${current || '(none)'}`,
+    '',
+    `MISSION THAT USED IT — GOAL: ${goal}`,
+    `MISSION OUTCOME: ${outcome || '(none)'}`,
+    '',
+    'Respond with exactly ONE JSON object and nothing else:',
+    '  {"update": "<the FULL refined narrative prose if it should change, or an EMPTY string to leave it as-is>"}',
+    'When non-empty, "update" is the complete replacement narrative (<= 700 chars), tool-syntax-free prose.',
+  ].join('\n');
 }

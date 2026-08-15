@@ -347,6 +347,10 @@ export async function handleCheckpointPlan(ctx, deps) {
     });
     if (matchingProcesses.length > 0) {
       log('INFO', `[checkpoint_plan] Process match: found ${matchingProcesses.length} matching process(es): ${matchingProcesses.map(p => p.id).join(', ')}`);
+      // Usage signal for post-mission playbook auto-maintenance (context-maintenance.mjs): record which
+      // playbooks were surfaced to the planner for this work, so the temporal-memory reflex can refine
+      // their narratives from what the mission actually did (bounded/conservative/additive).
+      try { if (envelope) envelope.recalled_processes = matchingProcesses.map(p => p.id); } catch { /* best-effort */ }
       processMatchHint = `\n\n[PROCESS PLAYBOOKS] A remembered narrative may cover this work:\n${matchingProcesses.map(p => `- ${p.id}: ${p.name} — ${(p.narrative || p.description || '').substring(0, 200)}`).join('\n')}\nTreat any that fits as guidance and fold it into your OWN checkpoints — adapt it, keep full control.`;
     }
   }
