@@ -376,6 +376,25 @@ async function cmdObserve(registry, args) {
   const release = await registry._db.read(pathFor('fleetRelease', releaseId));
   if (!release) die(`unknown release '${releaseId}'`);
 
+  /**
+   * The work a release actually produced, grouped down to the digests its
+   * agents attested.
+   *
+   * One equality filter, so no composite index is needed. The cap is reported
+   * when it bites: a silently truncated sample reads as a complete one, and
+   * "the last 500 missions" is a different claim from "every mission".
+   */
+  async function workForRelease(db, id, digests) {
+    const LIMIT = 500;
+    const rows = (await db.query('', 'work', [
+      { field: 'fleet_release', op: 'EQUAL', value: { stringValue: id } },
+    ], { noOrderBy: true, limit: LIMIT })) || [];
+    if (rows.length === LIMIT) note(`NOTE: ${id} hit the ${LIMIT}-mission read cap — metrics cover a sample`);
+    const { groups, unstamped } = groupBySpec(rows);
+    if (unstamped.length) note(`NOTE: ${unstamped.length} mission(s) on ${id} carry no spec digest and are excluded`);
+    return [...digests].flatMap((d) => groups.get(d) || []);
+  }
+
   // Which agents are on this release, and which digests they attested.
   const assignments = await registry.listAssignments();
   const onRelease = assignments.filter((a) => a.actual_release === releaseId && a.actual_spec_digest);
@@ -388,20 +407,23 @@ async function cmdObserve(registry, args) {
   const priorId = release.parent_release;
   const prior = priorId ? await registry._db.read(pathFor('fleetRelease', priorId)) : null;
 
-  // Work is deployment-rooted (C-1), so one read covers every agent on the
-  // release; the digest stamp is what separates the groups.
-  const work = await registry._db.query('', 'work', [], { noOrderBy: true, limit: 300 });
-  const { groups } = groupBySpec(work || []);
-
-  const candidateWork = [...digests].flatMap((d) => groups.get(d) || []);
+  // Work is deployment-rooted (C-1), so one read per release covers every agent
+  // on it; the digest stamp then separates the groups.
+  //
+  // Ask for the release's OWN work rather than reading the collection and
+  // filtering locally. `work` holds every mission the deployment has ever run,
+  // so an unfiltered read returns an arbitrary slice that almost certainly
+  // excludes the release being judged — and a gate that says "0 missions" when
+  // it means "I looked somewhere else" is worse than no gate.
+  const candidateWork = await workForRelease(registry._db, releaseId, digests);
   const candidate = deriveMetrics(candidateWork);
 
   let baseline = null;
   if (prior) {
-    const priorDigests = assignments
+    const priorDigests = new Set(assignments
       .map((a) => (a.actual_release === priorId ? a.actual_spec_digest : null))
-      .filter(Boolean);
-    const baselineWork = priorDigests.flatMap((d) => groups.get(d) || []);
+      .filter(Boolean));
+    const baselineWork = await workForRelease(registry._db, priorId, priorDigests);
     if (baselineWork.length) baseline = deriveMetrics(baselineWork);
   }
 

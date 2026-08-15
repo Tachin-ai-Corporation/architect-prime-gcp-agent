@@ -264,6 +264,9 @@ deployment converge to the same effective state for the same two version coordin
 | **P1b** Work state machine | `25f5e52` | Real mission on millie completed with **0** `illegal_transition` observations — the table matches the daemon |
 | **P2** registry & compiler | `65f8de3`…`e084492` | Live tenant: 106 definitions sealed → validated → released `fr-bc76ebe656e2` → millie pinned → spec compiled (12 skills, 74 capabilities, closure clean) |
 | **P3** runtime apply & stamping | `eca92bb`…`6f238c4` | **A soul change reached millie with no GitHub commit and no CoreKit upgrade** (`coreRef` unchanged across the apply); mission stamped with all three coordinates |
+| **P4** Prime as Fleet Architect | `d847527`…`eebc848` | All four repo push paths **absent** on candicejr; a Platform Finding refuses missing fields, refuses an embedded secret, and files when complete |
+| **P5** evaluation & rollout gate | `1377be6`…`a6361e9` | Gate runs live against the tenant: a candidate clearing every floor but regressing on its baseline still rolls back; a critical breach does not wait for the window |
+| **P5 fix** idempotent composition | `a5e8138` | **Applying the same release three times is applying it once** — see below |
 
 ### The P3 exit gate, demonstrated
 
@@ -329,6 +332,34 @@ into a project commit. Both closed, both tested.
 
 No migration script is needed: the upgrade overwrites `SOUL.md` from the
 manifest, and the next render is clean.
+
+**Proven on the canary.** millie had reached **7×** (a 28,388-byte SOUL) before
+the fix — worse than the 2× first observed, because every manual apply during
+P5 added another copy.
+
+```
+before          overlay 7× · SOUL 28,388 bytes · no SOUL.base.md
+upgrade a5e8138 SOUL.base.md 15,395 · render reset, overlay 0×
+                assemble-persona → 16,915 (base + specialty layer, once)
+apply 1         27 written · spec sha256:f9a980797b8d… · overlay 1× · 17,034 bytes
+apply 2         skip: already converged
+apply 3         skip: already converged
+after 3 applies 17,034 bytes · overlay 1× · base 15,395 untouched · digest unchanged
+```
+
+And the drift path, which is the half that is easy to get wrong — revert the
+render the way a platform upgrade would, while the registry still says
+converged:
+
+```
+cp SOUL.base.md SOUL.md      overlay 0× — the agent is now running Foundation defaults
+sync                          "content on disk has drifted from the assigned spec — re-applying"
+                              1 written, 26 unchanged   ← the no-op detection stays precise
+after                         17,034 bytes · overlay 1×
+```
+
+Before the fix that same state reported `already converged` and left the agent
+stale indefinitely.
 
 **The test that would have caught it** now exists —
 `test/content-sync-idempotence.test.mjs` applies the same release five times and

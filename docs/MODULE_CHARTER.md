@@ -75,6 +75,21 @@ Every domain splits three ways: **mechanism** (Foundation) · **definition** (Fl
 | **Artifacts** | git store, CAS semantics, merge/publish protocol | retention and merge policy within bounds | objects, refs, changed-path manifests |
 | **Evals** | runner, isolation, graders, metrics schema | role/skill regression cases and rollout thresholds | eval runs, comparisons, decisions |
 
+### The soul cache has a name
+
+"The rendered effective SOUL is a **cache**" is a claim about files, so the files
+are separated to make it true:
+
+| file | plane | who writes it |
+|---|---|---|
+| `workspace-<organ>/SOUL.base.md` | Foundation | the platform manifest, and nothing on the VM |
+| `workspace-<organ>/SOUL.md` | Fleet Definition | composition — truncated and re-derived on every apply |
+
+Composition reads the base and writes the render, never the other way round. When
+both were the same file, each apply composed onto the previous apply's output and
+the overlay accumulated one copy per pass — a cache that could not be
+recomputed is not a cache, it is state.
+
 ---
 
 ## Deciding where a thing goes
