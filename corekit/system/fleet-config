@@ -63,7 +63,10 @@ function platformVersion() {
   // validated against (C-32).
   try {
     const state = JSON.parse(readFileSync(join(CORE_DIR, 'corekit', 'STATE.json'), 'utf8'));
-    return state.version || state.coreRef || 'unknown';
+    // STATE.json's `version` is a schema counter (a number), not the platform
+    // coordinate. The commit the VM actually installed is `coreRef`, and that is
+    // what a definition's compatibility range and a mission's stamp must name.
+    return String(state.coreRef || state.version || 'unknown');
   } catch {
     return process.env.PLATFORM_VERSION || 'unknown';
   }

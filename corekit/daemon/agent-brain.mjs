@@ -791,7 +791,7 @@ function versionCoordinates() {
   let platformVersion = null;
   try {
     const state = JSON.parse(readFileSync(CORE_DIR + '/corekit/STATE.json', 'utf8'));
-    platformVersion = state.version || state.coreRef || null;
+    platformVersion = String(state.coreRef || state.version || '') || null;
   } catch { /* pre-STATE install */ }
 
   let fleetRelease = null;
