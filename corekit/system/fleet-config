@@ -17,6 +17,7 @@
 //   fleet-config rollback <releaseId> --reason "..."
 //   fleet-config compile <agentId>         the Effective Agent Spec, with its digest
 //   fleet-config status                    releases, assignments, drift
+//   fleet-config observe <releaseId> [--apply]   judge a release on the work it produced
 //   fleet-config finding create --title … --class provider --invariant … --why-not … --missions …
 //   fleet-config finding list [--status open]
 //   fleet-config finding status <id>
@@ -35,6 +36,8 @@ import {
 import { compileAgentSpec } from '../lib/fleet-config/compiler.mjs';
 import { validateSet, VALIDATOR_NAMES } from '../lib/fleet-config/validators.mjs';
 import { diffSets, renderDiff, impactedAgents } from '../lib/fleet-config/diff.mjs';
+import { deriveMetrics, groupBySpec } from '../lib/fleet-config/metrics.mjs';
+import { evaluateRollout, renderDecision } from '../lib/fleet-config/rollout.mjs';
 import { DEFINITION_KINDS, sealRevision, assertValid, contentDigest } from '../contracts/index.mjs';
 import { PLATFORM_FINDING_SCHEMA } from '../contracts/schemas/lifecycle.mjs';
 import { pathFor } from '../contracts/ids.mjs';
@@ -354,6 +357,87 @@ async function cmdCompile(registry, args) {
   emit({ spec, closure, files: Object.keys(files).sort(), warnings });
 }
 
+/**
+ * Observe a release in flight and act on what it did.
+ *
+ * This is what makes a canary a canary rather than a hopeful assignment: it reads
+ * the work the release actually produced — grouped by the spec digest stamped on
+ * each envelope (C-32) — compares it against what the previous release did, and
+ * applies the gate.
+ *
+ * A critical breach rolls back automatically. Everything else reports and waits,
+ * because a gate that acts on ambiguity gets switched off after its first false
+ * alarm.
+ */
+async function cmdObserve(registry, args) {
+  const [releaseId] = args.filter((a) => !a.startsWith('--'));
+  if (!releaseId) die('usage: fleet-config observe <releaseId> [--apply] [--stage canary|partial|fleet]');
+
+  const release = await registry._db.read(pathFor('fleetRelease', releaseId));
+  if (!release) die(`unknown release '${releaseId}'`);
+
+  // Which agents are on this release, and which digests they attested.
+  const assignments = await registry.listAssignments();
+  const onRelease = assignments.filter((a) => a.actual_release === releaseId && a.actual_spec_digest);
+  if (!onRelease.length) {
+    emit({ release: releaseId, action: 'hold', reason: 'no agent has applied this release yet', agents: [] });
+    return;
+  }
+
+  const digests = new Set(onRelease.map((a) => a.actual_spec_digest));
+  const priorId = release.parent_release;
+  const prior = priorId ? await registry._db.read(pathFor('fleetRelease', priorId)) : null;
+
+  // Work is deployment-rooted (C-1), so one read covers every agent on the
+  // release; the digest stamp is what separates the groups.
+  const work = await registry._db.query('', 'work', [], { noOrderBy: true, limit: 300 });
+  const { groups } = groupBySpec(work || []);
+
+  const candidateWork = [...digests].flatMap((d) => groups.get(d) || []);
+  const candidate = deriveMetrics(candidateWork);
+
+  let baseline = null;
+  if (prior) {
+    const priorDigests = assignments
+      .map((a) => (a.actual_release === priorId ? a.actual_spec_digest : null))
+      .filter(Boolean);
+    const baselineWork = priorDigests.flatMap((d) => groups.get(d) || []);
+    if (baselineWork.length) baseline = deriveMetrics(baselineWork);
+  }
+
+  const decision = evaluateRollout({
+    candidate, baseline,
+    stage: argValue(args, '--stage') || (onRelease.some((a) => a.pinned) ? 'canary' : 'fleet'),
+    approved: Boolean(release.evidence?.approved_by),
+  });
+
+  note(renderDecision(decision, { release: releaseId, rollbackTarget: priorId }));
+
+  // Acting is opt-in. An automated rollback is right, but it should be a thing
+  // the operator switched on rather than a surprise.
+  let acted = null;
+  if (decision.action === 'rollback' && args.includes('--apply')) {
+    if (!priorId) {
+      note('WARN: rollback indicated, but this release has no predecessor — pausing instead');
+      acted = { action: 'pause', reason: 'no rollback target' };
+    } else {
+      acted = await registry.rollback({ releaseId, reason: decision.reason });
+      note(`rolled back to ${priorId} for ${acted.agents.length} agent(s)`);
+    }
+  }
+
+  emit({
+    release: releaseId,
+    agents: onRelease.map((a) => a.id),
+    decision,
+    candidate,
+    baseline,
+    acted,
+  });
+
+  if (decision.action === 'rollback' && !args.includes('--apply')) process.exit(4);
+}
+
 async function cmdStatus(registry) {
   const assignments = await registry.listAssignments();
   const active = await registry.activeReleaseId();
@@ -511,7 +595,7 @@ const registry = createRegistry({ projectId: await resolveProject(), actor: acto
 const COMMANDS = {
   import: cmdImport, list: cmdList, get: cmdGet, diff: cmdDiff, validate: cmdValidate,
   release: cmdRelease, assign: cmdAssign, rollback: cmdRollback, compile: cmdCompile, status: cmdStatus,
-  finding: cmdFinding,
+  observe: cmdObserve, finding: cmdFinding,
 };
 
 const handler = COMMANDS[command];
