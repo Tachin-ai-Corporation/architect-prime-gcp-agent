@@ -1,0 +1,22 @@
+#!/usr/bin/env bash
+# fleet-config-launcher — the PATH entry point for the fleet-config CLI.
+#
+# The CLI itself is an ES module whose relative imports (`../lib/fleet-config/…`,
+# `../contracts/…`) resolve correctly only from `corekit/system/`. Installing it
+# straight to `bin/` would put it one directory too shallow, and its first import
+# would look for `/opt/corekit/contracts/` instead of `/opt/corekit/corekit/contracts/`.
+#
+# So the real module installs where its imports work, and this launcher is what
+# goes on PATH — the same split the daemons use, and the reason a tool can be
+# invoked as `fleet-config` from anywhere while its module layout stays honest.
+set -euo pipefail
+
+CORE_ROOT="${CORE_ROOT:-/opt/corekit}"
+CLI="${CORE_ROOT}/corekit/system/fleet-config"
+
+if [[ ! -f "$CLI" ]]; then
+  echo "[fleet-config] ERROR: CLI not installed at ${CLI}" >&2
+  exit 1
+fi
+
+exec node "$CLI" "$@"

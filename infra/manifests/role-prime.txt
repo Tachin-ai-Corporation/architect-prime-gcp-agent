@@ -32,7 +32,10 @@ corekit/memory/session-summary bin/session-summary
 
 # Fleet Definition authoring (C-29). Prime is the delegated author of this
 # deployment's roles, souls, skills, processes and responsibilities.
-corekit/system/fleet-config bin/fleet-config
+# The module installs where its relative imports resolve; the launcher is what
+# goes on PATH (same split as the daemons — see fleet-config-launcher).
+corekit/system/fleet-config corekit/system/fleet-config
+corekit/system/fleet-config-launcher bin/fleet-config
 
 # Firestore index authority (C-7: one source; the provisioner reads it, declares nothing)
 firestore.indexes.json corekit/firestore.indexes.json
