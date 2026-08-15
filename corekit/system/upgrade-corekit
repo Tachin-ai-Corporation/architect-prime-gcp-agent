@@ -360,129 +360,22 @@ for (const [k,v] of Object.entries(ws)) { if (k !== '_comment') console.log(v); 
       AGENT_EMAIL="$(jq -r '.agentUserEmail // empty' "$CHAT_CFG" 2>/dev/null || true)"
       if [[ -n "$AGENT_NAME" ]]; then
 
-        # ---- Sync custom skills from Firestore ----
-        # Query per-agent custom skill state and download skill packages
-        CUSTOM_SKILLS_DIR="${CORE_ROOT}/workspace/custom-skills"
-        GCP_PROJECT="$(curl -sf -H 'Metadata-Flavor: Google' 'http://metadata.google.internal/computeMetadata/v1/project/project-id' 2>/dev/null || echo "")"
-        PRIME_ID=""
-        # Read prime ID from chat-config (fleet agents store their prime's ID)
-        if [[ -f "$CHAT_CFG" ]]; then
-          PRIME_ID="$(jq -r '.primeId // empty' "$CHAT_CFG" 2>/dev/null || true)"
-        fi
-        # For prime agents, read from STATE.json
-        if [[ -z "$PRIME_ID" && -f "$STATE_FILE" ]]; then
-          PRIME_ID="$(json_value "primeId" "$STATE_FILE" 2>/dev/null || true)"
-        fi
-        # Fleet agent name for Firestore path
-        FLEET_AGENT_ID="$AGENT_NAME"
-        # Prime agents use "prime-{id}" as their fleet doc key
-        if [[ "$EXISTING_ROLE" == "prime" ]]; then
-          FLEET_AGENT_ID="prime-${PRIME_ID}"
-        fi
-
-        if [[ -n "$GCP_PROJECT" && -n "$PRIME_ID" && -n "$FLEET_AGENT_ID" ]]; then
-          echo "==> Syncing custom skills from Firestore..."
-          # Get access token from metadata server
-          ACCESS_TOKEN="$(curl -sf -H 'Metadata-Flavor: Google' \
-            'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
-            2>/dev/null | grep -o '"access_token":"[^"]*"' | cut -d'"' -f4 || echo "")"
-
-          if [[ -n "$ACCESS_TOKEN" ]]; then
-            FS_BASE="https://firestore.googleapis.com/v1/projects/${GCP_PROJECT}/databases/(default)/documents"
-            SKILLS_PATH="primes/${PRIME_ID}/fleet/${FLEET_AGENT_ID}/skills"
-
-            # Query custom skills collection
-            SKILLS_RESPONSE="$(curl -sf \
-              -H "Authorization: Bearer ${ACCESS_TOKEN}" \
-              "${FS_BASE}/${SKILLS_PATH}" 2>/dev/null || echo "")"
-
-            if [[ -n "$SKILLS_RESPONSE" ]]; then
-              # Parse skill IDs from Firestore response
-              SKILL_IDS="$(echo "$SKILLS_RESPONSE" | python3 -c "
-import sys, json
-try:
-    data = json.load(sys.stdin)
-    docs = data.get('documents', [])
-    for doc in docs:
-        name = doc.get('name', '')
-        skill_id = name.split('/')[-1] if name else ''
-        if skill_id:
-            print(skill_id)
-except:
-    pass
-" 2>/dev/null || echo "")"
-
-              if [[ -n "$SKILL_IDS" ]]; then
-                # Clean and recreate custom skills dir
-                rm -rf "$CUSTOM_SKILLS_DIR" 2>/dev/null || true
-                mkdir -p "$CUSTOM_SKILLS_DIR"
-
-                CUSTOM_COUNT=0
-                while IFS= read -r skill_id; do
-                  [[ -z "$skill_id" ]] && continue
-                  SKILL_TARGET="${CUSTOM_SKILLS_DIR}/${skill_id}"
-                  mkdir -p "$SKILL_TARGET"
-
-                  # Try to download from repo (core or learned skills)
-                  SKILL_JSON_URL="${CORE_BASE}/skills/${skill_id}/skill.json"
-                  SKILL_MD_URL="${CORE_BASE}/skills/${skill_id}/SKILL.md"
-
-                  # Download skill.json
-                  if curl -fsSL "$SKILL_JSON_URL" -o "${SKILL_TARGET}/skill.json" 2>/dev/null; then
-                    # Download SKILL.md
-                    curl -fsSL "$SKILL_MD_URL" -o "${SKILL_TARGET}/SKILL.md" 2>/dev/null || true
-                    CUSTOM_COUNT=$((CUSTOM_COUNT + 1))
-                    echo "    Installed custom skill: ${skill_id}"
-                  else
-                    # Skill not in repo — check if Firestore doc has embedded content
-                    SKILL_DOC="$(curl -sf \
-                      -H "Authorization: Bearer ${ACCESS_TOKEN}" \
-                      "${FS_BASE}/${SKILLS_PATH}/${skill_id}" 2>/dev/null || echo "")"
-
-                    if [[ -n "$SKILL_DOC" ]]; then
-                      # Extract skill_md from Firestore document if present
-                      echo "$SKILL_DOC" | python3 -c "
-import sys, json
-try:
-    data = json.load(sys.stdin)
-    fields = data.get('fields', {})
-    skill_md = fields.get('skill_md', {}).get('stringValue', '')
-    skill_json_str = fields.get('skill_json', {}).get('stringValue', '')
-    if skill_md:
-        with open('${SKILL_TARGET}/SKILL.md', 'w') as f:
-            f.write(skill_md)
-    if skill_json_str:
-        with open('${SKILL_TARGET}/skill.json', 'w') as f:
-            f.write(skill_json_str)
-except:
-    pass
-" 2>/dev/null || true
-                      if [[ -f "${SKILL_TARGET}/SKILL.md" ]]; then
-                        CUSTOM_COUNT=$((CUSTOM_COUNT + 1))
-                        echo "    Installed custom skill (from Firestore): ${skill_id}"
-                      else
-                        rm -rf "$SKILL_TARGET" 2>/dev/null || true
-                        echo "    Skipped: ${skill_id} (no content found)"
-                      fi
-                    else
-                      rm -rf "$SKILL_TARGET" 2>/dev/null || true
-                    fi
-                  fi
-                done <<< "$SKILL_IDS"
-
-                echo "  Custom skills synced: ${CUSTOM_COUNT}"
-              else
-                echo "  No custom skills configured for this agent"
-              fi
-            else
-              echo "  No Firestore response for skills (agent may not have custom skills)"
-            fi
-          else
-            echo "  Warning: could not get access token, skipping custom skills sync"
-          fi
-        else
-          echo "  Skipping custom skills sync (missing GCP_PROJECT or PRIME_ID)"
-        fi
+        # ---- Custom skills: NOT handled here (C-36) ----
+        #
+        # A block here used to download per-agent skill packages from Firestore
+        # during a platform upgrade. Two things were wrong with that:
+        #
+        #   * it tied content rollout to a platform upgrade, so a deployment could
+        #     not change what its agents know without changing the machinery —
+        #     exactly the conflation C-36 forbids;
+        #   * it derived its lookup key from `agentDisplayName` while the writer
+        #     used the agent id, so a skill stored under `millie` was searched for
+        #     under `Assistant Agent Millie` and never found. A pending install
+        #     could not resolve, ever.
+        #
+        # Content now arrives through agent-content-sync, on its own timer, from
+        # an assigned Fleet release — verified by digest and applied at an idle
+        # mission boundary.
 
 
         # Write identity lockfile if not present

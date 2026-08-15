@@ -1,0 +1,21 @@
+[Unit]
+Description=Architect Prime Content Sync (Fleet Definition release → this agent)
+Documentation=https://github.com/YOUR_GITHUB_ORG/architect-prime-gcp-agent/blob/main/docs/adr/ADR-001-three-planes-two-loops.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=root
+WorkingDirectory=/opt/corekit
+Environment=CORE_DIR=/opt/corekit
+ExecStart=/usr/bin/node /opt/corekit/bin/agent-content-sync.mjs
+
+# A pass that finds nothing to do is the common case and exits 0. A failure is
+# real — a digest that did not match what was approved, or a staged render that
+# did not verify — and must be visible rather than retried into noise.
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

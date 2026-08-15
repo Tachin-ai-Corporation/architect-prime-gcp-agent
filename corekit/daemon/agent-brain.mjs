@@ -26,7 +26,7 @@
 // Run:
 //   node agent-brain.mjs
 // ============================================================
-import { readFileSync, appendFileSync, existsSync, watchFile, readdirSync, writeFileSync, mkdirSync } from 'fs';
+import { readFileSync, appendFileSync, existsSync, watchFile, readdirSync, writeFileSync, mkdirSync, statSync } from 'fs';
 import { randomBytes, createHash } from 'crypto';
 import { execFileSync } from 'child_process';
 import { hostname } from 'os';
@@ -772,6 +772,43 @@ function pathFor(collection, docId) {
     : `primes/${PRIME_ID}/${collection}/${docId}`;
 }
 
+// ---- C-32 version coordinates ----
+//
+// `platform_version` comes from the installed platform release; `fleet_release`
+// and `agent_spec_digest` from CONTENT.json, which content-sync rewrites when it
+// applies a bundle. Cached with an mtime check rather than read per write: a
+// mission-heavy minute would otherwise stat the same file hundreds of times, and
+// a stale coordinate would misattribute every envelope written after an apply.
+let _coordCache = { at: 0, mtime: 0, value: { platform_version: null, fleet_release: null, agent_spec_digest: null } };
+
+function versionCoordinates() {
+  const contentPath = CORE_DIR + '/corekit/CONTENT.json';
+  let mtime = 0;
+  try { mtime = statSync(contentPath).mtimeMs; } catch { /* no content release applied yet */ }
+
+  if (mtime === _coordCache.mtime && Date.now() - _coordCache.at < 60_000) return _coordCache.value;
+
+  let platformVersion = null;
+  try {
+    const state = JSON.parse(readFileSync(CORE_DIR + '/corekit/STATE.json', 'utf8'));
+    platformVersion = state.version || state.coreRef || null;
+  } catch { /* pre-STATE install */ }
+
+  let fleetRelease = null;
+  let specDigest = null;
+  try {
+    const content = JSON.parse(readFileSync(contentPath, 'utf8'));
+    fleetRelease = content.release || null;
+    specDigest = content.spec_digest || null;
+  } catch { /* this agent is not yet running from a fleet release */ }
+
+  _coordCache = {
+    at: Date.now(), mtime,
+    value: { platform_version: platformVersion, fleet_release: fleetRelease, agent_spec_digest: specDigest },
+  };
+  return _coordCache.value;
+}
+
 async function firestoreWrite(collection, docId, data) {
   // Invariant check: M-type envelope with parent_id should be C-type
   if (collection === 'work' && data && data.type === 'M' && data.parent_id) {
@@ -790,6 +827,17 @@ async function firestoreWrite(collection, docId, data) {
   // Stamp prime_id on all deployment-rooted writes for dashboard filtering
   if (DEPLOYMENT_ROOTED.has(collection) && data) {
     data.prime_id = data.prime_id || PRIME_ID;
+  }
+  // C-32: stamp the exact spec that produced this work, once, at creation.
+  // Every envelope carries its version coordinates for its whole life, so a
+  // behavior can be attributed to the content that caused it and replayed. The
+  // `||` keeps it idempotent — a later write never re-stamps a running mission
+  // with content that arrived after it started.
+  if (collection === 'work' && data) {
+    const coords = versionCoordinates();
+    data.platform_version = data.platform_version || coords.platform_version;
+    data.fleet_release = data.fleet_release || coords.fleet_release;
+    data.agent_spec_digest = data.agent_spec_digest || coords.agent_spec_digest;
   }
   return _db.write(pathFor(collection, docId), data);
 }

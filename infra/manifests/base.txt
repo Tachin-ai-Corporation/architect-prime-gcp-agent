@@ -138,6 +138,14 @@ corekit/lib/fleet-config/validators.mjs corekit/lib/fleet-config/validators.mjs
 corekit/lib/fleet-config/importer.mjs corekit/lib/fleet-config/importer.mjs
 corekit/lib/fleet-config/packages.mjs corekit/lib/fleet-config/packages.mjs
 corekit/lib/fleet-config/diff.mjs corekit/lib/fleet-config/diff.mjs
+corekit/lib/fleet-config/content-sync.mjs corekit/lib/fleet-config/content-sync.mjs
+
+# Content sync — applies an assigned Fleet release on its own timer, independent
+# of any platform upgrade (C-36). Replaces assemble-persona's in-place SOUL
+# appends and the custom-skill block that used to ride upgrade-corekit.
+corekit/daemon/agent-content-sync.mjs bin/agent-content-sync.mjs
+corekit/config/agent-content-sync.service corekit/agent-content-sync.service
+corekit/config/agent-content-sync.timer corekit/agent-content-sync.timer
 corekit/lib/json-repair.mjs corekit/lib/json-repair.mjs
 corekit/lib/vertex-text.mjs corekit/lib/vertex-text.mjs
 corekit/lib/projects.mjs corekit/lib/projects.mjs

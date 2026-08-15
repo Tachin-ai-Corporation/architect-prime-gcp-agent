@@ -1,0 +1,17 @@
+[Unit]
+Description=Reconcile this agent's content with its assigned Fleet release
+Documentation=https://github.com/YOUR_GITHUB_ORG/architect-prime-gcp-agent/blob/main/docs/adr/ADR-001-three-planes-two-loops.md
+
+[Timer]
+# Five minutes: a content release should reach a canary while an operator is
+# still watching, and the pass is a no-op unless the assignment actually moved.
+OnBootSec=2min
+OnUnitActiveSec=5min
+AccuracySec=30s
+# Stagger, so a fleet-wide promotion does not have every agent read the registry
+# in the same second.
+RandomizedDelaySec=60s
+Persistent=true
+
+[Install]
+WantedBy=timers.target
