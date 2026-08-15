@@ -1,6 +1,6 @@
 # Architect Prime — Mission Plan
 
-Current version: v2026.08.14.3.0
+Current version: v2026.08.14.6.15
 
 
 > This document describes **what Architect Prime is** and **what it is becoming**.
@@ -34,7 +34,7 @@ Firestore (state store)
     ├── primes/{id}/fleet/{agent}   → Fleet agent status + health
     ├── primes/{id}/messages/       → Dashboard ↔ Prime chat
     ├── primes/{id}/projects/{id}   → Project context (recursive, with dependencies)
-    ├── primes/{id}/processes/{id}  → Stored reusable processes
+    ├── processes/{id}              → Narrative playbooks (global shared library)
     ├── primes/{id}/plans/{id}      → Plan blueprints (draft → approved → executing → complete)
     └── config/                     → Settings, secret metadata + grants
     ▼
@@ -69,7 +69,7 @@ Around the spine, four organizing primitives:
 
 - **Projects:** The sole recursive primitive (bounded depth) — organizational containers with accumulated context and dependencies.
 - **Plans:** Unexecuted mission blueprints with a full lifecycle: drafted, approved, stamped into M→C→T.
-- **Processes:** Reusable, parameterized templates that produce plans — the system's repeatable ways of working, including delegation steps and human approval gates.
+- **Processes:** Narrative playbooks — a name + short description + a prose narrative of how a recurring kind of work is done well, which an agent recalls into its own `checkpoint_plan` (never an executable step-machine). The shared, agent-evolved library of "how we do X."
 - **Artifacts:** Files produced during missions, stored in the git artifact substrate (GCS-backed repos with Firestore CAS refs, one per project) with merge-policy governance and changed-paths manifests.
 - **Skills:** Versioned, fleet-shared instruction packages — the system's codified know-how.
 
@@ -134,7 +134,7 @@ The full normative set lives in [`docs/PRODUCT_CANON.md`](docs/PRODUCT_CANON.md)
 6. **Idempotent everything.** Re-runnable scripts, resumable state, restart as routine.
 7. **Observable by default.** Every transition writes history; every mechanism ships with its telemetry.
 8. **Capability fencing is structural.** Personas reinforce; manifests, IAM, and CI enforce.
-9. **Each content layer holds one purpose.** Organs are WHO/HOW-it-thinks (the static, soft-locked identity core); Skills are the HOW of tools; Projects are the 40,000-ft working area; Processes are the proven paths. Content in the wrong layer is a defect — the map is [`docs/MODULE_CHARTER.md`](docs/MODULE_CHARTER.md) (C-28).
+9. **Each content layer holds one purpose.** Organs are WHO/HOW-it-thinks (the static, soft-locked identity core); Skills are the HOW of tools; Projects are the 40,000-ft working area; Processes are narrative playbooks (recalled, not executed). Content in the wrong layer is a defect — the map is [`docs/MODULE_CHARTER.md`](docs/MODULE_CHARTER.md) (C-28).
 
 ---
 
