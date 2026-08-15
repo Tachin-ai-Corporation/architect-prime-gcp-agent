@@ -127,6 +127,7 @@ corekit/contracts/schemas/definition.mjs corekit/contracts/schemas/definition.mj
 corekit/contracts/schemas/lifecycle.mjs corekit/contracts/schemas/lifecycle.mjs
 corekit/contracts/schemas/runtime.mjs corekit/contracts/schemas/runtime.mjs
 corekit/contracts/schemas/spec.mjs corekit/contracts/schemas/spec.mjs
+corekit/contracts/work-transitions.mjs corekit/contracts/work-transitions.mjs
 corekit/lib/json-repair.mjs corekit/lib/json-repair.mjs
 corekit/lib/vertex-text.mjs corekit/lib/vertex-text.mjs
 corekit/lib/projects.mjs corekit/lib/projects.mjs
@@ -141,7 +142,6 @@ corekit/lib/notifications.mjs corekit/lib/notifications.mjs
 corekit/lib/history.mjs corekit/lib/history.mjs
 corekit/lib/delegation.mjs corekit/lib/delegation.mjs
 corekit/lib/channel.mjs corekit/lib/channel.mjs
-corekit/lib/envelope-lifecycle.mjs corekit/lib/envelope-lifecycle.mjs
 corekit/lib/deliverable.mjs corekit/lib/deliverable.mjs
 corekit/lib/checkpoint-executor.mjs corekit/lib/checkpoint-executor.mjs
 corekit/lib/finalization.mjs corekit/lib/finalization.mjs

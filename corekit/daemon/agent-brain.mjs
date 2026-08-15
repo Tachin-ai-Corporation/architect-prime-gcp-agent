@@ -47,7 +47,6 @@ import { createHistoryWriter } from '../corekit/lib/history.mjs';
 import { composeDelegationMarker, composeDelegationResultMarker, summarizeDelegationResult, delegationResultAgent, bumpRedelegation, redelegationKey, composeRedelegationEscalation } from '../corekit/lib/delegation.mjs';
 import { makeAddress } from '../corekit/lib/channel.mjs';
 import { extractVerdict, extractFailSummary, extractFailRecommendation } from '../corekit/lib/verdict.mjs';
-import { createLifecycleHandler } from '../corekit/lib/envelope-lifecycle.mjs';
 import { composeDeliverable } from '../corekit/lib/deliverable.mjs';
 import { executeCheckpoints } from '../corekit/lib/checkpoint-executor.mjs';
 import { rebuildFromSpine } from '../corekit/lib/checkpoint-spine.mjs';
@@ -55,6 +54,7 @@ import { shouldMaintainContext, buildMaintenancePrompt, parseMaintenanceResponse
 import { handoffModelEnabled, decideHop, missionOriginator, effectiveAssignee } from '../corekit/lib/baton.mjs';
 import { projectBootstrapEnabled, missionOriginSpace } from '../corekit/lib/project-bootstrap.mjs';
 import { renderBlackboard } from '../corekit/lib/blackboard.mjs';
+import { canTransition } from '../corekit/contracts/work-transitions.mjs';
 import { assembleConversation } from '../corekit/lib/conversation-context.mjs';
 import { toStr } from '../corekit/lib/to-str.mjs';
 import { extractCheckpoints } from '../corekit/lib/plan-utils.mjs';
@@ -2193,6 +2193,26 @@ async function completeEnvelope(envelope, opts) {
     log('ERROR', `Invariant violation: M-type envelope ${envelope.id} has parent_id ${envelope.parent_id}. Correcting to type C.`);
     envelope.type = 'C';
     envelope.delivery_status = 'internal';
+  }
+
+  // ---- Transition guard (corekit/contracts/work-transitions.mjs) ----
+  // Which moves are legal used to be implicit across ~40 assignment sites. The
+  // table is now one authority; this is where terminal transitions consult it.
+  //
+  // Three modes, because a table asserted over live missions before it has been
+  // observed is a way to break work rather than protect it:
+  //   observe (default) — record a disagreement, change nothing
+  //   enforce           — refuse the write
+  //   off               — skip entirely
+  const _tg = CONTRACTS.dispatch?.transition_guard || 'observe';
+  if (_tg !== 'off' && envelope.status !== status) {
+    const verdict = canTransition(envelope.status, status);
+    if (!verdict.allowed) {
+      log('WARN', `[TELEMETRY] illegal_transition envelope=${envelope.id} type=${envelope.type} from=${envelope.status} to=${status} reason="${verdict.reason}"`);
+      if (_tg === 'enforce') {
+        return { ok: false, error: `illegal transition ${envelope.status} → ${status}: ${verdict.reason}` };
+      }
+    }
   }
 
   // Step 1: Set envelope fields.
