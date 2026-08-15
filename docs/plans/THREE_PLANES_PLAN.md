@@ -231,6 +231,37 @@ fault-injected canary.
 is active, how it performed, what approval occurred and how to undo it. Boundary tests demonstrate
 deployed Prime cannot write Foundation paths or use repo release credentials.
 
+#### Status — enforcement done, the studio is not
+
+**Shipped and proven (`1c9d3f2`, `173898f`):**
+
+- **Boundary enforcement**, as its own CI job. Seven structural rules: the contracts package is
+  self-contained; Foundation never imports catalog content; runtime and dashboard do not reach into
+  each other; the dashboard never writes `fleet_*` directly; no Prime manifest installs a repo write
+  path; every Foundation directory is owned by CODEOWNERS and every rule names an owner; the
+  compiled contract is marked generated. **Each is paired with a negative case** proving the
+  detector fires — which caught a real hole immediately: the containment check matched on `../`
+  depth and so waved through `../lib/firestore.mjs` from `corekit/contracts`, the precise escape it
+  exists to catch. Depth is not containment.
+- **The version coordinates, served honestly.** `GET /api/primes/[id]/fleet/coordinates` reports all
+  three per agent, desired and actual never collapsed, read from the deployment's own records.
+  Verified against millie's live assignment: `converged · Running fr-6a524ab97fd1
+  (sha256:f9a980797b8d…) as assigned`. The dashboard had no test runner at all — Node's native
+  TypeScript stripping means the pure module has 13 real tests, the first in `app/`.
+
+**Not built — no partial credit claimed:**
+
+- The Fleet Studio screens themselves (roles, souls, skills, effective agent + provenance, changes
+  and semantic diffs, releases/canaries/rollback, findings). The API answers *what is running*; there
+  is no screen yet, so the exit gate's "from one screen" is **not met**.
+- Structured proposal cards in chat with `Run canary` / `Approve` / `Reject` / `Rollback`.
+- Replacing the GitHub-`main` catalog reads. Three routes still read the tip of `main`
+  (`/api/agent-types`, `/api/contracts`, `/api/primes/[id]/brain-config`), which answers "what would
+  a fresh install get today" rather than "what is this fleet running". They look identical until
+  they diverge, which is the whole problem. The new coordinates route is the pattern to follow.
+- IAM and egress boundary enforcement in deployment policy (the CI half is done; the deployed half
+  is not).
+
 ### CLEANUP — restructure, purge, redocument
 
 **Objective:** main branch is wholly fresh — no former-version scaffolding retained.
