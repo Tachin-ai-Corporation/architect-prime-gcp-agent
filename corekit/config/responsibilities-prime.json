@@ -1,4 +1,34 @@
 {
-  "version": 1,
-  "responsibilities": []
+  "version": 2,
+  "_comment": "Prime's own cadence. Fleet improvement used to depend entirely on the operator noticing something and asking — which meant a pattern visible across twenty missions went unaddressed until it produced a twenty-first bad enough to mention. These are low-risk by construction: they read, diagnose and draft. Nothing here promotes anything, and nothing here changes an agent. A draft becomes real only when a human approves it.",
+  "responsibilities": [
+    {
+      "id": "r-fleet-improvement-review",
+      "name": "Weekly fleet improvement review",
+      "schedule": "0 9 * * 1",
+      "timezone": "UTC",
+      "enabled": true,
+      "singleton": true,
+      "min_spacing_minutes": 1440,
+      "instruction": "Review the past week of fleet work for patterns worth fixing. Look for repeated tool errors, missions that needed several attempts, false-completes, high needs_input rates, and any operator corrections. Group what you find by cause rather than by symptom. For each pattern that appears at least twice and points at a role, soul overlay, skill or playbook, draft a Fleet Definition change with its rationale and validate it — do NOT release, assign or promote anything. For any pattern whose cause is in the platform rather than in what this deployment defines, file a Platform Finding. Report to the operator: what you found, what you drafted, what you would canary first, and what you deliberately left alone.",
+      "success_criteria": "A report naming each pattern with its evidence, plus either a validated draft change, a filed Platform Finding, or an explicit statement that nothing this week met the bar. Nothing was promoted.",
+      "context": {
+        "note": "One failure is an anecdote; two with the same shape are a pattern. A change written to make one transcript come out right usually makes the next one worse."
+      }
+    },
+    {
+      "id": "r-fleet-drift-check",
+      "name": "Daily fleet drift check",
+      "schedule": "0 7 * * *",
+      "timezone": "UTC",
+      "enabled": true,
+      "singleton": true,
+      "min_spacing_minutes": 720,
+      "instruction": "Check whether every agent is running the content it was assigned. Report any agent whose desired and actual release or spec digest disagree, how long it has been diverged, and the last error if there is one. A short divergence right after a release is normal — content applies at an idle mission boundary. A divergence that persists across a day, or any agent reporting a failed apply, is worth surfacing with the reason.",
+      "success_criteria": "Either a statement that every agent has converged, or a list of the diverged agents with how long and why.",
+      "context": {
+        "note": "Drift that nobody notices is the failure mode this exists to prevent — an agent quietly running content nobody chose."
+      }
+    }
+  ]
 }

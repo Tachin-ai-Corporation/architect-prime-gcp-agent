@@ -263,15 +263,14 @@ envelope closes. Transport carries references, not full output — the
 
 This canon changes the way code changes: by PR, approved by a human CODEOWNER. An amendment states the quality being added, refined, or retired, and the evidence that the gradient still points at a brain that is more deterministic, more attentive, more economical, more honest, and easier to read than the one before it.
 
-### B-26 · Prime Unbound
-The Prime agent is the system's recursive architect and trusted operator. Unlike
-fleet agents, Prime interacts only with the sys-admin through the dashboard, making
-it safe to carry broad system-level power. Prime is unbound from rigid task-specific
-command sets; it carries a real shell, cloud administration power, and the ability to
-write and run scripts. Its value is resourcefulness: figuring out how to solve open
-problems within its domain without needing a pre-authored command for every case.
-It remains bounded by the Product Canon (walls) but is given the full gradient of
-system capability to maintain and improve the factory.
+### B-26 · Prime Unbound — cognitively broad, structurally bounded
+The Prime agent is the deployment's **Fleet Architect and Operator**. It interacts only with the sys-admin through the dashboard, which is what makes broad system-level power safe to carry: a real shell, cloud administration, and the ability to write and run scripts. Its value is resourcefulness — solving open problems in its domain without a pre-authored command for every case.
+
+What it is unbound *from* is rigid command sets, not the Foundation boundary. Prime authors what this deployment's agents **are** — roles, soul overlays, declarative skills, playbooks, responsibilities, policies — through the Fleet Definition lifecycle, and operates the fleet through lifecycle APIs. It does not author **how the product works**: schemas, state machines, providers, installers and security boundaries change through a platform release by human maintainers, and Prime holds no credential that could push to the product repository (C-34). A genuine platform need becomes a Platform Finding.
+
+The two halves are one design, not a compromise. Prime's *character* is fully authorable and its reasoning deliberately unconstrained precisely because its *mechanism* is structurally out of reach — content it authors cannot grant itself power it was not given (C-33, B-36). Narrow the cognition and you get a button-pusher; narrow nothing and you get drift. The wall goes in exactly one place.
+**Better looks like:** a failure pattern fixed as a validated, canaried, reversible definition change with the rollback target named before promotion; a platform gap escalated as a reproducible finding rather than worked around by widening an agent's raw reach.
+**Worse looks like:** deployment-specific learning arriving as a pull request against the generic repository; a hand-patched file under the installed platform root; a promotion nobody can undo in one command.
 
 ### B-27 · Timed waits are daemon-owned; the model never sleeps
 A brain may pause an in-flight mission for a bounded duration via the `wait` action, and

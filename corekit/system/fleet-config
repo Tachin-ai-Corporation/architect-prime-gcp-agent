@@ -17,6 +17,9 @@
 //   fleet-config rollback <releaseId> --reason "..."
 //   fleet-config compile <agentId>         the Effective Agent Spec, with its digest
 //   fleet-config status                    releases, assignments, drift
+//   fleet-config finding create --title … --class provider --invariant … --why-not … --missions …
+//   fleet-config finding list [--status open]
+//   fleet-config finding status <id>
 //
 // Output is JSON on stdout, human notes on stderr — so an agent can parse it and
 // an operator can read it, without either getting the other's stream.
@@ -32,7 +35,9 @@ import {
 import { compileAgentSpec } from '../lib/fleet-config/compiler.mjs';
 import { validateSet, VALIDATOR_NAMES } from '../lib/fleet-config/validators.mjs';
 import { diffSets, renderDiff, impactedAgents } from '../lib/fleet-config/diff.mjs';
-import { DEFINITION_KINDS, sealRevision } from '../contracts/index.mjs';
+import { DEFINITION_KINDS, sealRevision, assertValid, contentDigest } from '../contracts/index.mjs';
+import { PLATFORM_FINDING_SCHEMA } from '../contracts/schemas/lifecycle.mjs';
+import { pathFor } from '../contracts/ids.mjs';
 
 const CORE_DIR = process.env.CORE_DIR || '/opt/corekit';
 const note = (...a) => console.error('[fleet-config]', ...a);
@@ -362,6 +367,131 @@ async function cmdStatus(registry) {
   });
 }
 
+/**
+ * Platform Findings — the only bridge out of this plane (C-34).
+ *
+ * A finding is filed when a need genuinely cannot be met by any definition: a
+ * new provider, permission class, schema, state transition or runtime mechanism.
+ * The required fields are the ones a maintainer needs to act without a
+ * conversation — version coordinates, mission evidence, the desired *invariant*
+ * rather than a demanded implementation, and an explicit account of why no
+ * Definition-plane answer exists.
+ *
+ * That last field is the one that keeps this honest. A finding that could have
+ * been a definition is drift with paperwork, and asking the author to write down
+ * why it is not makes the question unavoidable.
+ */
+async function cmdFinding(registry, args) {
+  const [sub] = args.filter((a) => !a.startsWith('--'));
+
+  if (sub === 'list') {
+    const status = argValue(args, '--status');
+    const filters = status ? [{ field: 'status', op: 'EQUAL', value: { stringValue: status } }] : [];
+    const docs = await registry._db.query('', 'platform_findings', filters, { noOrderBy: true, limit: 100 });
+    emit({
+      findings: (docs || []).map((f) => ({
+        id: f.id, title: f.title, severity: f.severity, class: f.required_class,
+        status: f.status, created_at: f.created_at, resolution: f.resolution || null,
+      })),
+    });
+    return;
+  }
+
+  if (sub === 'status') {
+    const id = args.filter((a) => !a.startsWith('--'))[1];
+    if (!id) die('usage: fleet-config finding status <id>');
+    const f = await registry._db.read(pathFor('platformFinding', id));
+    if (!f) die(`no such finding '${id}'`);
+    emit(f);
+    return;
+  }
+
+  if (sub !== 'create') die('usage: fleet-config finding create|list|status');
+
+  const title = argValue(args, '--title');
+  const requiredClass = argValue(args, '--class');
+  const invariant = argValue(args, '--invariant');
+  const whyNot = argValue(args, '--why-not');
+  const missions = (argValue(args, '--missions') || '').split(',').map((s) => s.trim()).filter(Boolean);
+
+  const missing = [];
+  if (!title) missing.push('--title');
+  if (!requiredClass) missing.push('--class');
+  if (!invariant) missing.push('--invariant');
+  if (!whyNot) missing.push('--why-not');
+  if (!missions.length) missing.push('--missions');
+  if (missing.length) {
+    die(
+      `a Platform Finding requires ${missing.join(', ')}.
+` +
+      `  A finding a maintainer cannot reproduce is a complaint, not a report (C-34).`
+    );
+  }
+
+  const logs = argValue(args, '--logs') || '';
+  const scan = scanForSecrets(`${title}
+${invariant}
+${whyNot}
+${logs}`);
+  if (scan.secrets_found || scan.pii_found) {
+    die(
+      `refusing to file: the finding text contains ${scan.secrets_found} secret-shaped and ` +
+      `${scan.pii_found} PII-shaped value(s). A finding leaves the deployment; it does not leave ` +
+      `unsanitized (C-8).`
+    );
+  }
+
+  const now = new Date().toISOString();
+  const assignment = await registry._db.read(`fleet_assignments/${actorId()}`).catch(() => null);
+
+  const finding = {
+    schema_version: PLATFORM_FINDING_SCHEMA.version,
+    created_at: now,
+    created_by: actorId(),
+    title,
+    severity: argValue(args, '--severity') || 'medium',
+    frequency: argValue(args, '--frequency') || 'observed at least once; see the mission evidence',
+    affected_scope: argValue(args, '--scope') || 'this deployment',
+    platform_version: platformVersion(),
+    fleet_release: assignment?.desired_release || null,
+    agent_spec_digest: assignment?.desired_spec_digest || null,
+    evidence: {
+      mission_ids: missions,
+      ...(logs ? { logs: logs.slice(0, 20000) } : {}),
+      ...(argValue(args, '--repro') ? { reproduction: argValue(args, '--repro') } : {}),
+    },
+    desired_invariant: invariant,
+    why_not_definition: whyNot,
+    required_class: requiredClass,
+    ...(argValue(args, '--workaround')
+      ? { workaround: { description: argValue(args, '--workaround'), limitations: argValue(args, '--workaround-limits') || 'not stated' } }
+      : {}),
+    privacy_scan: { scanned_at: now, secrets_found: 0, pii_found: 0 },
+    status: 'open',
+  };
+
+  const id = `pf-${contentDigest(finding).slice(7, 19)}`;
+  const record = { id, ...finding };
+  assertValid(PLATFORM_FINDING_SCHEMA, record, `platformFinding/${id}`);
+
+  await registry._db.write(pathFor('platformFinding', id), record);
+  note(`filed ${id} — a maintainer reviews it; nothing in this deployment changed`);
+  emit(record);
+}
+
+/** Conservative scan over text that is about to leave the deployment (C-8). */
+function scanForSecrets(text) {
+  const secretPatterns = [
+    /gh[pousr]_[A-Za-z0-9]{16,}/, /AIza[0-9A-Za-z_-]{20,}/, /AKIA[0-9A-Z]{16}/,
+    /-----BEGIN [A-Z ]*PRIVATE KEY-----/, /xox[baprs]-[A-Za-z0-9-]{10,}/,
+  ];
+  const piiPatterns = [/\d{3}-\d{2}-\d{4}/, /(?:\d[ -]*?){13,16}/];
+  return {
+    secrets_found: secretPatterns.filter((re) => re.test(text)).length,
+    pii_found: piiPatterns.filter((re) => re.test(text)).length,
+  };
+}
+
 function argValue(args, flag) {
   const i = args.indexOf(flag);
   return i === -1 ? null : args[i + 1];
@@ -380,6 +510,7 @@ const registry = createRegistry({ projectId: await resolveProject(), actor: acto
 const COMMANDS = {
   import: cmdImport, list: cmdList, get: cmdGet, diff: cmdDiff, validate: cmdValidate,
   release: cmdRelease, assign: cmdAssign, rollback: cmdRollback, compile: cmdCompile, status: cmdStatus,
+  finding: cmdFinding,
 };
 
 const handler = COMMANDS[command];

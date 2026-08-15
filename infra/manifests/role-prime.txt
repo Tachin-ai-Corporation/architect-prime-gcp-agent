@@ -32,6 +32,8 @@ corekit/memory/session-summary bin/session-summary
 
 # Fleet Definition authoring (C-29). Prime is the delegated author of this
 # deployment's roles, souls, skills, processes and responsibilities.
+skills/fleet-architecture/SKILL.md skills/fleet-architecture/SKILL.md
+skills/fleet-architecture/skill.json skills/fleet-architecture/skill.json
 # The module installs where its relative imports resolve; the launcher is what
 # goes on PATH (same split as the daemons — see fleet-config-launcher).
 corekit/system/fleet-config corekit/system/fleet-config
@@ -61,10 +63,6 @@ skills/fleet-status/SKILL.md skills/fleet-status/SKILL.md
 skills/fleet-status/skill.json skills/fleet-status/skill.json
 skills/fleet-introspect/SKILL.md skills/fleet-introspect/SKILL.md
 skills/fleet-introspect/skill.json skills/fleet-introspect/skill.json
-skills/github-pr/SKILL.md skills/github-pr/SKILL.md
-skills/github-pr/skill.json skills/github-pr/skill.json
-skills/github-pr/github-clone bin/github-clone
-skills/github-pr/github-pr-open bin/github-pr-open
 skills/fleet-verify/SKILL.md skills/fleet-verify/SKILL.md
 skills/fleet-verify/skill.json skills/fleet-verify/skill.json
 skills/fleet-upgrade/SKILL.md skills/fleet-upgrade/SKILL.md
@@ -110,11 +108,19 @@ skills/scripting/skill.json     skills/scripting/skill.json
 # If a Prime ever genuinely needs a workspace surface, install the TOOLS with the
 # doc — never the doc alone. validate-contracts Check 14c enforces exactly that.
 
-# Git operations (for repo improvements — Prime does real GitHub/upstream work).
-# Lives in skills/ (core), not the engineer specialty: the fleet's internal git flow is
-# workspace-git + the git store; git-ops (GitHub gh/PR, conventional commits) is Prime-only.
-skills/git-ops/skill.json   skills/git-ops/skill.json
-skills/git-ops/SKILL.md     skills/git-ops/SKILL.md
+# Repository authorship — DELIBERATELY ABSENT (C-34).
+#
+# `github-pr` and `git-ops` used to install here so Prime could open pull requests
+# against the product repository. That made a deployment's learning arrive as
+# cross-deployment code churn, with none of the separation the two improvement
+# loops need: different cadence, different evidence, different approval, different
+# rollback. And a deployed agent holding a repository push token means the
+# Foundation boundary is a matter of prompt discipline rather than structure.
+#
+# Prime now improves this deployment through the Fleet Definition lifecycle
+# (fleet-architecture, below) and escalates a genuine platform need as a Platform
+# Finding. Repository authorship belongs to the Repo Maintainer environment, which
+# is a different actor with different credentials.
 
 # Tier-landing skills (REPO vs LOCAL improvement paths)
 

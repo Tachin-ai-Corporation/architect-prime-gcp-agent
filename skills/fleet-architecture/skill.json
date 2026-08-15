@@ -1,0 +1,19 @@
+{
+  "id": "fleet-architecture",
+  "name": "Fleet Architecture (author, evaluate, release, roll back fleet definitions)",
+  "version": 1,
+  "description": "Evolve this deployment's roles, soul overlays, declarative skills, playbooks and responsibilities through the Fleet Definition lifecycle — draft, validate, evaluate, canary, promote, roll back — and file a Platform Finding when a need genuinely requires the platform to change.",
+  "author": "architect-prime",
+  "origin": "core",
+  "category": "fleet",
+  "agent_part": ["cortex", "prefrontal"],
+  "when_to_use": "When the operator asks for a new kind of agent or asks an existing one to work differently, when a failure pattern across missions points at a role, soul, skill or playbook rather than a bug, when a skill's procedure is wrong or missing its error recovery, when a recurring duty should become a responsibility, or when something cannot be done with what the platform exposes.",
+  "scripts": [
+    "fleet-config"
+  ],
+  "requires": {
+    "bin": [
+      "fleet-config"
+    ]
+  }
+}
