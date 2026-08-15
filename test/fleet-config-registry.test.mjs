@@ -12,6 +12,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync, rmSync, cpSync, existsSync } from 'node:fs';
+import { execSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -64,24 +65,41 @@ function fakeGit() {
       cpSync(src, dest, { recursive: true });
     },
     async pushWithRetry(_repo, branch, dir) {
+      // Faithful to the real store on the property that actually broke: a push
+      // carries a COMMIT. git-store answers an uncommitted tree with a
+      // success-shaped `up_to_date`, which is how 106 definitions were reported
+      // as pushed and none were stored.
+      if (!existsSync(join(dir, '.git'))) return { status: 'up_to_date', sha: null };
+      let head;
+      try {
+        head = execSync('git rev-parse HEAD', { cwd: dir, encoding: 'utf8' }).trim();
+      } catch {
+        return { status: 'up_to_date', sha: null };
+      }
       const dest = join(root, branch.replace(/\//g, '__'));
       rmSync(dest, { recursive: true, force: true });
       mkdirSync(dirname(dest), { recursive: true });
       cpSync(dir, dest, { recursive: true });
       branches.set(branch, dest);
+      return { status: 'pushed', sha: head };
     },
     async mergeBranch(_repo, source, target) {
       const src = branches.get(source);
       if (!src) throw new Error(`no such branch '${source}'`);
       const dest = join(root, target.replace(/\//g, '__'));
-      mkdirSync(dest, { recursive: true });
+      // Replace rather than overlay: git object files are read-only, and copying
+      // onto an existing one fails with EIO on Windows.
+      rmSync(dest, { recursive: true, force: true });
+      mkdirSync(dirname(dest), { recursive: true });
       cpSync(src, dest, { recursive: true });
       branches.set(target, dest);
       counter++;
     },
     async readRef(_repo, branch) {
+      // git-store returns { sha, bundle_keys, updateTime } — the registry read
+      // `.commit` and always saw undefined.
       return branches.has(branch)
-        ? { commit: String(counter).padStart(40, 'a') }
+        ? { sha: String(counter).padStart(40, 'a'), bundle_keys: [], updateTime: null }
         : null;
     },
   };
@@ -90,9 +108,8 @@ function fakeGit() {
 function newRegistry(actor = 'prime') {
   const db = fakeDb();
   const git = fakeGit();
-  // main must exist before anything can clone it.
-  mkdirSync(join(git.root, 'main'), { recursive: true });
-  git.branches.set('main', join(git.root, 'main'));
+  // A fresh registry has NO main — that is the state the first release seeds
+  // from, and modelling it as pre-existing hid the seed path entirely.
   return { registry: createRegistry({ projectId: 'test-tenant', actor, db, git, logger: () => {} }), db, git };
 }
 

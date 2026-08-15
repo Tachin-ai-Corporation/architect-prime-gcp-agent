@@ -204,8 +204,19 @@ export function createRegistry(config) {
       writeFileSync(target, JSON.stringify(revision, null, 2) + '\n', 'utf8');
     }
 
-    await git.pushWithRetry(FLEET_CONFIG_REPO, branch, dir, actor);
+    // git-store pushes a *commit*; a working tree with uncommitted files has no
+    // HEAD, and pushBranch answers that with `up_to_date` — a success-shaped
+    // return meaning "I did nothing". Commit first, then insist the push landed.
+    commitTree(dir, `fleet-config: ${title}`, branch);
+    const pushed = await git.pushWithRetry(FLEET_CONFIG_REPO, branch, dir, actor);
     rmSync(dir, { recursive: true, force: true });
+
+    if (pushed?.status !== 'pushed') {
+      throw new Error(
+        `change ${changeId}: push to ${branch} did not land (status: ${pushed?.status || 'unknown'}). ` +
+        `Nothing was recorded.`
+      );
+    }
 
     const change = {
       id: changeId,
@@ -232,6 +243,35 @@ export function createRegistry(config) {
   function gitInit(dir) {
     // A fresh registry needs a repository before it can hold a branch.
     execSync('git init -q', { cwd: dir });
+  }
+
+  /**
+   * Commit the working tree so there is a HEAD to push.
+   *
+   * Identity is set locally rather than assumed: the daemon user has no global
+   * git config, and `git commit` fails without one — which would surface far
+   * from here as an empty push.
+   */
+  function commitTree(dir, message, branch) {
+    // `git bundle create … <branch>` needs that branch to exist locally. A fresh
+    // `git init` lands on whatever the default name is, so the tree is moved onto
+    // the target branch before anything is committed or bundled.
+    if (branch) execSync(`git checkout -q -B "${branch}"`, { cwd: dir });
+    execSync('git add -A', { cwd: dir });
+    const status = execSync('git status --porcelain', { cwd: dir, encoding: 'utf8' }).trim();
+    if (!status) {
+      // Nothing staged means the caller already checked for a no-op, or the
+      // write silently produced nothing. Either way, do not fabricate a commit.
+      const hasHead = (() => {
+        try { execSync('git rev-parse HEAD', { cwd: dir, stdio: 'ignore' }); return true; } catch { return false; }
+      })();
+      if (hasHead) return;
+      throw new Error('commitTree: nothing to commit and no existing HEAD');
+    }
+    execSync(
+      `git -c user.name="${actor}" -c user.email="${actor}@fleet-config.local" commit -q -m "${message.replace(/"/g, "'")}"`,
+      { cwd: dir }
+    );
   }
 
   /** Record a validation verdict on a change. An absent check is not a pass. */
@@ -315,12 +355,43 @@ export function createRegistry(config) {
     }
 
     await ensureRepo();
-    for (const change of changes) {
-      await git.mergeBranch(FLEET_CONFIG_REPO, `change/${change.id}`, FLEET_CONFIG_BRANCH, 'ours-theirs', actor);
+
+    // A brand-new registry has no `main` commit, so there is nothing to merge
+    // into — git refuses, correctly, rather than inventing a common ancestor.
+    // The first release seeds the branch by promoting the change's own tree.
+    // Every release after it merges normally.
+    let seeded = false;
+    const head = await git.readRef(FLEET_CONFIG_REPO, FLEET_CONFIG_BRANCH);
+    if (!head?.sha) {
+      const [first, ...rest] = changes;
+      const dir = workDir('seed');
+      await git.cloneRepo(FLEET_CONFIG_REPO, `change/${first.id}`, dir);
+      commitTree(dir, `fleet-config: seed ${FLEET_CONFIG_BRANCH}`, FLEET_CONFIG_BRANCH);
+      const seedPush = await git.pushWithRetry(FLEET_CONFIG_REPO, FLEET_CONFIG_BRANCH, dir, actor);
+      rmSync(dir, { recursive: true, force: true });
+      if (seedPush?.status !== 'pushed') {
+        throw new Error(`release: seeding ${FLEET_CONFIG_BRANCH} did not land (status: ${seedPush?.status || 'unknown'})`);
+      }
+      seeded = true;
+      log('INFO', `seeded ${FLEET_CONFIG_BRANCH} from change/${first.id}`);
+      for (const change of rest) {
+        await git.mergeBranch(FLEET_CONFIG_REPO, `change/${change.id}`, FLEET_CONFIG_BRANCH, 'ours-theirs', actor);
+      }
+    } else {
+      for (const change of changes) {
+        await git.mergeBranch(FLEET_CONFIG_REPO, `change/${change.id}`, FLEET_CONFIG_BRANCH, 'ours-theirs', actor);
+      }
     }
+
+    // git-store's ref carries `sha` (the branch head), not `commit`.
     const ref = await git.readRef(FLEET_CONFIG_REPO, FLEET_CONFIG_BRANCH);
-    const commit = ref?.commit;
-    if (!commit) throw new Error('release: the fleet-config branch has no commit after merge');
+    const commit = ref?.sha;
+    if (!commit) {
+      throw new Error(
+        `release: ${FLEET_CONFIG_BRANCH} has no commit after ${seeded ? 'seeding' : 'merge'} — ` +
+        `nothing was activated`
+      );
+    }
 
     const { definitions } = await readDefinitions();
     const digest = contentDigest({
@@ -371,7 +442,10 @@ export function createRegistry(config) {
       const assignment = {
         id: agentId,
         schema_version: 1,
-        role_id: existing?.role_id || specDigests[agentId]?.roleId || 'unknown',
+        // An explicitly supplied role wins over whatever is stored: the stored
+        // value may be a placeholder from an earlier assignment, and `'unknown'`
+        // is truthy, so a plain `existing || supplied` kept the placeholder.
+        role_id: specDigests[agentId]?.roleId || existing?.role_id || 'unknown',
         desired_release: releaseId,
         desired_spec_digest: specDigests[agentId]?.digest || release.digest,
         actual_release: existing?.actual_release ?? null,

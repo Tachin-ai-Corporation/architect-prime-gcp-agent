@@ -257,7 +257,23 @@ export function validateNoPrivilegeEscalation(definitions) {
  * @returns {{ ok: boolean, findings: object[], errors: object[], warnings: object[] }}
  */
 export function validateSet(input) {
-  const { definitions, available, composed = {}, platformVersion } = input;
+  const { definitions, available, composed = {}, platformVersion, expectDefinitions = true } = input;
+
+  // An empty set satisfies every rule below, which made "validated" mean
+  // "nothing was checked" — the worst possible reading of a green result. It
+  // happened for real: a change whose content failed to reach the store
+  // validated clean and was eligible for release. A validation over nothing is
+  // a failure, not a pass.
+  if (expectDefinitions && definitions.length === 0) {
+    const empty = finding(
+      'error', 'set:empty',
+      'the definition set is empty — nothing was validated. This usually means the change\'s ' +
+      'content did not reach the registry; a validation over nothing must never read as a pass.',
+      null
+    );
+    return { ok: false, findings: [empty], errors: [empty], warnings: [] };
+  }
+
   const roles = definitions.filter((d) => d.kind === 'role').map((d) => d.def);
 
   const findings = [

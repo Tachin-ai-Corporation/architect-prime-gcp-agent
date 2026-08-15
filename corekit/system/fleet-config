@@ -71,12 +71,31 @@ function platformVersion() {
 
 // ── Catalog reading (import only) ──────────────────────────────────────
 
-/** Locate the bundled catalog: the repo when run from a checkout, CORE_DIR on a VM. */
-function catalogRoot() {
+/**
+ * Locate the bundled catalog to import from.
+ *
+ * The full catalog exists only in a platform release checkout — a VM installs
+ * its own role's slice, not all twelve, which is correct: a fleet agent has no
+ * business carrying every other specialty's files. So the one-time import runs
+ * where the release does, against tenant credentials.
+ *
+ * `--from <path>` for an explicit checkout; `GCP_TOKEN` supplies credentials
+ * when running off-VM (see corekit/lib/gce-auth.mjs).
+ */
+function catalogRoot(args = []) {
+  const explicit = argValue(args, '--from');
+  if (explicit) {
+    if (!existsSync(join(explicit, 'specialties'))) die(`no catalog at ${explicit} (expected a specialties/ directory)`);
+    return explicit;
+  }
   const repo = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
   if (existsSync(join(repo, 'specialties'))) return repo;
   if (existsSync(join(CORE_DIR, 'specialties'))) return CORE_DIR;
-  die('cannot find the bundled catalog to import from');
+  die(
+    'cannot find the bundled catalog to import from.\n' +
+    '  The full catalog lives in a platform release checkout — a VM installs only its own\n' +
+    '  role\'s slice. Run this from a checkout, or pass --from <path>.'
+  );
 }
 
 function readCatalog(root) {
@@ -114,7 +133,7 @@ function readCatalog(root) {
 
 async function cmdImport(registry, args) {
   const dryRun = args.includes('--dry-run');
-  const root = catalogRoot();
+  const root = catalogRoot(args);
   const { specialties, skillJsons, skillDocs, agentTypes } = readCatalog(root);
   const typeFor = (id) => Object.values(agentTypes).find((t) => t.id === id) || null;
 
@@ -261,10 +280,25 @@ async function cmdRelease(registry, args) {
 
 async function cmdAssign(registry, args) {
   const [releaseId] = args.filter((a) => !a.startsWith('--'));
-  if (!releaseId) die('usage: fleet-config assign <releaseId> --agents a,b [--pin]');
+  if (!releaseId) die('usage: fleet-config assign <releaseId> --agents a,b [--role <id>] [--pin]');
   const agents = (argValue(args, '--agents') || '').split(',').map((s) => s.trim()).filter(Boolean);
   if (!agents.length) die('--agents is required');
-  emit(await registry.assign({ releaseId, agents, specDigests: {}, pinned: args.includes('--pin') }));
+
+  // An assignment without a role compiles to nothing. Rather than storing
+  // `role_id: "unknown"` and discovering that at apply time, resolve it now:
+  // an explicit --role, else the agent's existing assignment, else refuse.
+  const explicitRole = argValue(args, '--role');
+  const specDigests = {};
+  for (const agentId of agents) {
+    const existing = await registry._db.read(`fleet_assignments/${agentId}`);
+    const roleId = explicitRole || existing?.role_id;
+    if (!roleId || roleId === 'unknown') {
+      die(`no role for agent '${agentId}' — pass --role <id>`);
+    }
+    specDigests[agentId] = { roleId };
+  }
+
+  emit(await registry.assign({ releaseId, agents, specDigests, pinned: args.includes('--pin') }));
 }
 
 async function cmdRollback(registry, args) {

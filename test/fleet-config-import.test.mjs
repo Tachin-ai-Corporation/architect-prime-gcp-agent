@@ -210,6 +210,21 @@ test('presentation metadata is imported beside the role, not inside it', () => {
 
 // ── The whole imported set validates ───────────────────────────────────
 
+test('an empty definition set FAILS validation rather than passing vacuously', () => {
+  // Found in production: a change whose content never reached the registry
+  // validated clean, because every rule is satisfied by nothing. "Validated"
+  // then meant "nothing was checked" — and the change was eligible for release.
+  const result = validateSet({ definitions: [], available: {}, platformVersion: 'v1' });
+  assert.equal(result.ok, false);
+  assert.equal(result.errors[0].code, 'set:empty');
+  assert.match(result.errors[0].message, /nothing was validated/);
+});
+
+test('a set that is genuinely expected to be empty can say so explicitly', () => {
+  const result = validateSet({ definitions: [], available: {}, platformVersion: 'v1', expectDefinitions: false });
+  assert.equal(result.ok, true);
+});
+
 test('the imported catalog passes every validator', () => {
   const definitions = [
     ...[...IMPORTED_ROLES.values()].map((def) => ({ kind: 'role', def })),

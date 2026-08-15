@@ -203,6 +203,23 @@ export function importProcess(raw) {
   };
 }
 
+/**
+ * Recognize an unrendered template placeholder.
+ *
+ * The repo is a public template, so its catalog deliberately ships
+ * `YOUR_GCP_PROJECT` / `your-gcp-project` / `${VAR}` markers for an operator to
+ * replace. A placeholder that survives into runtime state is a literal that
+ * looks like a value — the same class of defect as the `${AGENT_USER_EMAIL}`
+ * owner that once stamped 548 work envelopes. Importing it as null makes the
+ * absence honest.
+ */
+export function isTemplatePlaceholder(value) {
+  if (typeof value !== 'string') return false;
+  return /^YOUR[_-]/i.test(value) || /^your-[a-z-]+$/i.test(value) || /\$\{[A-Z_]+\}/.test(value);
+}
+
+const orNull = (v) => (isTemplatePlaceholder(v) ? null : (v ?? null));
+
 /** Import a responsibility from a bundled responsibilities file entry. */
 export function importResponsibility(raw, roleId) {
   const kind = raw.schedule || raw.cron ? 'schedule' : 'event';
@@ -218,8 +235,8 @@ export function importResponsibility(raw, roleId) {
     },
     instruction: raw.instruction || raw.description || '',
     success_criteria: raw.success_criteria || raw.accept_criteria || 'The scheduled work completed and reported its outcome.',
-    target_agent: raw.target_agent || null,
-    project_id: raw.project_id || null,
+    target_agent: orNull(raw.target_agent),
+    project_id: orNull(raw.project_id),
     enabled: raw.enabled !== false,
   };
 }
