@@ -361,6 +361,32 @@ after                         17,034 bytes · overlay 1×
 Before the fix that same state reported `already converged` and left the agent
 stale indefinitely.
 
+### The gate was reading the wrong sample (found in the same proof run)
+
+With composition fixed, millie's three proof missions all carried the same
+stable stamp — release `fr-6a524ab97fd1`, spec `sha256:f9a980797b8d…`, platform
+`a5e813876956` — and `observe` still reported **0 missions**.
+
+`observe` read the deployment-rooted `work` collection with *no filter* and a
+limit of 300, then grouped locally. `work` holds every mission the deployment
+has ever run, so that read returns an arbitrary 300 documents which almost
+certainly exclude the release being judged.
+
+The failure mode is the dangerous kind: "0 missions — too early to judge" is
+indistinguishable from a genuinely young release, so an operator waits for
+evidence that will never arrive. A gate that says *I have no evidence* when it
+means *I looked somewhere else* is worse than no gate.
+
+Fixed in `a5e8138`…`7918999`: the read asks for the release's own work (one
+equality filter on `fleet_release`, no composite index), and lives on the
+registry where the injectable-db doubles can exercise it. It now also reports
+what it did not cover — a truncated read and any unstamped missions — because a
+sample that reads as a census is how a partial view becomes a confident verdict.
+
+The detail that let this hide: the fake db ignored `limit`. A caller that reads
+a capped slice and filters locally is perfectly correct against an unbounded
+fake and wrong against Firestore. The fake honours `limit` now.
+
 **The test that would have caught it** now exists —
 `test/content-sync-idempotence.test.mjs` applies the same release five times and
 asserts one overlay and an unchanged tree digest. It also keeps the *bug itself*
