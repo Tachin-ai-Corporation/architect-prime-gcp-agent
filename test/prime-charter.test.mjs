@@ -130,6 +130,32 @@ test('a finding is scanned before it leaves the deployment (C-8)', () => {
   assert.match(cli, /refusing to file/);
 });
 
+test('the secret scanner actually matches — it once could not', () => {
+  // Shipped dead: a patch wrote a literal backspace byte (0x08) where each regex
+  // word boundary belonged, so every pattern was `/<BACKSPACE>ghp_…/` and matched
+  // nothing. The guard reported a clean scan over a real token and filed it. A
+  // security check that cannot fail is worse than none, because it is trusted.
+  const cli = read('corekit/system/fleet-config');
+  assert.ok(!cli.includes(String.fromCharCode(8)), 'no stray control characters in the source');
+
+  const at = cli.indexOf('function scanForSecrets');
+  assert.notEqual(at, -1, 'the scanner must exist');
+  const close = cli.indexOf(`${String.fromCharCode(10)}}`, at);
+  const src = cli.slice(at, close + 2);
+
+  // eslint-disable-next-line no-eval
+  const scan = eval(`(${src.replace('function scanForSecrets', 'function')})`);
+
+  assert.equal(scan('token ghp_AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA').secrets_found, 1, 'GitHub token');
+  assert.equal(scan('AKIAIOSFODNN7EXAMPLE').secrets_found, 1, 'AWS key id');
+  assert.equal(scan('-----BEGIN RSA PRIVATE KEY-----').secrets_found, 1, 'private key');
+  assert.equal(scan('ssn 123-45-6789').pii_found, 1, 'SSN');
+
+  const clean = scan('No approved provider exposes the ticket API, so a skill cannot bind it.');
+  assert.equal(clean.secrets_found, 0, 'ordinary prose must not trip it');
+  assert.equal(clean.pii_found, 0, 'a validator that cries wolf gets disabled');
+});
+
 // ── The charter is a charter, not a manual ─────────────────────────────
 
 test('the Prime SOUL names the Fleet Architect mandate and its boundary', () => {
