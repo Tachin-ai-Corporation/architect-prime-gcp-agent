@@ -82,6 +82,20 @@ jobs:
       - name: Check manifest paths
         run: node --test test/manifest-integrity.test.mjs
 
+  boundaries:
+    name: Structural Boundaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      # Its own job rather than a line in the unit run: a broken wall is a
+      # different kind of failure from a broken function, and it should be
+      # readable as such on the PR without opening a log.
+      - name: Check structural boundaries (C-10, C-30)
+        run: node --test test/boundaries.test.mjs
+
   unit:
     name: Unit Tests
     runs-on: ubuntu-latest
