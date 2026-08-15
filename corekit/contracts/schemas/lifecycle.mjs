@@ -183,7 +183,12 @@ export const ASSIGNMENT_SCHEMA = schema('fleetAssignment', 1, {
   schema_version: { type: 'integer', required: true, min: 1 },
   role_id: { type: 'string', required: true, pattern: ID_PATTERN },
   desired_release: { type: 'string', required: true, pattern: /^fr-[a-z0-9-]+$/ },
-  desired_spec_digest: { type: 'string', required: true, pattern: DIGEST_PATTERN },
+  desired_spec_digest: {
+    type: 'string', nullable: true, pattern: DIGEST_PATTERN,
+    describe: 'The exact bundle approved for this agent. Null means "compile from the release '
+      + 'and attest what you got" — a spec digest also depends on the firmware installed on '
+      + 'the VM, which the control plane does not hold.',
+  },
   actual_release: { type: 'string', nullable: true, pattern: /^fr-[a-z0-9-]+$/ },
   actual_spec_digest: { type: 'string', nullable: true, pattern: DIGEST_PATTERN },
   pinned: {

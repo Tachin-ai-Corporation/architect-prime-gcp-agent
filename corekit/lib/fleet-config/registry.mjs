@@ -447,7 +447,17 @@ export function createRegistry(config) {
         // is truthy, so a plain `existing || supplied` kept the placeholder.
         role_id: specDigests[agentId]?.roleId || existing?.role_id || 'unknown',
         desired_release: releaseId,
-        desired_spec_digest: specDigests[agentId]?.digest || release.digest,
+        // The agent's spec digest is NOT the release digest. A release digest
+        // covers the whole definition set; a spec digest covers one agent's
+        // compiled bundle, which also depends on the firmware installed on that
+        // VM — a coordinate the control plane does not hold. Substituting one for
+        // the other made every apply refuse itself.
+        //
+        // Left null unless a caller supplies a genuinely computed digest (an
+        // evaluation pinning a candidate does). Null means "compile from this
+        // release and tell me what you got"; non-null means "this exact bundle
+        // was approved, refuse anything else".
+        desired_spec_digest: specDigests[agentId]?.digest ?? null,
         actual_release: existing?.actual_release ?? null,
         actual_spec_digest: existing?.actual_spec_digest ?? null,
         pinned,
@@ -526,7 +536,13 @@ export function createRegistry(config) {
     const path = pathFor('fleetAssignment', agentId);
     const a = await db.read(path);
     if (!a) throw new Error(`no assignment for agent '${agentId}'`);
-    const converged = !error && a.desired_release === releaseId && a.desired_spec_digest === specDigest;
+    // With no pinned digest, converging means running the assigned release and
+    // having attested a digest for it. With one, the digests must match.
+    const converged = !error
+      && a.desired_release === releaseId
+      && (a.desired_spec_digest === null || a.desired_spec_digest === undefined
+        ? Boolean(specDigest)
+        : a.desired_spec_digest === specDigest);
     const next = {
       ...a,
       actual_release: error ? a.actual_release : releaseId,
