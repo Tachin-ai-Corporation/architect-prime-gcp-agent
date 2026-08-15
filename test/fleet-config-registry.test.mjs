@@ -478,3 +478,70 @@ test('a release with no work reads as empty rather than borrowing another releas
   const { work } = await registry.readReleaseWork('fr-new', ['sha256:' + 'a'.repeat(64)]);
   assert.deepEqual(work, []);
 });
+
+// ── Rollback has a target, even before anything reaches `active` ────────
+//
+// C-31 makes rollback a pointer operation with a target named in advance. The
+// target came from `activeReleaseId()`, which matches only `status === 'active'`
+// — but a release reaches `active` only after a full promotion, and a
+// canary-first workflow may never take it there. In the first live registry both
+// releases sat at `canary`, so every release recorded `parent_release: null` and
+// none of them had anywhere to roll back to. `evaluateRollout` can decide
+// `rollback`, and `observe --apply` would then find no target and pause instead:
+// the one moment the promise matters is the one where it was missing.
+
+const releaseDoc = (id, status, created_at) => ({ id, status, created_at, schema_version: 1 });
+
+test('a canary release is a rollback target, not just an active one', async () => {
+  const { registry, db } = newRegistry();
+  db.docs.set('fleet_releases/fr-first', releaseDoc('fr-first', 'canary', '2026-08-15T10:00:00Z'));
+
+  assert.equal(await registry.activeReleaseId(), null, 'nothing has been promoted');
+  assert.equal(await registry.previousLiveReleaseId(), 'fr-first',
+    'but something IS live, and that is what a new release supersedes');
+});
+
+test('the newest live release wins', async () => {
+  const { registry, db } = newRegistry();
+  db.docs.set('fleet_releases/fr-old', releaseDoc('fr-old', 'active', '2026-08-14T10:00:00Z'));
+  db.docs.set('fleet_releases/fr-new', releaseDoc('fr-new', 'canary', '2026-08-15T10:00:00Z'));
+
+  assert.equal(await registry.previousLiveReleaseId(), 'fr-new');
+});
+
+test('superseded and rolled-back releases are not rollback targets', async () => {
+  // Rolling forward onto something already rolled back would undo the undo.
+  const { registry, db } = newRegistry();
+  db.docs.set('fleet_releases/fr-bad', releaseDoc('fr-bad', 'rolled-back', '2026-08-15T12:00:00Z'));
+  db.docs.set('fleet_releases/fr-old', releaseDoc('fr-old', 'superseded', '2026-08-15T11:00:00Z'));
+  db.docs.set('fleet_releases/fr-live', releaseDoc('fr-live', 'canary', '2026-08-15T10:00:00Z'));
+
+  assert.equal(await registry.previousLiveReleaseId(), 'fr-live');
+});
+
+test('a genuinely first release still has no parent', async () => {
+  const { registry } = newRegistry();
+  assert.equal(await registry.previousLiveReleaseId(), null, 'null must remain possible, or the first release lies');
+});
+
+test('a release created after a canary records it as the rollback target', async () => {
+  const { registry, db } = newRegistry();
+  const change = await draftAndValidate(registry);
+  await registry.createRelease({ changeIds: [change.id], platformVersion: 'v1' });
+
+  // The first release is pending; mark it canary as a real rollout would.
+  const first = [...db.docs.entries()].find(([k]) => k.startsWith('fleet_releases/'));
+  db.docs.set(first[0], { ...first[1], status: 'canary' });
+
+  // A different role, so this is a genuine second change rather than a
+  // baseRevision conflict against the first.
+  const second = await draftAndValidate(registry, {
+    id: 'billing-analyst',
+    name: 'Billing Analyst',
+    purpose: 'Reconcile invoices against delivered work and flag discrepancies for a human to settle.',
+  });
+  const rel2 = await registry.createRelease({ changeIds: [second.id], platformVersion: 'v1' });
+
+  assert.equal(rel2.parent_release, first[1].id,
+    'without this, a regressive canary has nowhere to roll back to');
+});

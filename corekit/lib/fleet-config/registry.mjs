@@ -398,7 +398,7 @@ export function createRegistry(config) {
       contents: [...definitions.entries()].sort().map(([k, v]) => [k, v.digest]),
     });
 
-    const parent = await activeReleaseId();
+    const parent = await previousLiveReleaseId();
     const releaseId = `fr-${digest.slice(7, 19)}`;
     const release = {
       id: releaseId,
@@ -558,6 +558,40 @@ export function createRegistry(config) {
     return { work, truncated: rows.length >= limit, unstamped };
   }
 
+  /**
+   * The release a new one would supersede — the rollback target (C-31).
+   *
+   * NOT the same as the active release. A release reaches `active` only after a
+   * full promotion, and a canary-first workflow may never take it there: both
+   * releases in the first live registry sat at `canary`, so
+   * `parent_release` came back null every time and no release had anywhere to
+   * roll back to. `evaluateRollout` can decide `rollback`, and `observe --apply`
+   * would then find no target and pause instead — the one moment the promise
+   * matters is the one where it was missing.
+   *
+   * Two equality filters rather than an unfiltered read: `fleet_releases` is
+   * small today, and a query that reads a slice and filters locally is the shape
+   * that made the rollout gate report zero missions.
+   */
+  async function previousLiveReleaseId() {
+    const live = [];
+    for (const status of ['active', 'canary']) {
+      const docs = await db.query('', 'fleet_releases', [
+        { field: 'status', op: 'EQUAL', value: { stringValue: status } },
+      ], { noOrderBy: true, limit: 100 });
+      live.push(...(docs || []));
+    }
+    if (!live.length) return null;
+    // Newest first. An `active` release outranks a `canary` one at the same
+    // instant, because it is what the fleet at large is running.
+    live.sort((a, b) => {
+      const t = String(b.created_at ?? '').localeCompare(String(a.created_at ?? ''));
+      if (t !== 0) return t;
+      return (a.status === 'active' ? -1 : 1) - (b.status === 'active' ? -1 : 1);
+    });
+    return live[0].id;
+  }
+
   /** The currently active release id, or null. */
   async function activeReleaseId() {
     const docs = await db.query('', 'fleet_releases', [{ field: 'status', op: 'EQUAL', value: { stringValue: 'active' } }], { noOrderBy: true, limit: 5 });
@@ -600,6 +634,7 @@ export function createRegistry(config) {
     listAssignments,
     readReleaseWork,
     activeReleaseId,
+    previousLiveReleaseId,
     reportApplied,
     _db: db,
   };
