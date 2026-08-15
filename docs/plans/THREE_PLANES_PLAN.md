@@ -280,6 +280,43 @@ mission → platform_version 6f238c45b259…
           agent_spec_digest sha256:a7404054cc66… (= CONTENT.json)
 ```
 
+### OPEN DEFECT — content-sync is not idempotent (found 2026-08-15, P5 canary)
+
+**Symptom.** Applying the same release twice composes the soul overlay twice.
+`fleet-millie` currently carries the assistant-cortex overlay **2×** (20,193-byte
+SOUL, two `<!-- role: assistant-cortex -->` provenance comments), and her
+attested `agent_spec_digest` changes on every apply even when no content changed.
+Downstream, `fleet-config observe` cannot group her missions, so the rollout gate
+reports 0 missions for a release that has run several.
+
+**Cause.** `agent-content-sync` reads base firmware from the *installed*
+`workspace-<organ>/SOUL.md` — which is the rendered output of the previous apply.
+Each run composes the overlay onto its own previous output. This is exactly the
+`assemble-persona` in-place-append defect that P3 claimed to replace,
+reintroduced through the firmware *input* rather than the write path. The
+staging, digest-verify and atomic-swap machinery is correct; what it is handed is
+not.
+
+**Fix (designed, not yet implemented).** Base firmware must be manifest-installed
+to an immutable `workspace-<organ>/SOUL.base.md`, and content-sync must render to
+`SOUL.md`. That makes the base Foundation-owned and immutable, and the rendered
+SOUL a derived cache — which is what MODULE_CHARTER already says it is
+("the rendered effective SOUL is a **cache**"). content-sync already prefers
+`SOUL.base.md` when present; only the manifest destinations and a one-time
+migration are missing.
+
+Touches: `infra/manifests/base.txt` + every `job-*.txt` that installs an organ
+SOUL, and `corekit/brain/assemble-persona` (which the change finally retires).
+
+**Interim state.** The sync timer is not enabled, so nothing compounds further on
+its own. A `upgrade-corekit` run reinstalls the base SOUL, after which a single
+content-sync pass yields a correct single composition — the same
+"idempotent-by-reinstall" property the old mechanism had, which is not good
+enough and is the reason for the fix.
+
+**A test would have caught this** and does not exist yet: apply the same release
+twice and assert the rendered bundle digest is unchanged.
+
 ### Carried forward (not done, not implied)
 
 - Agent profiles / deep truths still live in the manifest-managed `workspace/SOUL.md` tail.
