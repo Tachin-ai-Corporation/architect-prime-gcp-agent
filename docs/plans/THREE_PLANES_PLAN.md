@@ -405,6 +405,36 @@ The hold is as much of the proof as the promote: the gate declined to judge on
 three missions and changed its verdict only when the evidence arrived, rather
 than promoting whatever it saw first.
 
+### The timer was already running — a correction
+
+While writing this up I recorded that "the sync timer is not enabled, so nothing
+compounds on its own". That was wrong, and the journal says so plainly: the
+`timers.target.wants` symlink was created at **18:10** and the service has 94
+starts. The doubling was not an artifact of manual applies during P5 — it was an
+unattended loop adding a copy every five minutes whenever a compile succeeded.
+It reached 7× rather than hundreds only because most early runs failed on an
+unrelated Firestore error.
+
+The claim was comforting and unverified, which is the combination worth
+distrusting. `systemctl list-timers` reports the *next* run, not whether the unit
+was enabled by me a moment ago or by bootstrap hours earlier; the symlink's
+timestamp is what actually answers that.
+
+The correction improves the result rather than spoiling it, because the proof is
+now unattended:
+
+```
+20:35, 20:41  (pre-fix)   applied … 3 written, digests 6e5d140c → 07c0e1e2 → different every run
+20:46         (mid-upgrade) ERROR: no base firmware at workspace-cerebellum/SOUL.base.md
+                            ← the new fail-closed guard, refusing to compose onto its own output
+20:52, 20:57, 21:03 …     skip: already converged   (five consecutive)
+
+soul unchanged across all of them: sha256 285b760e… · overlay 1× · 17,034 bytes
+```
+
+The 20:46 line is the guard doing its job unrehearsed: the new code was installed
+before the base file it depends on, and it refused rather than duplicating.
+
 **The test that would have caught it** now exists —
 `test/content-sync-idempotence.test.mjs` applies the same release five times and
 asserts one overlay and an unchanged tree digest. It also keeps the *bug itself*
