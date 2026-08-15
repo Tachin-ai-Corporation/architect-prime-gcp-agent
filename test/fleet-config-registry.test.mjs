@@ -30,14 +30,17 @@ function fakeDb() {
     async write(path, data) { docs.set(path, structuredClone(data)); return data; },
     async patch(path, _fields, data) { docs.set(path, { ...(docs.get(path) || {}), ...data }); },
     async del(path) { docs.delete(path); },
-    async query(_parent, collectionId, filters = []) {
+    async query(_parent, collectionId, filters = [], opts = {}) {
       const out = [];
       for (const [path, doc] of docs) {
         if (!path.startsWith(`${collectionId}/`)) continue;
         const match = filters.every((f) => doc[f.field] === f.value.stringValue);
         if (match) out.push(structuredClone(doc));
       }
-      return out;
+      // Honouring `limit` matters: a caller that reads a capped slice and then
+      // filters locally looks correct against an unbounded fake and returns the
+      // wrong sample against Firestore.
+      return opts.limit ? out.slice(0, opts.limit) : out;
     },
   };
 }
@@ -400,4 +403,78 @@ test('a revision edited outside the lifecycle is excluded and reported', async (
   assert.equal(definitions.has('role/support-analyst'), false, 'tampered content is not served');
   assert.equal(corrupt.length, 1);
   assert.match(corrupt[0].reason, /digest mismatch/);
+});
+
+// ── Reading the evidence a release produced ────────────────────────────
+//
+// The gate reported "0 missions — too early to judge" for a release that had run
+// three, all correctly stamped. It read `work` with no filter and a cap, then
+// grouped locally; `work` holds every mission the deployment has ever run, so the
+// read returned an arbitrary slice that did not contain the release being judged.
+// The verdict was indistinguishable from a genuinely young release, so the
+// operator would have waited for evidence that could never arrive.
+
+/** Seed n work docs onto a release/digest. */
+function seedWork(db, { release, digest, n, prefix = 'w' }) {
+  for (let i = 0; i < n; i++) {
+    db.docs.set(`work/${prefix}-${release}-${i}`, {
+      id: `${prefix}-${release}-${i}`, type: 'M', status: 'complete',
+      output: 'done', fleet_release: release, agent_spec_digest: digest,
+    });
+  }
+}
+
+test('reading a release\'s work asks for that release, rather than sampling the collection', async () => {
+  const { registry, db } = newRegistry();
+  const mine = 'sha256:' + 'a'.repeat(64);
+  seedWork(db, { release: 'fr-mine', digest: mine, n: 3 });
+  seedWork(db, { release: 'fr-someone-else', digest: 'sha256:' + 'b'.repeat(64), n: 900, prefix: 'x' });
+
+  const { work, truncated, unstamped } = await registry.readReleaseWork('fr-mine', [mine]);
+  assert.equal(work.length, 3, 'the release\'s own missions are found regardless of how much other work exists');
+  assert.equal(truncated, false);
+  assert.equal(unstamped, 0);
+});
+
+test('work on the release but from another spec digest is not counted as this one\'s', async () => {
+  const { registry, db } = newRegistry();
+  const applied = 'sha256:' + 'a'.repeat(64);
+  seedWork(db, { release: 'fr-x', digest: applied, n: 2 });
+  seedWork(db, { release: 'fr-x', digest: 'sha256:' + 'c'.repeat(64), n: 5, prefix: 'stale' });
+
+  const { work } = await registry.readReleaseWork('fr-x', [applied]);
+  assert.equal(work.length, 2, 'an agent mid-apply must not have its old work attributed to the new spec');
+});
+
+test('unstamped work is reported, not silently dropped', async () => {
+  const { registry, db } = newRegistry();
+  const d = 'sha256:' + 'a'.repeat(64);
+  seedWork(db, { release: 'fr-x', digest: d, n: 2 });
+  db.docs.set('work/w-nostamp', { id: 'w-nostamp', type: 'M', status: 'complete', output: 'ok', fleet_release: 'fr-x' });
+
+  const { work, unstamped } = await registry.readReleaseWork('fr-x', [d]);
+  assert.equal(work.length, 2);
+  assert.equal(unstamped, 1, 'work that cannot be attributed must be visible, or the sample looks complete');
+});
+
+test('a truncated read says so — a sample must not read as a census', async () => {
+  const { registry, db } = newRegistry();
+  const d = 'sha256:' + 'a'.repeat(64);
+  seedWork(db, { release: 'fr-x', digest: d, n: 10 });
+
+  const capped = await registry.readReleaseWork('fr-x', [d], { limit: 4 });
+  assert.equal(capped.truncated, true);
+  assert.equal(capped.work.length, 4);
+
+  const full = await registry.readReleaseWork('fr-x', [d], { limit: 50 });
+  assert.equal(full.truncated, false);
+  assert.equal(full.work.length, 10);
+});
+
+test('a release with no work reads as empty rather than borrowing another release\'s', async () => {
+  const { registry, db } = newRegistry();
+  seedWork(db, { release: 'fr-other', digest: 'sha256:' + 'b'.repeat(64), n: 50 });
+
+  const { work } = await registry.readReleaseWork('fr-new', ['sha256:' + 'a'.repeat(64)]);
+  assert.deepEqual(work, []);
 });

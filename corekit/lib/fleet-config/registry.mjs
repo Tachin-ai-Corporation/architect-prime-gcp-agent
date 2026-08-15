@@ -525,6 +525,39 @@ export function createRegistry(config) {
     return docs || [];
   }
 
+  /**
+   * The work a release produced, narrowed to the spec digests its agents attested.
+   *
+   * Ask Firestore for the release's own missions rather than reading `work` and
+   * filtering locally. `work` holds every mission the deployment has ever run,
+   * so an unfiltered read returns an arbitrary slice that almost certainly
+   * excludes the release being judged — and the gate then reports "0 missions,
+   * too early to judge", which is indistinguishable from a genuinely young
+   * release. The operator waits for evidence that will never arrive.
+   *
+   * One equality filter, so no composite index is required. Truncation and
+   * unstamped work are returned rather than swallowed: a sample that reads as a
+   * census is how a partial view becomes a confident verdict.
+   *
+   * @param {string} releaseId
+   * @param {Iterable<string>} digests - the digests agents on this release attested
+   * @returns {Promise<{ work: Array, truncated: boolean, unstamped: number }>}
+   */
+  async function readReleaseWork(releaseId, digests, { limit = 500 } = {}) {
+    const rows = (await db.query('', 'work', [
+      { field: 'fleet_release', op: 'EQUAL', value: { stringValue: releaseId } },
+    ], { noOrderBy: true, limit })) || [];
+
+    const wanted = new Set(digests);
+    const work = [];
+    let unstamped = 0;
+    for (const row of rows) {
+      if (!row.agent_spec_digest) { unstamped++; continue; }
+      if (wanted.has(row.agent_spec_digest)) work.push(row);
+    }
+    return { work, truncated: rows.length >= limit, unstamped };
+  }
+
   /** The currently active release id, or null. */
   async function activeReleaseId() {
     const docs = await db.query('', 'fleet_releases', [{ field: 'status', op: 'EQUAL', value: { stringValue: 'active' } }], { noOrderBy: true, limit: 5 });
@@ -565,6 +598,7 @@ export function createRegistry(config) {
     assign,
     rollback,
     listAssignments,
+    readReleaseWork,
     activeReleaseId,
     reportApplied,
     _db: db,
