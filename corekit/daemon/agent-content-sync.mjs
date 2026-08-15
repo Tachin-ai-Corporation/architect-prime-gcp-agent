@@ -114,7 +114,33 @@ async function inFlight(db, agentEmail) {
   }
 }
 
+/**
+ * Is the Fleet Definition sync switched on for this deployment?
+ *
+ * `fleet_config.sync_enabled` existed in the contract and NOTHING READ IT — the
+ * daemon consumed only `sync_interval_ms`. A flag that is documented as a
+ * control and wired to nothing is worse than no flag: it is an off switch an
+ * operator would reach for in an incident and find inert.
+ *
+ * Blast radius was in fact enforced elsewhere, by assignment presence — an agent
+ * with no `fleet_assignments` record skips, so an un-assigned VM was never
+ * touched whatever this said. That is a real gate, but it is not this one, and
+ * only one of them was written down.
+ *
+ * Defaults to ON when absent: existing deployments have no such key and must
+ * keep working. An explicit `false` is honoured.
+ */
+function syncEnabled() {
+  const flag = contracts().fleet_config?.sync_enabled;
+  return flag !== false;
+}
+
 async function onePass() {
+  if (!syncEnabled()) {
+    log('INFO', 'skip: fleet_config.sync_enabled is false — content sync is switched off for this deployment');
+    return { action: 'skip', reason: 'sync disabled by contract' };
+  }
+
   const projectId = await resolveProject();
 
   // git-store resolves its bucket and Firestore base from the environment and

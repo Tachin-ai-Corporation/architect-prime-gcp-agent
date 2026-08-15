@@ -90,18 +90,6 @@ export function isDelegationPing(text) {
   return DELEGATION_PING_RE.test(text);
 }
 
-/**
- * Parse the correlation tag from a ping. Pure.
- * @param {string} text
- * @returns {{ ref: string, kind: 'send'|'result' } | null}
- */
-export function parseDelegationPing(text) {
-  if (!text) return null;
-  const m = text.match(DELEGATION_PING_RE);
-  if (!m) return null;
-  return { ref: m[1], kind: /result/i.test(m[0]) ? 'result' : 'send' };
-}
-
 // ---- Compose ----
 
 /**
@@ -215,39 +203,6 @@ export function parseDelegationResultMarker(text) {
     missionId: match[3],
     body,
   };
-}
-
-/**
- * Parse the structured trailer from a delegation result marker body.
- * Pure — no I/O, no LLM.
- *
- * @param {string} text - Full delegation result marker text
- * @returns {{ fullOutputChars: number|null, recoveryCommand: string|null, artifactRef: string|null, artifactStatus: string|null } | null}
- */
-export function parseResultTrailer(text) {
-  if (!text) return null;
-  const sepIdx = text.indexOf('\n---\n');
-  if (sepIdx < 0) return null;
-  const trailerBlock = text.substring(sepIdx + 5);
-  const result = { fullOutputChars: null, recoveryCommand: null, artifactRef: null, artifactStatus: null };
-  for (const line of trailerBlock.split('\n')) {
-    const trimmed = line.trim();
-    const fullOutputMatch = trimmed.match(/^full_output:\s*(\d+)\s*chars\s*·\s*(.+)$/);
-    if (fullOutputMatch) {
-      result.fullOutputChars = parseInt(fullOutputMatch[1], 10);
-      result.recoveryCommand = fullOutputMatch[2].trim();
-      continue;
-    }
-    if (trimmed.startsWith('artifacts:')) {
-      result.artifactRef = trimmed.substring('artifacts:'.length).trim();
-      continue;
-    }
-    if (trimmed.startsWith('artifact_status:')) {
-      result.artifactStatus = trimmed.substring('artifact_status:'.length).trim();
-      continue;
-    }
-  }
-  return (result.fullOutputChars || result.artifactRef) ? result : null;
 }
 
 // ---- Capability guard (deterministic delegation backstop) ----

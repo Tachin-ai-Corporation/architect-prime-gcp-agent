@@ -30,14 +30,6 @@ export function getContracts() {
 }
 
 /**
- * Reload contracts from disk (call after config change).
- */
-export function reloadContracts() {
-  _contracts = null;
-  return getContracts();
-}
-
-/**
  * Load an agent's configuration.
  *
  * Reads:

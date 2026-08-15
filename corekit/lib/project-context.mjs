@@ -82,26 +82,3 @@ export function filterProjectContext(contextMap) {
   return { context, dropped };
 }
 
-/**
- * Normalize a caller-supplied entry into a stored packet, or reject it.
- * Used by add-context: coerces a plain string only when it is clearly a summary of a
- * durable convention (kind defaults to 'convention'); everything else must already be a
- * resource packet. Returns { ok, entry?, reason? }.
- */
-export function normalizeContextEntry(key, rawValue, meta = {}) {
-  let value = rawValue;
-  if (typeof rawValue === 'string' && rawValue.trim()) {
-    value = { kind: 'convention', summary: rawValue.trim() };
-  }
-  const { ok, reason } = validateContextEntry(key, value);
-  if (!ok) return { ok: false, reason };
-  return {
-    ok: true,
-    entry: {
-      ...value,
-      kind: value.kind || 'convention',
-      updatedAt: meta.updatedAt || null,
-      updatedBy: meta.updatedBy || 'agent',
-    },
-  };
-}

@@ -122,19 +122,6 @@ export function parseAddress(sourceMeta, sourceChannel) {
 }
 
 /**
- * Generate a stable string key for an Address.
- * Used for cursor maps and deduplication.
- *
- * @param {object} addr - Address object
- * @returns {string} Address key
- */
-export function addressKey(addr) {
-  if (!addr) return 'unknown';
-  if (addr.channel === 'gchat') return `gchat:${addr.space || 'unknown'}`;
-  return `dashboard:${addr.fleet_agent || 'prime'}`;
-}
-
-/**
  * Convert text to basic GChat markdown.
  *
  * @param {string} text - source text
