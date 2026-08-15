@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getGitHubRawBase } from "@/lib/github";
+import { primesCol } from "@/lib/firestore";
+import { resolveDeployedRef, contentUrlAt } from "@/lib/deployed-ref";
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -11,8 +13,14 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
     const url = new URL(req.url);
     const agent = url.searchParams.get("agent") || "cortex";
 
+    // Read the prime's OWN deployed commit, not the tip of main. Which model a
+    // brain slot uses is a fact about the code that is running; answering from
+    // main means the panel can disagree with the daemon and be believed.
+    const primeDoc = await primesCol().doc(primeId).get();
+    const source = resolveDeployedRef(primeDoc.exists ? (primeDoc.data()?.coreRef as string | undefined) : undefined);
+
     // 1. Fetch contracts.json for default subagent model
-    const contractsUrl = `${getGitHubRawBase()}/main/infra/contracts.json`;
+    const contractsUrl = contentUrlAt(getGitHubRawBase(), source, "infra/contracts.json");
     let defaultDaemonModel = "gemini-3.6-flash";
     try {
       const contractsRes = await fetch(contractsUrl, { next: { revalidate: 300 } });
@@ -29,7 +37,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
 
     // 2. Fetch agent registry based on target agentName
     const registryName = agent === "prime" ? "agent-registry-prime.json" : "agent-registry.json";
-    const registryUrl = `${getGitHubRawBase()}/main/corekit/config/${registryName}`;
+    const registryUrl = contentUrlAt(getGitHubRawBase(), source, `corekit/config/${registryName}`);
     const registryRes = await fetch(registryUrl, { next: { revalidate: 300 } });
     if (!registryRes.ok) {
       throw new Error(`Failed to fetch ${registryName}: ${registryRes.status}`);
@@ -52,9 +60,12 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
       };
     });
 
+    // Provenance rides with the payload: an unpinned prime still gets an answer,
+    // and the caller can show it as "from main" rather than as fact.
     return NextResponse.json({
       slots,
       defaultDaemonModel,
+      _source: source,
     });
   } catch (err) {
     console.error("[api/brain-config] GET error:", err);
