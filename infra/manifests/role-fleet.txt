@@ -3,21 +3,36 @@
 # Installed by: infra/install.sh --role fleet
 # Then a job-specific manifest is layered on top.
 
-# Fleet workspace seeds (assemble-persona appends specialty brain layers)
+# Fleet workspace seeds
 brain/fleet/_base/IDENTITY.md workspace/IDENTITY.md
 
-# Cortex SOUL (base â€” specialty appends are layered by assemble-persona)
+# Every organ SOUL installs TWICE, and the pair is the point:
+#
+#   SOUL.base.md  Foundation's firmware, exactly as the repo wrote it. Nothing
+#                 on the VM ever writes to it, so it is a fixed point.
+#   SOUL.md       the RENDERED soul the brain actually reads — base plus the
+#                 specialty and deployment layers composed onto it.
+#
+# Composition reads the base and writes the render. Before this split both
+# readers and writers used SOUL.md, so every pass composed onto its own output
+# and the specialty layer accumulated a copy per apply.
+brain/fleet/_brain/cortex/SOUL.md workspace/SOUL.base.md
 brain/fleet/_brain/cortex/SOUL.md workspace/SOUL.md
 
 # Shared brain sub-agent workspaces (used by ALL fleet agents)
+brain/fleet/_brain/prefrontal/SOUL.md workspace-prefrontal/SOUL.base.md
 brain/fleet/_brain/prefrontal/SOUL.md workspace-prefrontal/SOUL.md
 brain/fleet/_brain/prefrontal/IDENTITY.md workspace-prefrontal/IDENTITY.md
+brain/fleet/_brain/temporal-research/SOUL.md workspace-temporal-research/SOUL.base.md
 brain/fleet/_brain/temporal-research/SOUL.md workspace-temporal-research/SOUL.md
 brain/fleet/_brain/temporal-research/IDENTITY.md workspace-temporal-research/IDENTITY.md
+brain/fleet/_brain/temporal-memory/SOUL.md workspace-temporal-memory/SOUL.base.md
 brain/fleet/_brain/temporal-memory/SOUL.md workspace-temporal-memory/SOUL.md
 brain/fleet/_brain/temporal-memory/IDENTITY.md workspace-temporal-memory/IDENTITY.md
+brain/fleet/_brain/cerebellum/SOUL.md workspace-cerebellum/SOUL.base.md
 brain/fleet/_brain/cerebellum/SOUL.md workspace-cerebellum/SOUL.md
 brain/fleet/_brain/cerebellum/IDENTITY.md workspace-cerebellum/IDENTITY.md
+brain/fleet/_brain/motor/SOUL.md workspace-motor/SOUL.base.md
 brain/fleet/_brain/motor/SOUL.md workspace-motor/SOUL.md
 brain/fleet/_brain/motor/IDENTITY.md workspace-motor/IDENTITY.md
 

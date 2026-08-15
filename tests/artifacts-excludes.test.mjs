@@ -28,7 +28,7 @@ describe('renderWorkspaceExcludes', () => {
   it('ignores organ / agent-workspace identity so a stray add -A cannot leak it (C-28)', () => {
     const { content } = renderWorkspaceExcludes('');
     // Root-anchored organ identity + the shared tree — belt-and-suspenders behind work-commit's guard.
-    for (const pat of ['/IDENTITY.md', '/MEMORY.md', '/SOUL.md', '/SOUL_APPEND.md', '/shared']) {
+    for (const pat of ['/IDENTITY.md', '/MEMORY.md', '/SOUL.md', '/SOUL.base.md', '/SOUL_APPEND.md', '/shared']) {
       assert.ok(content.split('\n').includes(pat), `expected ${pat} in excludes`);
     }
   });
@@ -143,7 +143,7 @@ describe('motorWorkspaceSweepPlan', () => {
 
   it('removes scratch but keeps identity / working-memory / runtime files', () => {
     const entries = [
-      dirent('SOUL.md'), dirent('IDENTITY.md'), dirent('MEMORY.md'), dirent('TASK.json'),
+      dirent('SOUL.md'), dirent('SOUL.base.md'), dirent('IDENTITY.md'), dirent('MEMORY.md'), dirent('TASK.json'),
       dirent('config.json'), dirent('progress.json'), dirent('sessions.json'),
       dirent('CLASSIFIED_MEMORY.md'), dirent('custom-skills'),
       dirent('index.html'), dirent('node_modules'), dirent('.git'), dirent('report.md'),
@@ -152,9 +152,16 @@ describe('motorWorkspaceSweepPlan', () => {
     const removed = motorWorkspaceSweepPlan(entries).sort();
     assert.deepEqual(removed, ['.git', 'hosting_public', 'index.html', 'node_modules', 'report.md', 'tachin-website-repo'].sort());
     // none of the keep-set was scheduled for deletion
-    for (const keep of ['SOUL.md','IDENTITY.md','MEMORY.md','TASK.json','config.json','progress.json','sessions.json','CLASSIFIED_MEMORY.md','custom-skills']) {
+    for (const keep of ['SOUL.md','SOUL.base.md','IDENTITY.md','MEMORY.md','TASK.json','config.json','progress.json','sessions.json','CLASSIFIED_MEMORY.md','custom-skills']) {
       assert.ok(!removed.includes(keep), `must keep ${keep}`);
     }
+  });
+
+  it('never sweeps the base firmware — it is what the rendered SOUL is composed from', () => {
+    // Losing SOUL.base.md does not just lose a file: the next content-sync would
+    // have no fixed point to compose onto, and the only remaining candidate is
+    // its own previous output.
+    assert.deepEqual(motorWorkspaceSweepPlan([dirent('SOUL.base.md')]), []);
   });
 
   it('NEVER removes a symlink — the `shared` missions link (and any symlink) is untouched', () => {

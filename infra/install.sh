@@ -573,8 +573,12 @@ run chmod 644 "${state_dir}/STATE.json" 2>/dev/null || true
 
 # ---- 6. Verify critical files ----
 info "Verifying critical files..."
+# SOUL.base.md is checked alongside SOUL.md because content-sync composes FROM
+# it: without a base there is no fixed point to render onto, and the only other
+# candidate is the previous render.
 for check_file in \
   "${INSTALL_ROOT}/workspace/SOUL.md" \
+  "${INSTALL_ROOT}/workspace/SOUL.base.md" \
   "${INSTALL_ROOT}/workspace/IDENTITY.md"; do
   if ! run test -f "$check_file"; then
     # Not fatal for fleet — workspace files are deployed by bootstrap, not manifest

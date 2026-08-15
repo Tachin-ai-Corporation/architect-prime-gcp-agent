@@ -1,9 +1,25 @@
 #!/usr/bin/env bash
-# assemble-persona — Append specialty behavioral guidance to sub-agent SOULs
+# assemble-persona — render each organ's soul from its base firmware
 #
-# Merges specialty-specific SOUL_APPEND.md files into sub-agent workspace
-# SOUL.md files. This shapes HOW each brain organ thinks within its
-# specialty — domain expertise, safety boundaries, dispatch patterns.
+# A specialty shapes HOW each brain organ thinks within its domain — expertise,
+# safety boundaries, dispatch patterns. Those layers live in
+# `specialties/<type>/brain/<organ>/SOUL_APPEND.md` and are composed onto the
+# organ's base firmware here.
+#
+# RENDER, never append-in-place. This script used to open the live SOUL.md and
+# append to it, which is correct exactly once: a second run appends a second
+# copy. That it survived at all was an accident of ordering — an upgrade
+# reinstalled SOUL.md from the repo first, so the append always landed on a
+# fresh base. Anything that ran it twice between installs (or any other writer
+# of SOUL.md) accumulated duplicates silently.
+#
+# So the inputs and the output are now separate files:
+#
+#   SOUL.base.md   Foundation's firmware, manifest-installed, never written here
+#   SOUL_APPEND.md the specialty layer
+#   SOUL.md        the rendered result — truncated and rewritten every run
+#
+# Running this ten times leaves the same bytes as running it once.
 #
 # Usage: assemble-persona [agent-type]
 set -euo pipefail
@@ -22,20 +38,34 @@ declare -A AGENT_WORKSPACES=(
 )
 
 SPEC_BRAIN_DIR="${SPECIALTIES_DIR}/${AGENT_TYPE}/brain"
+RENDER_COUNT=0
 APPEND_COUNT=0
 
-if [[ -d "$SPEC_BRAIN_DIR" ]]; then
-  for sub in cortex motor prefrontal cerebellum temporal-memory temporal-research; do
-    APPEND_FILE="${SPEC_BRAIN_DIR}/${sub}/SOUL_APPEND.md"
-    SUB_SOUL="${AGENT_WORKSPACES[$sub]:-${CORE_DIR}/workspace-${sub}}/SOUL.md"
-    if [[ -f "$APPEND_FILE" && -f "$SUB_SOUL" ]]; then
-      printf '\n---\n\n' >> "$SUB_SOUL"
-      cat "$APPEND_FILE" >> "$SUB_SOUL"
-      APPEND_COUNT=$((APPEND_COUNT + 1))
-      echo "  Appended ${sub} specialty SOUL from ${APPEND_FILE}"
-    fi
-  done
-fi
+for sub in cortex motor prefrontal cerebellum temporal-memory temporal-research; do
+  WS="${AGENT_WORKSPACES[$sub]:-${CORE_DIR}/workspace-${sub}}"
+  BASE="${WS}/SOUL.base.md"
+  SOUL="${WS}/SOUL.md"
+  APPEND_FILE="${SPEC_BRAIN_DIR}/${sub}/SOUL_APPEND.md"
 
-echo "Specialty SOUL appends: ${APPEND_COUNT} applied"
+  # No base means this organ is not installed on this VM (roles differ in which
+  # organs they carry). Refusing here is what keeps the render total: we never
+  # fall back to composing onto SOUL.md, because that is the bug.
+  [[ -f "$BASE" ]] || continue
+
+  TMP="$(mktemp "${SOUL}.XXXXXX")"
+  cat "$BASE" > "$TMP"
+  if [[ -f "$APPEND_FILE" ]]; then
+    printf '\n---\n\n' >> "$TMP"
+    cat "$APPEND_FILE" >> "$TMP"
+    APPEND_COUNT=$((APPEND_COUNT + 1))
+  fi
+
+  # Same directory, so the move is atomic: a reader sees the old soul or the new
+  # one, never a half-written file.
+  chmod 644 "$TMP"
+  mv -f "$TMP" "$SOUL"
+  RENDER_COUNT=$((RENDER_COUNT + 1))
+done
+
+echo "Organ souls rendered: ${RENDER_COUNT} (${APPEND_COUNT} with a ${AGENT_TYPE} specialty layer)"
 echo "Persona assembly complete for: ${AGENT_TYPE}"

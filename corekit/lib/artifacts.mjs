@@ -72,6 +72,7 @@ export function renderWorkspaceExcludes(existing = '', opts = {}) {
     '/IDENTITY.md',
     '/MEMORY.md',
     '/SOUL.md',
+    '/SOUL.base.md',
     '/SOUL_APPEND.md',
     '/shared',
     '# --- end corekit block ---',
@@ -102,8 +103,13 @@ export function resolveCommitAssets(project) {
 // then runs `firebase deploy public:"."` would otherwise ship the previous mission's files
 // (this is exactly how an old marketing-site build reached a staging URL). Symlinks are
 // ALSO always kept and never traversed, so `shared` (→ every mission tree) is untouched.
+//
+// `SOUL.base.md` is kept for a sharper reason than the others: it is the fixed
+// point the rendered SOUL.md is composed FROM. Sweeping it would not merely
+// lose a file — the next content-sync would have no base to compose onto, and
+// the only remaining source would be its own previous output.
 const MOTOR_WORKSPACE_KEEP = new Set([
-  'SOUL.md', 'SOUL_APPEND.md', 'IDENTITY.md', 'MEMORY.md', 'CLASSIFIED_MEMORY.md',
+  'SOUL.md', 'SOUL.base.md', 'SOUL_APPEND.md', 'IDENTITY.md', 'MEMORY.md', 'CLASSIFIED_MEMORY.md',
   'TASK.json', 'config.json', 'progress.json', 'sessions.json',
   'custom-skills', 'shared',
 ]);

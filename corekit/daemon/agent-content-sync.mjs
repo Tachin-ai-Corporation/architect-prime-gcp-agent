@@ -32,7 +32,7 @@ import { join, dirname } from 'node:path';
 import { createRegistry } from '../corekit/lib/fleet-config/registry.mjs';
 import { compileAgentSpec } from '../corekit/lib/fleet-config/compiler.mjs';
 import {
-  reconcile, planApply, verifyStaged, installPath, STAGING_DIR, PREVIOUS_DIR,
+  reconcile, planApply, verifyStaged, installPath, firmwarePath, STAGING_DIR, PREVIOUS_DIR,
 } from '../corekit/lib/fleet-config/content-sync.mjs';
 import { bytesDigest } from '../corekit/contracts/digest.mjs';
 import { createClient } from '../corekit/lib/firestore.mjs';
@@ -156,11 +156,22 @@ async function onePass() {
       // Base firmware is Foundation and stays manifest-installed; the overlay is
       // what the registry owns. Reading the *installed* base means a platform
       // upgrade to the firmware is picked up without a content release.
-      const candidates = organ === 'cortex'
-        ? [join(CORE_DIR, 'workspace', 'SOUL.base.md'), join(CORE_DIR, 'workspace', 'SOUL.md')]
-        : [join(CORE_DIR, `workspace-${organ}`, 'SOUL.base.md'), join(CORE_DIR, `workspace-${organ}`, 'SOUL.md')];
-      const found = candidates.find((p) => existsSync(p));
-      firmware[organ] = found ? readFileSync(found, 'utf8') : `# ${organ}\n`;
+      //
+      // It must be SOUL.base.md and nothing else. SOUL.md is this daemon's own
+      // output, and composing onto it means composing onto the previous apply —
+      // the overlay lands again on every pass. Falling back to SOUL.md when the
+      // base is missing looks forgiving and is exactly how that happened, so a
+      // missing base is an error now.
+      const rel = firmwarePath(organ);
+      const base = join(CORE_DIR, rel);
+      if (!existsSync(base)) {
+        throw new Error(
+          `no base firmware at ${rel} for organ '${organ}'. ` +
+          `Composing onto the rendered SOUL.md would duplicate the overlay; ` +
+          `install the platform manifest that provides the base first.`
+        );
+      }
+      firmware[organ] = readFileSync(base, 'utf8');
     }
 
     const compiled = compileAgentSpec({
@@ -180,11 +191,12 @@ async function onePass() {
   }
 
   const envelopes = await inFlight(db, agentEmail);
-  const decision = reconcile({ assignment, spec, envelopes, agentEmail, emergency: EMERGENCY });
+  const installed = currentDigests(Object.keys(files));
+  const decision = reconcile({ assignment, spec, envelopes, agentEmail, installed, emergency: EMERGENCY });
 
   log('INFO', `${decision.action}: ${decision.reason}`);
   if (DRY_RUN) {
-    const plan = planApply(currentDigests(Object.keys(files)), files);
+    const plan = planApply(installed, files);
     log('INFO', `would write ${plan.write.length}, remove ${plan.remove.length}, leave ${plan.unchanged.length}`);
     return decision;
   }
@@ -215,7 +227,7 @@ async function onePass() {
   }
 
   // ---- Swap, keeping the previous bundle ----
-  const plan = planApply(currentDigests(Object.keys(files)), files);
+  const plan = planApply(installed, files);
   const previous = join(CORE_DIR, PREVIOUS_DIR);
   rmSync(previous, { recursive: true, force: true });
 

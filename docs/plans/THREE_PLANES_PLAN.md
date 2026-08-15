@@ -280,7 +280,7 @@ mission → platform_version 6f238c45b259…
           agent_spec_digest sha256:a7404054cc66… (= CONTENT.json)
 ```
 
-### OPEN DEFECT — content-sync is not idempotent (found 2026-08-15, P5 canary)
+### FIXED — content-sync was not idempotent (found 2026-08-15, P5 canary)
 
 **Symptom.** Applying the same release twice composes the soul overlay twice.
 `fleet-millie` currently carries the assistant-cortex overlay **2×** (20,193-byte
@@ -297,25 +297,44 @@ reintroduced through the firmware *input* rather than the write path. The
 staging, digest-verify and atomic-swap machinery is correct; what it is handed is
 not.
 
-**Fix (designed, not yet implemented).** Base firmware must be manifest-installed
-to an immutable `workspace-<organ>/SOUL.base.md`, and content-sync must render to
-`SOUL.md`. That makes the base Foundation-owned and immutable, and the rendered
-SOUL a derived cache — which is what MODULE_CHARTER already says it is
-("the rendered effective SOUL is a **cache**"). content-sync already prefers
-`SOUL.base.md` when present; only the manifest destinations and a one-time
-migration are missing.
+**Fix (shipped v2026.08.15.7.4).** Every organ SOUL now installs twice, and the
+pair is the whole fix:
 
-Touches: `infra/manifests/base.txt` + every `job-*.txt` that installs an organ
-SOUL, and `corekit/brain/assemble-persona` (which the change finally retires).
+| file | plane | written by |
+|---|---|---|
+| `workspace-<organ>/SOUL.base.md` | Foundation | the manifest, and nothing else, ever |
+| `workspace-<organ>/SOUL.md` | Fleet Definition | composition — truncated and re-rendered each time |
 
-**Interim state.** The sync timer is not enabled, so nothing compounds further on
-its own. A `upgrade-corekit` run reinstalls the base SOUL, after which a single
-content-sync pass yields a correct single composition — the same
-"idempotent-by-reinstall" property the old mechanism had, which is not good
-enough and is the reason for the fix.
+Composition reads the base and writes the render, so the render is recomputable
+from scratch rather than accumulated. That makes the rendered SOUL the derived
+cache MODULE_CHARTER already says it is ("the rendered effective SOUL is a
+**cache**"). Four changes carry it:
 
-**A test would have caught this** and does not exist yet: apply the same release
-twice and assert the rendered bundle digest is unchanged.
+1. `role-prime.txt` / `role-fleet.txt` install each organ SOUL to both paths.
+2. `agent-content-sync` reads `SOUL.base.md` **and nothing else** — the old
+   fallback to `SOUL.md` is now a hard error. The fallback is what made the bug
+   possible, and it looked like forgiveness.
+3. `assemble-persona` renders instead of appending. It was correct exactly once;
+   a second run appended a second copy, and it only survived because an upgrade
+   happened to reinstall a fresh SOUL.md first.
+4. `reconcile` re-derives convergence from the live tree (`bundleMatches`)
+   instead of trusting the registry's `actual_spec_digest`. Otherwise a platform
+   upgrade that reverts a rendered file leaves an agent permanently stale,
+   because nothing ever asks again (B-28).
+
+Two consequences of the new file, both of which would have shipped as breaks:
+the motor workspace sweep would have deleted the base between missions (leaving
+nothing to compose onto), and the artifact `.gitignore` would have let it leak
+into a project commit. Both closed, both tested.
+
+No migration script is needed: the upgrade overwrites `SOUL.md` from the
+manifest, and the next render is clean.
+
+**The test that would have caught it** now exists —
+`test/content-sync-idempotence.test.mjs` applies the same release five times and
+asserts one overlay and an unchanged tree digest. It also keeps the *bug itself*
+as a live case: composing from the render accumulates one copy per apply, so if
+anyone reinstates the fallback the difference is visible in the same file.
 
 ### Carried forward (not done, not implied)
 

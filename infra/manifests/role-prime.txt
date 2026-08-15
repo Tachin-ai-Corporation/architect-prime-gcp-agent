@@ -129,24 +129,41 @@ skills/scripting/skill.json     skills/scripting/skill.json
 # Improvement processes (7 REPO + 2 LOCAL)
 
 # Prime brain workspaces (cortex + 5 sub-agents)
+#
+# Each organ SOUL installs TWICE, and the pair is the point:
+#
+#   SOUL.base.md  Foundation's firmware, exactly as the repo wrote it. Nothing
+#                 on the VM ever writes to it, so it is a fixed point.
+#   SOUL.md       the RENDERED soul the brain actually reads — base plus
+#                 whatever the deployment composes onto it.
+#
+# Composition reads the base and writes the render. Before this split both
+# readers and writers used SOUL.md, so every pass composed onto its own output
+# and the overlay accumulated a copy per apply.
 brain/prime/cortex/IDENTITY.md workspace/IDENTITY.md
+brain/prime/cortex/SOUL.md workspace/SOUL.base.md
 brain/prime/cortex/SOUL.md workspace/SOUL.md
 brain/prime/cortex/MEMORY.md workspace/MEMORY.md?
 brain/prime/cortex/checkpoint/progress.json workspace/checkpoint/progress.json?
 
 
 
+brain/prime/temporal-research/SOUL.md workspace-temporal-research/SOUL.base.md
 brain/prime/temporal-research/SOUL.md workspace-temporal-research/SOUL.md
 brain/prime/temporal-research/IDENTITY.md workspace-temporal-research/IDENTITY.md
 
+brain/prime/temporal-memory/SOUL.md workspace-temporal-memory/SOUL.base.md
 brain/prime/temporal-memory/SOUL.md workspace-temporal-memory/SOUL.md
 brain/prime/temporal-memory/IDENTITY.md workspace-temporal-memory/IDENTITY.md
 
+brain/prime/prefrontal/SOUL.md workspace-prefrontal/SOUL.base.md
 brain/prime/prefrontal/SOUL.md workspace-prefrontal/SOUL.md
 brain/prime/prefrontal/IDENTITY.md workspace-prefrontal/IDENTITY.md
 
+brain/prime/motor/SOUL.md workspace-motor/SOUL.base.md
 brain/prime/motor/SOUL.md workspace-motor/SOUL.md
 brain/prime/motor/IDENTITY.md workspace-motor/IDENTITY.md
 
+brain/prime/cerebellum/SOUL.md workspace-cerebellum/SOUL.base.md
 brain/prime/cerebellum/SOUL.md workspace-cerebellum/SOUL.md
 brain/prime/cerebellum/IDENTITY.md workspace-cerebellum/IDENTITY.md

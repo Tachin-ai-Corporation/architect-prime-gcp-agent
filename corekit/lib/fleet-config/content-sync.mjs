@@ -85,6 +85,27 @@ export function verifyStaged(staged, spec) {
 }
 
 /**
+ * Does the content on disk actually match the spec?
+ *
+ * The registry's `actual_spec_digest` records what an apply *reported*, which is
+ * a claim about the past. A platform upgrade reinstalls Foundation files from
+ * the manifest and can revert a rendered soul underneath that claim, and the
+ * agent then runs Foundation defaults while the registry insists it is
+ * converged. Re-deriving from the live tree is the difference between "we said
+ * so" and "it is so" (B-28).
+ *
+ * @param {Record<string,string>} installed - bundle path → digest of what is live
+ * @param {object} spec
+ */
+export function bundleMatches(installed, spec) {
+  const expected = spec?.bundle?.files || {};
+  for (const [path, digest] of Object.entries(expected)) {
+    if (installed[path] !== digest) return false;
+  }
+  return true;
+}
+
+/**
  * Is this agent at a boundary where new content may take effect?
  *
  * Definitions must not change underneath running work (C-32): a mission reads
@@ -121,11 +142,14 @@ export function isIdle(envelopes, opts = {}) {
  * @param {object|null} input.spec       - the compiled Effective Agent Spec
  * @param {Array} input.envelopes        - current work, for the idle check
  * @param {string} input.agentEmail
+ * @param {Record<string,string>} [input.installed] - bundle path → digest of what
+ *   is live. Supplied by the daemon; when absent the convergence check falls
+ *   back to the registry's own record, which cannot see drift on disk.
  * @param {boolean} [input.emergency]
  * @returns {{ action: 'apply'|'skip'|'wait'|'fail', reason: string, detail?: object }}
  */
 export function reconcile(input) {
-  const { assignment, spec, envelopes, agentEmail, emergency = false } = input;
+  const { assignment, spec, envelopes, agentEmail, installed, emergency = false } = input;
 
   if (!assignment) {
     return { action: 'skip', reason: 'no assignment — this agent is not managed by a fleet release yet' };
@@ -150,17 +174,32 @@ export function reconcile(input) {
     };
   }
 
+  // The record says converged and the disk agrees — nothing to do. When the two
+  // disagree we re-apply rather than trust the record, because otherwise a
+  // platform upgrade that reverted a rendered file leaves the agent
+  // permanently out of date: nothing would ever ask again.
+  let drift = false;
   if (assignment.actual_spec_digest === spec.digest && assignment.actual_release === assignment.desired_release) {
-    return { action: 'skip', reason: 'already converged' };
+    if (!installed || bundleMatches(installed, spec)) {
+      return { action: 'skip', reason: 'already converged' };
+    }
+    drift = true;
   }
 
+  // Drift is not an emergency: repairing it still waits for an idle boundary,
+  // because swapping content under a running mission is the thing C-32 forbids
+  // regardless of why we are swapping.
   const idle = isIdle(envelopes, { emergency, owner: agentEmail });
   if (!idle.idle) return { action: 'wait', reason: idle.reason };
 
+  const reason = drift
+    ? 'content on disk has drifted from the assigned spec — re-applying'
+    : emergency ? 'emergency apply' : idle.reason;
+
   return {
     action: 'apply',
-    reason: emergency ? 'emergency apply' : idle.reason,
-    detail: { release: assignment.desired_release, digest: spec.digest },
+    reason,
+    detail: { release: assignment.desired_release, digest: spec.digest, ...(drift ? { drift: true } : {}) },
   };
 }
 
@@ -182,4 +221,18 @@ export function installPath(bundlePath) {
 /** Every install path a bundle would occupy. */
 export function installPaths(files) {
   return Object.keys(files).map(installPath).sort();
+}
+
+/**
+ * Where an organ's BASE firmware is read from — never where its soul is written.
+ *
+ * The two are deliberately different files. Composition reads the base and
+ * writes the render, so the render can be recomputed from scratch on every
+ * apply. When both were `SOUL.md` each apply composed onto its own output and
+ * the overlay accumulated one copy per pass, which is the defect this pair
+ * exists to make impossible.
+ */
+export function firmwarePath(organ) {
+  const workspace = organ === 'cortex' ? 'workspace' : `workspace-${organ}`;
+  return `${workspace}/SOUL.base.md`;
 }
