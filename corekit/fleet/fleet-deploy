@@ -130,15 +130,32 @@ if [[ -z "$DWD_SIGNER_SA" ]]; then
   DWD_SIGNER_SA="dwd-signer@${PRIME_PROJECT}.iam.gserviceaccount.com"
 fi
 
-# Resolve CoreKit ref from STATE.json
-CORE_REF="main"
+# ---- Resolve the CoreKit ref (C-35) ----
+# A new agent inherits the ref this Prime is actually running, so a fleet is
+# homogeneous by construction. STATE.json now records a commit SHA, but a VM
+# provisioned before that discipline may still hold a branch name — resolve it,
+# and refuse to hand a moving target to a brand-new VM.
 STATE_FILE="${CORE_ROOT}/corekit/STATE.json"
+CORE_REF=""
 if [[ -f "$STATE_FILE" ]]; then
-  CORE_REF="$(jq -r '.coreRef // "main"' "$STATE_FILE" 2>/dev/null)"
+  CORE_REF="$(jq -r '.coreRef // empty' "$STATE_FILE" 2>/dev/null)"
 fi
-[[ -n "$CORE_REF" ]] || CORE_REF="main"
 GH_OWNER="$(jq -r '.owner // "YOUR_GITHUB_ORG"' "$STATE_FILE" 2>/dev/null || echo "YOUR_GITHUB_ORG")"
 GH_REPO="$(jq -r '.repo // "architect-prime-gcp-agent"' "$STATE_FILE" 2>/dev/null || echo "architect-prime-gcp-agent")"
+
+if [[ -z "$CORE_REF" ]]; then
+  die "Cannot determine the CoreKit ref to deploy (no coreRef in ${STATE_FILE}). Refusing to guess."
+fi
+if [[ ! "$CORE_REF" =~ ^[0-9a-f]{40}$ ]]; then
+  RESOLVED_CORE_REF="$(curl -fsSL -H 'Accept: application/vnd.github.v3+json' \
+    "https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/commits/${CORE_REF}" 2>/dev/null \
+    | grep -m1 '"sha"' | cut -d'"' -f4 || true)"
+  if [[ ! "$RESOLVED_CORE_REF" =~ ^[0-9a-f]{40}$ ]]; then
+    die "Could not resolve '${CORE_REF}' to a commit in ${GH_OWNER}/${GH_REPO} — refusing to deploy from a mutable ref (C-35)."
+  fi
+  log "  Resolved ${CORE_REF} -> ${RESOLVED_CORE_REF:0:12}"
+  CORE_REF="$RESOLVED_CORE_REF"
+fi
 
 DEPLOY_TS="$(date -Is)"
 

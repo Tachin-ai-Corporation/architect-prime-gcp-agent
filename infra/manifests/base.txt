@@ -53,6 +53,10 @@ corekit/brain/project-manage bin/project-manage
 
 # Brain module (AI SDK gateway)
 corekit/brain/package.json corekit/brain/package.json
+# The lockfile ships with the manifest so `npm ci` can pin the exact tree that
+# was reviewed. Without it, every VM resolved its own dependency graph at boot
+# and two agents "on the same release" could run different library versions.
+corekit/brain/package-lock.json corekit/brain/package-lock.json
 corekit/brain/index.mjs corekit/brain/index.mjs
 corekit/brain/router.mjs corekit/brain/router.mjs
 corekit/brain/loop.mjs corekit/brain/loop.mjs
@@ -109,6 +113,7 @@ corekit/lib/artifact-share.mjs corekit/lib/artifact-share.mjs
 corekit/lib/gce-auth.mjs corekit/lib/gce-auth.mjs
 corekit/lib/dwd-auth.mjs corekit/lib/dwd-auth.mjs
 corekit/lib/firestore.mjs corekit/lib/firestore.mjs
+corekit/lib/entity-id.mjs corekit/lib/entity-id.mjs
 corekit/lib/json-repair.mjs corekit/lib/json-repair.mjs
 corekit/lib/vertex-text.mjs corekit/lib/vertex-text.mjs
 corekit/lib/projects.mjs corekit/lib/projects.mjs

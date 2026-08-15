@@ -34,7 +34,14 @@ function readBody(req) {
   });
 }
 
-// ---- Gateway token auth ----
+// ---- Gateway token auth (fail closed — C-19, C-30) ----
+//
+// The gateway is the sole funnel to every model an agent can reach (B-20). It
+// binds to loopback, but "only local callers" is not an authorization decision:
+// every process on the VM is a local caller. Until v2026.08.15 a missing token
+// file meant `return true` — an unauthenticated gateway that logged "Auth:
+// disabled" and served anyone. Both bootstrap scripts always write the token, so
+// its absence is a broken install, and a broken install must not start.
 const CORE_DIR = process.env.CORE_DIR || '/opt/corekit';
 let GATEWAY_TOKEN = process.env.GATEWAY_TOKEN || '';
 if (!GATEWAY_TOKEN) {
@@ -43,11 +50,22 @@ if (!GATEWAY_TOKEN) {
     GATEWAY_TOKEN = readFileSync(tokenPath, 'utf8').trim();
   }
 }
+if (!GATEWAY_TOKEN) {
+  console.error(
+    `[brain] FATAL: no gateway token. Set GATEWAY_TOKEN or provision ${join(CORE_DIR, '.gateway-token')}. ` +
+    `Refusing to serve an unauthenticated gateway.`
+  );
+  process.exit(78); // EX_CONFIG
+}
 
 function checkAuth(req) {
-  if (!GATEWAY_TOKEN) return true; // no token configured = allow all
   const auth = req.headers.authorization || '';
-  return auth === `Bearer ${GATEWAY_TOKEN}`;
+  const expected = `Bearer ${GATEWAY_TOKEN}`;
+  if (auth.length !== expected.length) return false;
+  // Constant-time compare — a length-equal prefix must not leak via timing.
+  let diff = 0;
+  for (let i = 0; i < expected.length; i++) diff |= auth.charCodeAt(i) ^ expected.charCodeAt(i);
+  return diff === 0;
 }
 
 // ---- Parse agent ID from model route ----
@@ -318,8 +336,7 @@ server.listen(config.port, '127.0.0.1', () => {
   console.log(`[brain] Listening on 127.0.0.1:${config.port}`);
   console.log(`[brain] Project: ${config.project}`);
   console.log(`[brain] Google: ${config.googleLocation} | Anthropic: ${config.anthropicLocation}`);
-  if (GATEWAY_TOKEN) console.log(`[brain] Auth: token-based`);
-  else console.log(`[brain] Auth: disabled (no gateway token)`);
+  console.log(`[brain] Auth: token-based (required)`);
 });
 
 // Graceful shutdown

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { processesCol } from "@/lib/firestore";
 import { FieldValue } from "@google-cloud/firestore";
+import { withCanonicalId } from "@/lib/entity";
 
 interface RouteContext {
   params: Promise<{ id: string; processId: string }>;
@@ -49,11 +50,13 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
     const newVersion = (existingData.version || 1) + 1;
 
     // Whitelist the narrative shape — no step/parameter machinery is written.
-    const update: Record<string, unknown> = {
+    // C-31: the path ID is stamped on every update, self-healing records written
+    // before the canonical-ID fix.
+    const update: Record<string, unknown> = withCanonicalId(processId, {
       version: newVersion,
       updated_at: now,
       updated_by: "operator",
-    };
+    });
     if (typeof body.name === "string") update.name = body.name;
     if (typeof body.description === "string") update.description = body.description;
     if (typeof body.narrative === "string") update.narrative = body.narrative;

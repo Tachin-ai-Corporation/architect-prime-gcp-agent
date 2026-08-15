@@ -8,6 +8,7 @@
 // Skips if already at current version.
 
 import { processesCol } from "./firestore";
+import { withCanonicalId } from "./entity";
 
 const CORE_PROCESS_VERSION = 2;
 
@@ -88,9 +89,10 @@ export async function seedCoreProcesses(_primeId?: string): Promise<{ seeded: st
       }
     }
 
-    // Create or overwrite with the narrative shape
+    // Create or overwrite with the narrative shape.
+    // C-31: the stored body carries its canonical ID.
     const now = new Date().toISOString();
-    await docRef.set({
+    await docRef.set(withCanonicalId(proc.id, {
       name: proc.name,
       description: proc.description,
       narrative: proc.narrative,
@@ -103,7 +105,7 @@ export async function seedCoreProcesses(_primeId?: string): Promise<{ seeded: st
       created_at: now,
       updated_at: now,
       updated_by: "system",
-    });
+    }));
     seeded.push(proc.id);
   }
 

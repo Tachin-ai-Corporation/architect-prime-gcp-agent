@@ -90,7 +90,7 @@ fi
 # ---- CONFIG (env-overridable) ----
 GH_OWNER="${GH_OWNER:-YOUR_GITHUB_ORG}"
 GH_REPO="${GH_REPO:-architect-prime-gcp-agent}"
-CORE_REF="${CORE_REF:-main}"
+CORE_REF="${CORE_REF:-}"
 INSTALL_ROOT="${CORE_ROOT:-/opt/corekit}"
 INSTALL_USE_SUDO="${INSTALL_USE_SUDO:-1}"
 
@@ -100,6 +100,27 @@ if [[ "$MODE" == "upgrade" ]]; then
     echo "[ERROR] --upgrade requires a ref argument"; exit 1
   fi
   CORE_REF="$UPGRADE_REF"
+fi
+
+# ---- C-35: only an immutable source may be activated ----
+#
+# This is the single structural gate for the whole install graph. A branch name
+# is a moving target: two VMs installed "from main" minutes apart can hold
+# different code while both claim the same ref, and a mid-install force-push
+# produces a hybrid runtime with no way to name what is on disk. Every caller
+# (fleet-deploy, both bootstrap scripts, upgrade-corekit, the control plane)
+# resolves its human channel to a commit SHA *before* getting here, and fails
+# closed if it cannot. Refusing anything else is what makes that discipline real
+# rather than advisory.
+if [[ -z "$CORE_REF" ]]; then
+  echo "[ERROR] CORE_REF is required — resolve your channel (STABLE/main/tag) to a full commit SHA first." >&2
+  exit 1
+fi
+if [[ ! "$CORE_REF" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "[ERROR] CORE_REF must be a full 40-character commit SHA, got: '${CORE_REF}'" >&2
+  echo "        Branch names and tags are not activatable (C-35). Resolve first, e.g.:" >&2
+  echo "        CORE_REF=\$(curl -fsSL https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/commits/main | grep -m1 '\"sha\"' | cut -d'\"' -f4)" >&2
+  exit 1
 fi
 
 CORE_BASE="https://raw.githubusercontent.com/${GH_OWNER}/${GH_REPO}/${CORE_REF}"
@@ -603,15 +624,27 @@ if [[ -n "$TPL_AGENT_NAME" ]]; then
   fi
 fi
 
-# ---- 7. Run contract validation (if script is available) ----
+# ---- 7. Run contract validation (C-19: fatal, before anything starts) ----
+#
+# This was previously a warning. A warning is not a gate: an install that fails
+# validation still finished, still reported success, and still let the caller
+# restart services onto a runtime whose contracts do not hold. Validation now
+# fails the install. During first-boot the bootstrap script may legitimately run
+# install.sh before the runtime is fully assembled, so a bootstrap caller passes
+# INSTALL_VALIDATE=defer and validates once at the end of its own sequence.
 VALIDATE="${INSTALL_ROOT}/bin/validate-contracts"
+INSTALL_VALIDATE="${INSTALL_VALIDATE:-fatal}"
 if run test -x "$VALIDATE" 2>/dev/null; then
   info "Running contract validation..."
   if run "$VALIDATE" --runtime 2>&1; then
     echo "  ✅ Contracts validated"
+  elif [[ "$INSTALL_VALIDATE" == "defer" ]]; then
+    warn "Contract validation failed — deferred to the bootstrap sequence (INSTALL_VALIDATE=defer)"
   else
-    warn "Contract validation found issues (non-fatal during install — bootstrap may fix)"
+    die "Contract validation failed. Refusing to complete an install whose contracts do not hold (C-19)."
   fi
+elif [[ "$INSTALL_VALIDATE" != "defer" ]]; then
+  die "validate-contracts is not installed at ${VALIDATE} — cannot verify this install (C-19)."
 fi
 
 if [[ "$MODE" == "upgrade" ]]; then

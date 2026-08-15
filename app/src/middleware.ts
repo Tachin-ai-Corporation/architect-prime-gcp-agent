@@ -3,33 +3,67 @@ import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
 /**
- * Next.js middleware — runs on every request.
+ * Paths reachable without a user session.
  *
- * If OAuth is configured (GOOGLE_CLIENT_ID is set), requires a valid
- * NextAuth session. If not configured, allows all requests through
- * so existing installs can access the setup UI.
+ * `/api/primes/*​/fleet/update-status` is the one machine caller: a fleet VM
+ * reporting its own bootstrap outcome. It is NOT unauthenticated — the route
+ * itself verifies a Google-signed GCE workload identity token
+ * (`lib/machine-auth.ts`). It is exempted here only because it carries a
+ * workload identity instead of a browser session.
  */
-export async function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl;
-
-  // Always allow auth routes, static assets, and fleet callbacks
-  if (
+function isSessionExempt(pathname: string): boolean {
+  return (
     pathname.startsWith("/api/auth") ||
     pathname.startsWith("/_next") ||
     pathname.startsWith("/auth") ||
     pathname === "/favicon.ico" ||
-    // Public static assets (images, icons)
     /\.(png|jpg|jpeg|gif|svg|ico|webp)$/.test(pathname) ||
-    // Fleet VMs call this during bootstrap — no user session
     pathname.endsWith("/fleet/update-status")
-  ) {
+  );
+}
+
+/**
+ * The one-time onboarding surface, reachable before OAuth exists.
+ *
+ * Setup mode used to allow *everything* — a deployment that had not yet
+ * configured OAuth exposed every tenant read and every mutation to the open
+ * internet for as long as it stayed unconfigured. It is now bounded to the
+ * wizard that configures OAuth and the config it reads; everything else fails
+ * closed (C-19, C-30).
+ */
+function isSetupSurface(pathname: string): boolean {
+  return (
+    pathname === "/" ||
+    pathname.startsWith("/setup") ||
+    pathname.startsWith("/api/setup") ||
+    pathname === "/api/contracts"
+  );
+}
+
+/**
+ * Next.js middleware — runs on every request.
+ *
+ * Requires a valid NextAuth session. Before OAuth is configured, only the
+ * bounded setup surface is reachable.
+ */
+export async function middleware(request: NextRequest) {
+  const { pathname } = request.nextUrl;
+
+  if (isSessionExempt(pathname)) {
     return NextResponse.next();
   }
 
-  // If OAuth isn't configured, allow everything (setup mode)
+  // Setup mode: OAuth not yet configured. Narrow, not open.
   const clientId = process.env.GOOGLE_CLIENT_ID;
   if (!clientId) {
-    return NextResponse.next();
+    if (isSetupSurface(pathname)) return NextResponse.next();
+    if (pathname.startsWith("/api/")) {
+      return NextResponse.json(
+        { error: "Unavailable until sign-in is configured. Complete setup first." },
+        { status: 401 }
+      );
+    }
+    return NextResponse.redirect(new URL("/", request.url));
   }
 
   // Check for valid session token

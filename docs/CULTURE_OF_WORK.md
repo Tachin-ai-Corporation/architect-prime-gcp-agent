@@ -1,6 +1,6 @@
 # Culture of Work
 
-The Culture of Work is the operational framework that governs how Architect Prime agents plan, execute, track, and verify work. It defines **9 primitives** that compose into a hierarchy, enforced by the brain daemon (`agent-brain.mjs`) and stored in Firestore.
+The Culture of Work is the operational framework that governs how Architect Prime agents plan, execute, track, and verify work. It defines **8 primitives** that compose into a hierarchy, enforced by the brain daemon (`agent-brain.mjs`) and stored in Firestore.
 
 ---
 
@@ -13,12 +13,11 @@ The Culture of Work is the operational framework that governs how Architect Prim
 | **Mission** | `M` | Self-contained goal with accept criteria |
 | **Project** | — | Organizational container (recursive, with context) |
 | **Process** | — | Named narrative playbook — how a recurring kind of work is done well; recalled into the agent's own plan |
-| **Plan** | — | Unexecuted Mission blueprint (M→C→T layout) |
 | **Responsibility** | `R` | Scheduled or event-triggered work |
 | **Artifact** | — | Persistent work product in git ether + Google Drive |
 | **Skill** | — | Codified, versioned procedure an organ follows instead of re-deriving — the sole home of tool syntax and multi-step how-to (B-16/B-17) |
 
-Three of these (Task, Checkpoint, Mission) are **WorkEnvelope** types stored in the `primes/{id}/work/{workId}` Firestore collection. Responsibility envelopes (type `R`) also use the WorkEnvelope format but serve as thin wrappers. Projects, Processes, and Plans are separate Firestore collections. Artifacts live in the git artifact substrate (C-24) — GCS-backed repos with Firestore CAS refs — and are also published to Google Drive for stakeholder access. Skills are versioned procedure packages installed to agents via manifests (C-9); they are the sole home of tool-level HOW (B-16/B-17), which planning organs reference by name and the executor follows — never re-derived in a SOUL or a plan.
+Three of these (Task, Checkpoint, Mission) are **WorkEnvelope** types stored in the root-level `work/{workId}` Firestore collection, scoped by `owner` (C-1). Responsibility envelopes (type `R`) also use the WorkEnvelope format but serve as thin wrappers. Projects and Processes are separate Firestore collections. Artifacts live in the git artifact substrate (C-24) — GCS-backed repos with Firestore CAS refs — and are also published to Google Drive for stakeholder access. Skills are versioned procedure packages installed to agents via manifests (C-9); they are the sole home of tool-level HOW (B-16/B-17), which planning organs reference by name and the executor follows — never re-derived in a SOUL or a plan.
 
 ---
 
@@ -126,45 +125,6 @@ Project ID is propagated:
 - `processIntake()` → uses cortex classification or falls back to default
 - `fireResponsibility()` → from `resp.project_id` or default
 - `handleAttach()` → inherited from parent Mission
-- `stampPlan()` → from Plan's `project_id`
-
----
-
-## Plans — Unexecuted Missions
-
-A Plan is a **blueprint** for a Mission. It contains the full M→C→T layout without creating any WorkEnvelopes. Plans are stored in `primes/{id}/plans/`.
-
-### Lifecycle
-
-```mermaid
-stateDiagram-v2
-    [*] --> draft: createPlan()
-    draft --> approved: approvePlan()
-    draft --> abandoned: Operator abandons
-    approved --> executing: stampPlan()
-    executing --> complete: Mission completes
-    executing --> abandoned: Operator abandons
-```
-
-| State | Meaning |
-|-------|---------|
-| `draft` | Layout created, not yet approved |
-| `approved` | Human/auto approved, ready to stamp |
-| `executing` | WorkEnvelopes stamped, Mission running |
-| `complete` | Linked Mission completed successfully |
-| `abandoned` | Plan discarded before or during execution |
-
-### How Plans Route Through the Engine
-
-1. `createPlan(...)` → stores the M→C→T layout the agent's `checkpoint_plan` committed
-2. `approvePlan(planId, approvedBy)` → transitions to `approved`
-3. `stampPlan(planId)` → creates the full M→C→T hierarchy in Firestore, links `mission_id`
-
-For auto-approved work (low-risk plans, routine Responsibility firings), all three steps happen in a single call — current behavior preserved, just routed through the Plan layer.
-
-### Amendments
-
-Plans can be amended during `draft`, `approved`, or `executing` status via `amendPlan()`. Each amendment records a timestamp, reason, changes, and who amended it.
 
 ---
 
@@ -291,7 +251,7 @@ graph LR
 
 Agents **MUST** include Google Drive links in their responses when they produce artifacts. Stakeholders should be able to access deliverables directly from the response without searching Drive.
 
-See [08-ARTIFACT.md](primitives/08-ARTIFACT.md) for the full manifest schema, auto-persistence rules, and examples.
+See [07-ARTIFACT.md](primitives/07-ARTIFACT.md) for the full manifest schema, auto-persistence rules, and examples.
 
 ---
 
@@ -378,9 +338,9 @@ The full doctrine, registry, and probe protocol: [EPISTEMIC_DISCIPLINE.md](guide
 - [03 — Mission](primitives/03-MISSION.md)
 - [04 — Project](primitives/04-PROJECT.md)
 - [05 — Process](primitives/05-PROCESS.md)
-- [06 — Plan](primitives/06-PLAN.md)
-- [07 — Responsibility](primitives/07-RESPONSIBILITY.md)
-- [08 — Artifact](primitives/08-ARTIFACT.md)
+- [06 — Responsibility](primitives/06-RESPONSIBILITY.md)
+- [07 — Artifact](primitives/07-ARTIFACT.md)
+- [08 — Skill](primitives/08-SKILL.md)
 
 ### Authoring Guides
 - [Authoring Processes](guides/AUTHORING_PROCESSES.md)

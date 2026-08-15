@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { projectsCol } from "@/lib/firestore";
+import { withCanonicalId } from "@/lib/entity";
 
 /**
  * GET /api/projects — List projects
@@ -75,7 +76,9 @@ export async function POST(req: NextRequest) {
 
     const now = new Date().toISOString();
 
-    const project = {
+    // C-31: the stored body carries its own canonical ID. Without it the runtime
+    // project loader skipped the record entirely and the fleet never saw it.
+    const project = withCanonicalId(body.id, {
       name: body.name,
       description: body.description,
       status: "active",
@@ -88,11 +91,11 @@ export async function POST(req: NextRequest) {
       context: body.context || {},
       created_at: now,
       completed_at: null,
-    };
+    });
 
     await col.doc(body.id).set(project);
 
-    return NextResponse.json({ project: { id: body.id, ...project } });
+    return NextResponse.json({ project });
   } catch (err) {
     console.error(`[api/projects] POST error:`, err);
     return NextResponse.json({ error: "Failed to create project" }, { status: 500 });

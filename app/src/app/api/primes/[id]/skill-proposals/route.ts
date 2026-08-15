@@ -25,8 +25,15 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
 }
 
 /**
- * POST /api/primes/[id]/skill-proposals — Approve or reject a proposal
+ * POST /api/primes/[id]/skill-proposals — Record an approve/reject decision
  * Body: { proposalId, action: "approve" | "reject" }
+ *
+ * **Approving records the decision; it does not publish the skill.** Nothing
+ * installs, evaluates, assigns or activates as a result. That gap was invisible
+ * to an operator who saw a proposal flip to "approved" and reasonably concluded
+ * the fleet had gained a capability, so the response now says so explicitly via
+ * `published: false`. Publication is being built as a Fleet Definition release
+ * (C-31): draft → validate → evaluate → canary → promote, with a rollback target.
  */
 export async function POST(req: NextRequest, ctx: RouteContext) {
   try {
@@ -52,8 +59,15 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
     const now = new Date().toISOString();
 
     if (action === "approve") {
-      await ref.update({ status: "approved", approved_at: now });
-      return NextResponse.json({ status: "approved", proposalId });
+      await ref.update({ status: "approved", approved_at: now, published: false });
+      return NextResponse.json({
+        status: "approved",
+        proposalId,
+        published: false,
+        note:
+          "Decision recorded. The skill is not installed, assigned or active — " +
+          "publication goes through the Fleet Definition release lifecycle.",
+      });
     } else {
       await ref.update({ status: "rejected", rejected_at: now });
       return NextResponse.json({ status: "rejected", proposalId });

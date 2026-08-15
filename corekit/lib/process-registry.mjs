@@ -13,6 +13,7 @@
 import { readFileSync, existsSync, readdirSync } from 'fs';
 import { getGceToken } from './gce-auth.mjs';
 import { firestoreDecode } from './firestore.mjs';
+import { reconcileEntityId } from './entity-id.mjs';
 
 /**
  * Create a process registry instance.
@@ -82,7 +83,11 @@ export function createProcessRegistry(deps) {
         if (resp.ok) {
           const data = await resp.json();
           for (const doc of (data.documents || [])) {
-            const p = firestoreDecode(doc.fields || {});
+            // C-31: the document path is the authoritative identity. A dashboard
+            // writer that omits `id` must not produce a playbook no agent can recall.
+            const { entity: p, mismatch } = reconcileEntityId(firestoreDecode(doc.fields || {}), doc.name);
+            if (!p) continue;
+            if (mismatch) log('WARN', `Process ${p.id}: stored id '${mismatch}' disagrees with document path`);
             if (p.id && p.status !== 'deprecated') {
               firestoreProcs[p.id] = p;
             }

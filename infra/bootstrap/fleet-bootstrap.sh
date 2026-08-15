@@ -43,6 +43,28 @@ AGENT_MENTION="$(echo "$AGENT_MENTION" | sed 's/^[[:space:]]*//; s/[[:space:]]*$
 MY_TOKEN="$(openssl rand -hex 16)"
 CORE_ROOT="/opt/corekit"
 CORE_DIR="${CORE_ROOT}"
+
+# ---- C-35: resolve the channel to an immutable commit before anything reads it ----
+# VM metadata may legitimately carry a human channel ("main", "STABLE", a tag).
+# This is the boundary where it stops being one: everything downstream — the
+# manifest fetches below, install.sh, STATE.json — sees only a commit SHA. If we
+# cannot resolve, we abort rather than install from a moving target.
+resolve_core_ref() {
+  local ref="$1"
+  [[ "$ref" =~ ^[0-9a-f]{40}$ ]] && { echo "$ref"; return 0; }
+  curl -fsSL -H "Accept: application/vnd.github.v3+json" \
+    "https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/commits/${ref}" 2>/dev/null \
+    | grep -m1 '"sha"' | cut -d'"' -f4
+}
+RESOLVED_REF="$(resolve_core_ref "$CORE_REF")"
+if [[ ! "$RESOLVED_REF" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "[ERROR] Could not resolve '${CORE_REF}' to a commit in ${GH_OWNER}/${GH_REPO}." >&2
+  echo "        Refusing to bootstrap from a mutable ref (C-35)." >&2
+  exit 1
+fi
+[[ "$RESOLVED_REF" != "$CORE_REF" ]] && info "Resolved ${CORE_REF} -> ${RESOLVED_REF:0:12}"
+CORE_REF="$RESOLVED_REF"
+
 CORE_BASE="https://raw.githubusercontent.com/${GH_OWNER}/${GH_REPO}/${CORE_REF}"
 
 info "Fleet Agent Bootstrap: $(date -Is)"
@@ -94,7 +116,10 @@ if [[ -n "$OPERATOR_JOBS" ]]; then
     [[ -n "$oj" ]] && JOB_FLAGS="$JOB_FLAGS --job $oj"
   done
 fi
-bash /tmp/install.sh --role fleet $JOB_FLAGS
+# INSTALL_VALIDATE=defer: on first boot the runtime is not assembled yet
+# (no workspaces, no chat-config), so runtime contract checks legitimately fail
+# here. The bootstrap runs the same validation as a hard gate at the end (step 13b).
+INSTALL_VALIDATE="defer" bash /tmp/install.sh --role fleet $JOB_FLAGS
 
 # ---- 4) Read contracts.json for cross-cutting values ----
 CONTRACTS="${CORE_DIR}/corekit/contracts.json"
@@ -119,7 +144,15 @@ chmod 600 "${CORE_DIR}/.gateway-token"
 # ---- 6) Install brain dependencies ----
 info "Installing brain module dependencies..."
 cd "${CORE_DIR}/corekit/brain"
-npm install --omit=dev 2>&1 | tail -5
+# `npm ci` when a lockfile is present: install the exact reviewed tree, not
+# whatever the registry resolves today. Falls back to `npm install` only for a
+# pre-lockfile CoreKit ref.
+if [[ -f package-lock.json ]]; then
+  npm ci --omit=dev 2>&1 | tail -5
+else
+  echo "[WARN] no package-lock.json — dependency tree is not reproducible"
+  npm install --omit=dev 2>&1 | tail -5
+fi
 chown -R 1000:1000 node_modules 2>/dev/null || true
 
 # ---- 7) Write agent configs from contracts ----
@@ -299,6 +332,23 @@ if [[ -x "$SKILL_SETUP" ]]; then
   "$SKILL_SETUP" --all || warn "skill-setup had errors"
 fi
 
+# ---- 12f) Contract validation gate (C-19: fail fast, before anything serves) ----
+# The install-time check was deferred because the runtime was not assembled yet.
+# It is assembled now, so this is the hard gate: a VM whose contracts do not hold
+# must not start daemons and must not report itself online.
+VALIDATE="${CORE_DIR}/bin/validate-contracts"
+if [[ -x "$VALIDATE" ]]; then
+  info "Validating contracts..."
+  if ! CORE_ROOT="${CORE_ROOT}" "$VALIDATE" --runtime 2>&1; then
+    echo "[ERROR] Contract validation failed — refusing to start services (C-19)." >&2
+    exit 1
+  fi
+  info "Contracts validated"
+else
+  echo "[ERROR] validate-contracts missing at ${VALIDATE} — cannot verify this install (C-19)." >&2
+  exit 1
+fi
+
 # ---- 13) Install agent-ears, agent-mouth, agent-brain, agent-introspect as systemd services ----
 info "Installing systemd services..."
 for svc in agent-ears agent-mouth agent-brain agent-introspect; do
@@ -319,19 +369,31 @@ else
 fi
 
 # ---- 14) Report completion to Firestore via Prime's API ----
+# Authenticated with this VM's own GCE workload identity: a Google-signed OIDC
+# token, audience-bound to the dashboard, asserting the fleet service account.
+# No shared secret exists (C-8); the control plane fails closed without it.
 if [[ -n "$DASHBOARD_URL" && -n "$PRIME_ID" ]]; then
   info "Reporting completion to dashboard..."
   STATUS_BODY="{\"agent\":\"${AGENT_ID}\",\"status\":\"online\",\"actionRequired\":{\"type\":\"workspace_user\",\"title\":\"Create Workspace user and add to Chat space\",\"instructions\":[\"Create Workspace user at https://admin.google.com/ac/users — First: ${AGENT_FIRST_NAME:-Agent}, Last: ${AGENT_LAST_NAME:-${AGENT_ID}}, Email: ${AGENT_USER_EMAIL}\",\"Add ${AGENT_USER_EMAIL} to the AI Fleet Command Chat space\",\"The agent will come online automatically once the user exists\"]}}"
 
-  STATUS_RESP="$(curl -s --max-time 15 -X POST \
-    "${DASHBOARD_URL}/api/primes/${PRIME_ID}/fleet/update-status" \
-    -H "Content-Type: application/json" \
-    -d "$STATUS_BODY" 2>&1)" || STATUS_RESP="CURL_ERROR"
+  ID_TOKEN="$(curl -sf --max-time 10 -H 'Metadata-Flavor: Google' \
+    "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/identity?audience=${DASHBOARD_URL}&format=full" \
+    2>/dev/null || true)"
 
-  if echo "$STATUS_RESP" | grep -q '"success"'; then
-    info "Dashboard status updated: online"
+  if [[ -z "$ID_TOKEN" ]]; then
+    warn "Could not mint a workload identity token — skipping dashboard status update"
   else
-    warn "Dashboard status update failed: ${STATUS_RESP:0:200}"
+    STATUS_RESP="$(curl -s --max-time 15 -X POST \
+      "${DASHBOARD_URL}/api/primes/${PRIME_ID}/fleet/update-status" \
+      -H "Authorization: Bearer ${ID_TOKEN}" \
+      -H "Content-Type: application/json" \
+      -d "$STATUS_BODY" 2>&1)" || STATUS_RESP="CURL_ERROR"
+
+    if echo "$STATUS_RESP" | grep -q '"success"'; then
+      info "Dashboard status updated: online"
+    else
+      warn "Dashboard status update failed: ${STATUS_RESP:0:200}"
+    fi
   fi
 else
   warn "Skipping dashboard status update (DASHBOARD_URL=${DASHBOARD_URL:-unset}, PRIME_ID=${PRIME_ID:-unset})"
@@ -343,7 +405,10 @@ echo "============================================"
 echo "  FLEET AGENT SETUP COMPLETE"
 echo "============================================"
 echo "  Log file       : ${LOG_FILE}"
-echo "  Gateway token  : ${MY_TOKEN}"
+# C-8: never print the token. Startup-script output lands in the serial console,
+# readable by anyone with compute.viewer. A fingerprint is enough to confirm the
+# ears/mouth/brain all hold the same one.
+echo "  Gateway token  : ${CORE_DIR}/.gateway-token (sha256:$(printf '%s' "${MY_TOKEN}" | sha256sum | cut -c1-12))"
 echo "  Brain module   : installed natively"
 echo "  Agent          : ${AGENT_DISPLAY_NAME} (${SPECIALTY})"
 echo "  Project        : ${GCP_PROJECT_ID}"

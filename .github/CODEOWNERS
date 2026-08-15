@@ -1,7 +1,66 @@
-# Default owner for all files
+# CODEOWNERS — human review required for Foundation (PRODUCT_CANON C-29/C-30).
+#
+# Foundation is the deployment-independent machinery: schemas, state machines,
+# security boundaries, providers, installers, migrations and the control plane.
+# It changes only through a reviewed platform release, never from a deployment.
+# Fleet Definition content (roles, soul overlays, declarative skills, processes,
+# responsibilities, policies) is the *other* loop — it is authored by Prime in the
+# tenant registry and does not pass through this file at all.
+#
+# This list previously covered three paths (.github, contracts.json, daemon/),
+# leaving the brain, libs, system tooling, manifests, bootstrap scripts, skills
+# and the entire dashboard unowned.
+
+# Default owner
 * chill@tachin.ai
 
-# Human-only: CI, contracts, and GitHub config — agents can never own these
-/.github/ chill@tachin.ai
-/infra/contracts.json chill@tachin.ai
-/corekit/daemon/ chill@tachin.ai
+# ---- Governance: canon, doctrine, and the rules that bind the rest ----
+/docs/PRODUCT_CANON.md      chill@tachin.ai
+/docs/BRAIN_CANON.md        chill@tachin.ai
+/docs/MODULE_CHARTER.md     chill@tachin.ai
+/docs/CULTURE_OF_WORK.md    chill@tachin.ai
+/docs/adr/                  chill@tachin.ai
+/CLAUDE.md                  chill@tachin.ai
+/MISSION_PLAN.md            chill@tachin.ai
+
+# ---- CI, release, and repository configuration ----
+/.github/                   chill@tachin.ai
+/.gitattributes             chill@tachin.ai
+/.gitignore                 chill@tachin.ai
+
+# ---- Contracts: the single compiled source of cross-cutting truth (C-7) ----
+/infra/contracts.json       chill@tachin.ai
+
+# ---- Installation and activation: what may become live, and how (C-35) ----
+/infra/install.sh           chill@tachin.ai
+/infra/bootstrap/           chill@tachin.ai
+/infra/deploy/              chill@tachin.ai
+/infra/manifests/           chill@tachin.ai
+/corekit/system/            chill@tachin.ai
+/corekit/fleet/             chill@tachin.ai
+
+# ---- Runtime kernel: the state machine and the organs' wiring ----
+/corekit/daemon/            chill@tachin.ai
+/corekit/brain/             chill@tachin.ai
+/corekit/lib/               chill@tachin.ai
+/corekit/config/            chill@tachin.ai
+
+# ---- Protected organ firmware (C-28 soft-lock, B-36) ----
+/brain/                     chill@tachin.ai
+
+# ---- Control plane: authoritative commands and queries, and its auth ----
+/app/src/app/api/           chill@tachin.ai
+/app/src/lib/               chill@tachin.ai
+/app/src/middleware.ts      chill@tachin.ai
+/app/package.json           chill@tachin.ai
+/app/package-lock.json      chill@tachin.ai
+/app/Dockerfile             chill@tachin.ai
+
+# ---- Data-shape and infrastructure definitions ----
+/firestore.indexes.json     chill@tachin.ai
+/firebase.json              chill@tachin.ai
+/scripts/                   chill@tachin.ai
+
+# ---- Boundary and integrity tests: the gates themselves ----
+/test/                      chill@tachin.ai
+/tests/                     chill@tachin.ai

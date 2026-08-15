@@ -13,7 +13,18 @@ set -euo pipefail
 cd "$(git rev-parse --show-toplevel 2>/dev/null || echo .)"
 OUT="brain/ORGAN_LOCK.json"
 
-python3 - "$OUT" <<'PYEOF'
+# Resolve a real interpreter. On Windows `python3` is an App Execution Alias that
+# opens the Microsoft Store instead of running anything, so probe by execution
+# rather than by name.
+PY=""
+for candidate in python3 python py; do
+  if command -v "$candidate" >/dev/null 2>&1 && "$candidate" -c "import sys" >/dev/null 2>&1; then
+    PY="$candidate"; break
+  fi
+done
+[[ -n "$PY" ]] || { echo "[update-organ-lock] ERROR: no working Python 3 interpreter found" >&2; exit 1; }
+
+"$PY" - "$OUT" <<'PYEOF'
 import hashlib, json, sys, glob, os
 out = sys.argv[1]
 MARKER = "<!-- Managed by update-deep-truths"

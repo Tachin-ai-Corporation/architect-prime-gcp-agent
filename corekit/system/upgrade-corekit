@@ -71,17 +71,24 @@ case "${1:-}" in
     fi
     GH_REPO="${GH_REPO:-architect-prime-gcp-agent}"
 
-    # Resolve branch name to commit SHA to bypass GitHub raw CDN cache
+    # ---- C-35: resolve to an immutable commit, or abort ----
+    # Resolving also bypasses the GitHub raw CDN cache, but that is the lesser
+    # reason. Falling back to the branch name on a resolution failure — the old
+    # behavior — activated a moving target at exactly the moment we had evidence
+    # something was wrong with the source. install.sh now refuses a non-SHA ref,
+    # so this abort is the honest error rather than a confusing downstream one.
     RESOLVED_REF="$ref"
     if [[ ! "$ref" =~ ^[0-9a-f]{40}$ ]]; then
       RESOLVED_SHA=$(curl -fsSL -H "Accept: application/vnd.github.v3+json" \
         "https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/commits/${ref}" \
         2>/dev/null | grep -o '"sha": "[^"]*"' | head -1 | cut -d'"' -f4 || echo "")
-      if [[ -n "$RESOLVED_SHA" ]]; then
+      if [[ "$RESOLVED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
         echo "  Resolved ${ref} -> ${RESOLVED_SHA:0:12}"
         RESOLVED_REF="$RESOLVED_SHA"
       else
-        echo "  Warning: could not resolve SHA for ${ref}, using branch name"
+        echo "ERROR: could not resolve '${ref}' to a commit in ${GH_OWNER}/${GH_REPO}." >&2
+        echo "       Refusing to upgrade from a mutable ref (C-35). Nothing was changed." >&2
+        exit 1
       fi
     fi
     CORE_BASE="https://raw.githubusercontent.com/${GH_OWNER}/${GH_REPO}/${RESOLVED_REF}"
@@ -214,7 +221,14 @@ for (const [k,v] of Object.entries(ws)) { if (k !== '_comment') console.log(v); 
       fi
 
       if command -v npm >/dev/null 2>&1; then
-        (cd "${BRAIN_DIR}" && npm install --omit=dev 2>&1 | tail -5)
+        # `npm ci` pins the exact reviewed dependency tree (falls back for a
+        # pre-lockfile ref).
+        if [[ -f "${BRAIN_DIR}/package-lock.json" ]]; then
+          (cd "${BRAIN_DIR}" && npm ci --omit=dev 2>&1 | tail -5)
+        else
+          echo "  WARNING: no package-lock.json — dependency tree is not reproducible"
+          (cd "${BRAIN_DIR}" && npm install --omit=dev 2>&1 | tail -5)
+        fi
         chown -R 1000:1000 "${BRAIN_DIR}/node_modules" 2>/dev/null || true
         echo "  Brain npm dependencies installed"
       fi
@@ -523,15 +537,24 @@ except:
       fi
     done
 
-    # ---- Run contract validation ----
+    # ---- Run contract validation (C-19: fatal, before services restart) ----
+    # This ran as a warning and then restarted the daemons anyway, so an upgrade
+    # that broke its own contracts still went live and still reported success.
+    # Aborting here leaves the previous services running on the previous code.
     VALIDATE="${CORE_ROOT}/bin/validate-contracts"
     if [[ -x "$VALIDATE" ]]; then
       echo "==> Running contract validation..."
       if CORE_ROOT="$CORE_ROOT" "$VALIDATE" --runtime 2>&1; then
         echo "  ✅ Contracts validated"
       else
-        echo "  ⚠️  Contract validation found issues"
+        echo "ERROR: contract validation failed after installing ${RESOLVED_REF:0:12}." >&2
+        echo "       Services were NOT restarted — the previous runtime is still serving." >&2
+        exit 1
       fi
+    else
+      echo "ERROR: validate-contracts missing at ${VALIDATE} — cannot verify this upgrade (C-19)." >&2
+      echo "       Services were NOT restarted." >&2
+      exit 1
     fi
 
     # ---- Run skill setup ----

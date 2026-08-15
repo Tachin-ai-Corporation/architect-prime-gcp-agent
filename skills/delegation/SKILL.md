@@ -124,7 +124,7 @@ Only `action: "delegate"` in the cortex decide response triggers delegation.
 | Work you can do with your own tools | `checkpoint_plan` with motor tasks |
 | Work that needs another agent's specialty | `delegate` or `checkpoint_plan` with `type: "delegation"` |
 | Work that needs a human decision | `needs_input` |
-| Following a defined playbook | `follow_process` |
+| Work a defined playbook covers | `checkpoint_plan`, with the playbook narrative recalled into it |
 
 ## Delegation-First Roles
 
@@ -160,10 +160,10 @@ delegate owns those via their processes and project context.
 > "Navigate to /opt/corekit/workspace/services/hosting/, download files from
 >  Drive folder YOUR_DRIVE_FOLDER_ID, run firebase deploy..."
 
-The delegate's cortex will match the right process (`follow_process:
-p-stage-deploy`) and execute it with the correct parameters from project
-context. Over-specifying deployment steps pollutes the delegate's context
-and can conflict with their process definitions.
+The delegate's cortex will recall the matching playbook and plan against it using
+the project context it already holds. Over-specifying deployment steps pollutes
+the delegate's context and can conflict with the playbook they would have
+recalled.
 
 ## Multi-Agent Orchestration
 

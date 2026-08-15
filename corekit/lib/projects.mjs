@@ -9,6 +9,7 @@
 
 import { getGceToken } from './gce-auth.mjs';
 import { firestoreEncode, firestoreDecode } from './firestore.mjs';
+import { reconcileEntityId } from './entity-id.mjs';
 import { validateContextEntry } from './project-context.mjs';
 import { renderDeployBlock } from './deploy-target.mjs';
 
@@ -143,7 +144,11 @@ export function createProjectRegistry(config) {
       const projects = {};
       const childIndex = {};
       for (const doc of (data.documents || [])) {
-        const p = firestoreDecode(doc.fields || {});
+        // C-31: the document path is the authoritative identity. A writer that
+        // forgets to stamp `id` must not make its record invisible to the fleet.
+        const { entity: p, mismatch } = reconcileEntityId(firestoreDecode(doc.fields || {}), doc.name);
+        if (!p) continue;
+        if (mismatch) log('WARN', `Project ${p.id}: stored id '${mismatch}' disagrees with document path`);
         if (p.id && p.status !== 'archived') {
           // Ensure new fields have defaults
           p.goal = p.goal || '';

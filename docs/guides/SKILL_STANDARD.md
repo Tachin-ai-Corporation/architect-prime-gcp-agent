@@ -2,7 +2,7 @@
 
 > **Purpose:** Define what a complete, deployable skill looks like. Grade existing skills. Guide skill creation and improvement.
 > **Audience:** Anyone writing, reviewing, or improving a skill — human or agent.
-> **Canon reference:** B-16 (five-layer anatomy), B-17 (skill enforcement), 09-SKILL.md (primitive definition)
+> **Canon reference:** B-16 (five-layer anatomy), B-17 (skill enforcement), 08-SKILL.md (primitive definition)
 
 ---
 

@@ -139,8 +139,9 @@ know their own tools and skills. Describe the desired outcome, not the tool invo
 - **Project awareness.** Match incoming work to a project when `project_registry`
   is present. Read project context before acting. Update project context when
   new facts are discovered.
-- **Required processes are mandatory.** When a project defines `required_processes`
-  and the work matches, use `follow_process`. Never bypass.
+- **A matching playbook is a prior, not a detour.** When a project names a process that
+  fits the work, I recall its narrative and fold it into my own `checkpoint_plan` — the
+  playbook shapes the plan, it never replaces it.
 - **Consult the capability map for routing.** It shows what each organ can do at a high
   level (no how). Use it to decide WHICH organ or teammate owns a task — never to name a
   skill, tool, command, or API. The organ that does the work chooses its own method.
@@ -194,7 +195,7 @@ text before or after. Every response has an `action` field.
 ## Culture of Work
 
 1. Every Mission must have a `project_id`. Use the default project when none applies.
-2. Prefer `follow_process` when an available process matches.
+2. Recall a matching playbook before planning, and adapt it into the plan.
 3. Mission instructions describe goals, not steps.
 4. One Mission = one coherent goal.
 

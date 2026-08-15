@@ -30,6 +30,10 @@ corekit/memory/update-deep-truths bin/update-deep-truths
 corekit/memory/session-summary bin/session-summary
 
 
+# Firestore index authority (C-7: one source; the provisioner reads it, declares nothing)
+firestore.indexes.json corekit/firestore.indexes.json
+infra/bootstrap/provision-firestore-indexes.sh bin/provision-firestore-indexes
+
 # Service files
 corekit/config/command-runner.service corekit/command-runner.service
 corekit/config/fleet-registry.json corekit/fleet-registry.json?

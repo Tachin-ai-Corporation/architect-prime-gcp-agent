@@ -156,7 +156,7 @@ export async function POST(req: NextRequest) {
     const ghRepo = settings?.github_repo || process.env.GH_REPO || getGitHubRepo();
     const region = process.env.REGION || "us-central1";
     const serviceName = process.env.SERVICE_NAME || "architect-prime";
-    const image = `us-docker.pkg.dev/${projectId}/architect-prime/control-plane:latest`;
+    const imageRepo = `us-docker.pkg.dev/${projectId}/architect-prime/control-plane`;
     const repoUrl = `https://github.com/${ghOwner}/${ghRepo}.git`;
 
     // Get SA token
@@ -174,12 +174,13 @@ export async function POST(req: NextRequest) {
 
     const { access_token: token } = await tokenRes.json();
 
-    // Always deploy from main HEAD
-    const deployRef = "main";
-    let deployVersion = "main";
-    let deployCommit = "";
-
-    // Get main HEAD commit (sha + message for version label)
+    // ---- C-35: resolve the channel to an immutable commit, or refuse ----
+    // This previously deployed the branch name `main` and swallowed a resolution
+    // failure, so a build could clone a different commit than the one the
+    // operator was shown, and tag it `:latest` — a mutable pointer that makes
+    // "which build is running?" unanswerable and rollback impossible.
+    let deploySha = "";
+    let deployVersion = "";
     try {
       const commitRes = await fetch(
         `https://api.github.com/repos/${ghOwner}/${ghRepo}/commits/main`,
@@ -187,13 +188,32 @@ export async function POST(req: NextRequest) {
       );
       if (commitRes.ok) {
         const commit = await commitRes.json();
-        deployCommit = commit.sha?.substring(0, 7) || "";
-        const message = commit.commit?.message?.split("\n")[0] || "";
-        deployVersion = extractVersion(message) || `main@${deployCommit}`;
+        if (/^[0-9a-f]{40}$/.test(commit.sha || "")) {
+          deploySha = commit.sha;
+          const message = commit.commit?.message?.split("\n")[0] || "";
+          deployVersion = extractVersion(message) || `main@${deploySha.substring(0, 7)}`;
+        }
       }
     } catch {
-      // non-fatal
+      // fall through to the fail-closed check below
     }
+
+    if (!deploySha) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            `Could not resolve ${ghOwner}/${ghRepo}@main to a commit. ` +
+            `Refusing to deploy from a mutable ref (C-35). Nothing was changed.`,
+        },
+        { status: 502 }
+      );
+    }
+
+    const deployCommit = deploySha.substring(0, 7);
+    // The image tag IS the source commit — a build is addressable and a rollback
+    // is "deploy the previous tag", not "rebuild and hope".
+    const image = `${imageRepo}:${deploySha}`;
 
     // Preserve existing env vars from current deployment
     const dwdClientId = process.env.DWD_CLIENT_ID || "";
@@ -221,10 +241,21 @@ export async function POST(req: NextRequest) {
     const buildConfig = {
       steps: [
         {
+          // Fetch the exact commit rather than a branch tip: between resolving
+          // the SHA above and this step running, `main` can move.
           name: "gcr.io/cloud-builders/git",
+          entrypoint: "bash",
           args: [
-            "clone", "--depth=1", "--branch", deployRef,
-            repoUrl, "/workspace/repo",
+            "-c",
+            [
+              "set -euo pipefail",
+              "mkdir -p /workspace/repo && cd /workspace/repo",
+              "git init -q",
+              `git remote add origin ${repoUrl}`,
+              `git fetch -q --depth=1 origin ${deploySha}`,
+              "git checkout -q FETCH_HEAD",
+              `test "$(git rev-parse HEAD)" = "${deploySha}"`,
+            ].join("\n"),
           ],
         },
         {
@@ -296,7 +327,7 @@ export async function POST(req: NextRequest) {
     }
     if (!buildId) buildId = "unknown";
 
-    console.log(`[api/upgrade] Cloud Build submitted: ${buildId} → ${deployVersion} (ref: ${deployRef}, commit: ${deployCommit})`);
+    console.log(`[api/upgrade] Cloud Build submitted: ${buildId} → ${deployVersion} (commit: ${deploySha})`);
     if (buildId === "unknown") {
       console.warn(`[api/upgrade] buildId extraction failed. Response keys: ${Object.keys(buildData).join(", ")}. name: ${buildData?.name}`);
     }
@@ -320,7 +351,7 @@ export async function POST(req: NextRequest) {
       message: `Build triggered for ${deployVersion}. The dashboard will upgrade automatically in ~3 minutes.`,
       buildId,
       version: deployVersion,
-      ref: deployRef,
+      ref: deploySha,
       commit: deployCommit,
       region,
     });

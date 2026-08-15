@@ -22,6 +22,19 @@ jobs:
           find corekit -name "*.mjs" -print0 | xargs -0 -I {} node --check {}
           echo "All .mjs files pass syntax check."
 
+      - name: Check shell scripts parse
+        run: |
+          echo "Parsing shell scripts..."
+          FAILED=0
+          for f in infra/install.sh \
+                   $(find infra/bootstrap infra/deploy -name "*.sh" 2>/dev/null) \
+                   corekit/system/* corekit/fleet/*; do
+            [ -f "$f" ] || continue
+            head -1 "$f" | grep -q '^#!.*\(bash\|sh\)' || continue
+            if bash -n "$f"; then echo "  OK  $f"; else echo "  FAIL $f"; FAILED=1; fi
+          done
+          [ "$FAILED" -eq 0 ] || exit 1
+
       - name: Validate JSON configs
         run: |
           echo "Validating JSON files..."
@@ -71,8 +84,51 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
-      - name: Run unit tests
+
+      # Both suites run. `tests/` (426 assertions) was outside CI entirely until
+      # v2026.08.15 — a green build proved nothing about a third of the codebase.
+      - name: Run test/ suite
         run: node --test test/*.test.mjs
+
+      - name: Run tests/ suite
+        run: node --test tests/*.test.mjs
+
+  dashboard:
+    name: Dashboard Gates
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: app/package-lock.json
+
+      # `npm ci`, not `npm install`: the lockfile is the contract. A build that
+      # silently resolves a different dependency tree than the one reviewed is
+      # not reproducible (C-35 in spirit — the same immutability argument).
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npx tsc --noEmit
+
+      # NOT YET A GATE. `npm run lint` currently reports 56 errors and 32
+      # warnings inherited from the Next 16 / react-hooks v6 upgrade
+      # (24 set-state-in-effect, 22 no-explicit-any, plus refs/purity/entities).
+      # Adding a job that fails on every commit teaches people to ignore CI, so
+      # the gate lands in the CLEANUP phase together with the fixes. Until then
+      # it runs for visibility only — see docs/plans/THREE_PLANES_PLAN.md.
+      - name: Lint (advisory — becomes a gate in CLEANUP)
+        run: npm run lint || true
+
+      - name: Build
+        run: npm run build
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
 
   scope-check:
     name: Scope Check
@@ -91,10 +147,20 @@ jobs:
           # Format: ```\nScope:\nglob1\nglob2\n```
           SCOPE_BLOCK=$(echo "$PR_BODY" | sed -n '/^Scope:$/,/^```$/p' | grep -v '^Scope:$' | grep -v '^```$' | grep -v '^$')
 
+          # A missing Scope block used to exit 0 — the check reported success on
+          # every PR that simply omitted it, which is every PR that would most
+          # have benefited from it. Declaring scope is now mandatory.
           if [ -z "$SCOPE_BLOCK" ]; then
-            echo "No Scope: block found in PR body — scope check skipped."
-            echo "To enable scope enforcement, add a Scope: block to the PR description."
-            exit 0
+            echo "❌ No Scope: block found in the PR body."
+            echo ""
+            echo "Every PR must declare which paths it may touch. Add to the description:"
+            echo ""
+            echo '    ```'
+            echo '    Scope:'
+            echo '    corekit/lib/**'
+            echo '    test/**'
+            echo '    ```'
+            exit 1
           fi
 
           echo "Scope globs found:"

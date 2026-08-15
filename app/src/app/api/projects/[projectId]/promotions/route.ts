@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { promotionsCol, projectsCol } from "@/lib/firestore";
 import { requireAuth } from "@/lib/require-auth";
+import { withCanonicalId } from "@/lib/entity";
 
 interface RouteContext {
   params: Promise<{ projectId: string }>;
@@ -107,10 +108,12 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
           [promoData.key]: promoData.entry,
         };
 
-        await projectRef.update({
+        // C-31: stamp the path ID so accepting a promotion also self-heals a
+        // project record written before the canonical-ID fix.
+        await projectRef.update(withCanonicalId(projectId, {
           context: mergedContext,
           updated_at: new Date().toISOString(),
-        });
+        }));
       }
     }
 

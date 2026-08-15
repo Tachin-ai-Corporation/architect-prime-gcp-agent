@@ -21,53 +21,56 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
 }
 
 /**
- * POST /api/primes/[id]/fleet/[agent]/skills — Queue a skill install
- * Body: { skillId, origin, version }
+ * POST /api/primes/[id]/fleet/[agent]/skills — DISABLED
+ *
+ * This wrote a `status: "pending_install"` metadata record that nothing could
+ * ever resolve. The only consumer was the custom-skill block inside
+ * `upgrade-corekit`, which ran solely during a CoreKit upgrade and derived its
+ * lookup key from `agentDisplayName` — so a skill queued under `millie` was read
+ * back under `Assistant Agent Millie` and never found. An operator saw "queued"
+ * and got nothing, indefinitely.
+ *
+ * Returning a definite 501 is more honest than an install that silently never
+ * happens. Skill assignment is being rebuilt as a Fleet Definition release
+ * (C-31): authored as an immutable revision, validated, evaluated, assigned to a
+ * canary, and applied by content-sync at an idle mission boundary — with a
+ * desired-vs-actual digest instead of a status string.
  */
 export async function POST(req: NextRequest, ctx: RouteContext) {
-  try {
-    const { id, agent } = await ctx.params;
-    const body = await req.json();
-    const { skillId, origin, version } = body;
-
-    if (!skillId) {
-      return NextResponse.json({ error: "skillId required" }, { status: 400 });
-    }
-
-    await fleetSkillsCol(id, agent).doc(skillId).set({
-      id: skillId,
-      installed_at: new Date().toISOString(),
-      installed_by: "dashboard",
-      origin: origin || "learned",
-      version: version || "1.0.0",
-      status: "pending_install",
-    });
-
-    return NextResponse.json({ status: "queued", skillId });
-  } catch (err) {
-    console.error("[api/skills] POST error:", err);
-    return NextResponse.json({ error: "Failed to install skill" }, { status: 500 });
-  }
+  const { id, agent } = await ctx.params;
+  console.warn(`[api/skills] refused disabled custom-skill install for ${id}/${agent}`);
+  return NextResponse.json(
+    {
+      error: "Custom skill install is not available.",
+      reason:
+        "The previous implementation recorded an install that no runtime path could complete. " +
+        "Skill assignment now goes through the Fleet Definition release lifecycle.",
+      status: "not_implemented",
+    },
+    { status: 501 }
+  );
 }
 
 /**
- * DELETE /api/primes/[id]/fleet/[agent]/skills — Remove a skill
- * Query: ?skillId=xxx
+ * DELETE /api/primes/[id]/fleet/[agent]/skills — DISABLED
+ *
+ * The mirror of POST. Deleting the metadata record removed the *record*, never
+ * the installed skill on the VM, so "removed" reported a state change that had
+ * not occurred. Removal belongs to the same Fleet Definition release lifecycle
+ * as assignment (C-31) — a deprecation is a revision with a rollback target, not
+ * a document delete.
  */
 export async function DELETE(req: NextRequest, ctx: RouteContext) {
-  try {
-    const { id, agent } = await ctx.params;
-    const url = new URL(req.url);
-    const skillId = url.searchParams.get("skillId");
-
-    if (!skillId) {
-      return NextResponse.json({ error: "skillId required" }, { status: 400 });
-    }
-
-    await fleetSkillsCol(id, agent).doc(skillId).delete();
-    return NextResponse.json({ status: "removed", skillId });
-  } catch (err) {
-    console.error("[api/skills] DELETE error:", err);
-    return NextResponse.json({ error: "Failed to remove skill" }, { status: 500 });
-  }
+  const { id, agent } = await ctx.params;
+  console.warn(`[api/skills] refused disabled custom-skill removal for ${id}/${agent}`);
+  return NextResponse.json(
+    {
+      error: "Custom skill removal is not available.",
+      reason:
+        "The previous implementation deleted a metadata record without removing anything " +
+        "from the agent. Deprecation now goes through the Fleet Definition release lifecycle.",
+      status: "not_implemented",
+    },
+    { status: 501 }
+  );
 }

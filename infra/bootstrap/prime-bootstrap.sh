@@ -30,6 +30,28 @@ GCP_PROJECT_ID="$(curl -sf -H "$MH" "$META/project/project-id")"
 MY_TOKEN="$(openssl rand -hex 16)"
 CORE_ROOT="/opt/corekit"
 CORE_DIR="${CORE_ROOT}"
+
+# ---- C-35: resolve the channel to an immutable commit before anything reads it ----
+# VM metadata may legitimately carry a human channel ("main", "STABLE", a tag).
+# This is the boundary where it stops being one: everything downstream — the
+# manifest fetches below, install.sh, STATE.json — sees only a commit SHA. If we
+# cannot resolve, we abort rather than install from a moving target.
+resolve_core_ref() {
+  local ref="$1"
+  [[ "$ref" =~ ^[0-9a-f]{40}$ ]] && { echo "$ref"; return 0; }
+  curl -fsSL -H "Accept: application/vnd.github.v3+json" \
+    "https://api.github.com/repos/${GH_OWNER}/${GH_REPO}/commits/${ref}" 2>/dev/null \
+    | grep -m1 '"sha"' | cut -d'"' -f4
+}
+RESOLVED_REF="$(resolve_core_ref "$CORE_REF")"
+if [[ ! "$RESOLVED_REF" =~ ^[0-9a-f]{40}$ ]]; then
+  echo "[ERROR] Could not resolve '${CORE_REF}' to a commit in ${GH_OWNER}/${GH_REPO}." >&2
+  echo "        Refusing to bootstrap from a mutable ref (C-35)." >&2
+  exit 1
+fi
+[[ "$RESOLVED_REF" != "$CORE_REF" ]] && info "Resolved ${CORE_REF} -> ${RESOLVED_REF:0:12}"
+CORE_REF="$RESOLVED_REF"
+
 CORE_BASE="https://raw.githubusercontent.com/${GH_OWNER}/${GH_REPO}/${CORE_REF}"
 
 info "Prime VM Bootstrap: $(date -Is)"
@@ -201,10 +223,14 @@ info "Installing CoreKit..."
 mkdir -p "${CORE_DIR}"
 curl -sfL "${CORE_BASE}/infra/install.sh" -o /tmp/install.sh
 chmod +x /tmp/install.sh
+# INSTALL_VALIDATE=defer: on first boot the runtime is not assembled yet
+# (no workspaces, no chat-config), so runtime contract checks legitimately fail
+# here. The bootstrap runs the same validation as a hard gate at the end (step 15).
 CORE_REF="${CORE_REF}" \
   GH_OWNER="${GH_OWNER}" \
   GH_REPO="${GH_REPO}" \
   CORE_ROOT="${CORE_ROOT}" \
+  INSTALL_VALIDATE="defer" \
   bash /tmp/install.sh --role prime
 
 write_deploy_step "corekit" "CoreKit installed" "done"
@@ -234,7 +260,15 @@ chmod 600 "${CORE_DIR}/.gateway-token"
 # ---- 7) Install brain dependencies ----
 info "Installing brain module dependencies..."
 cd "${CORE_DIR}/corekit/brain"
-npm install --omit=dev 2>&1 | tail -5
+# `npm ci` when a lockfile is present: install the exact reviewed tree, not
+# whatever the registry resolves today. Falls back to `npm install` only for a
+# pre-lockfile CoreKit ref.
+if [[ -f package-lock.json ]]; then
+  npm ci --omit=dev 2>&1 | tail -5
+else
+  echo "[WARN] no package-lock.json — dependency tree is not reproducible"
+  npm install --omit=dev 2>&1 | tail -5
+fi
 chown -R 1000:1000 node_modules 2>/dev/null || true
 
 write_deploy_step "brain_deps" "Brain dependencies installed" "done"
@@ -366,6 +400,24 @@ info "Final permissions sweep..."
 find "${CORE_DIR}" -type d -exec chmod 755 {} \; 2>/dev/null || true
 find "${CORE_DIR}/bin" -type f -exec chmod 755 {} \; 2>/dev/null || true
 
+# ---- 12f) Contract validation gate (C-19: fail fast, before anything serves) ----
+# The install-time check was deferred because the runtime was not assembled yet.
+# It is assembled now, so this is the hard gate: a VM whose contracts do not hold
+# must not start daemons.
+VALIDATE="${CORE_DIR}/bin/validate-contracts"
+if [[ -x "$VALIDATE" ]]; then
+  info "Validating contracts..."
+  if ! CORE_ROOT="${CORE_ROOT}" "$VALIDATE" --runtime 2>&1; then
+    write_deploy_step "contracts_validated" "Contract validation failed" "error"
+    echo "[ERROR] Contract validation failed — refusing to start services (C-19)." >&2
+    exit 1
+  fi
+  write_deploy_step "contracts_validated" "Contracts validated" "done"
+else
+  echo "[ERROR] validate-contracts missing at ${VALIDATE} — cannot verify this install (C-19)." >&2
+  exit 1
+fi
+
 # ---- 13) Install agent-ears, agent-mouth, agent-brain, agent-introspect as systemd services ----
 info "Installing systemd services..."
 for svc in agent-ears agent-mouth agent-brain agent-introspect; do
@@ -456,16 +508,21 @@ write_deploy_step "git_bucket" "Git artifact bucket" "done"
 
 # ---- 17) Provision Firestore composite indexes ----
 info "Provisioning Firestore composite indexes..."
-if [[ -f "${CORE_DIR}/infra/bootstrap/provision-firestore-indexes.sh" ]]; then
-  GCP_PROJECT_ID="${GCP_PROJECT_ID}" bash "${CORE_DIR}/infra/bootstrap/provision-firestore-indexes.sh" || warn "Index provisioning had errors (non-fatal)"
+# Both the provisioner and its one authority (firestore.indexes.json) are
+# manifest-installed by role-prime, so the happy path needs no network.
+IDX_SCRIPT="${CORE_DIR}/bin/provision-firestore-indexes"
+IDX_FILE="${CORE_DIR}/corekit/firestore.indexes.json"
+if [[ ! -f "$IDX_SCRIPT" ]]; then
+  curl -fsSL "${CORE_BASE}/infra/bootstrap/provision-firestore-indexes.sh" -o "$IDX_SCRIPT" 2>/dev/null || true
+fi
+if [[ ! -f "$IDX_FILE" ]]; then
+  curl -fsSL "${CORE_BASE}/firestore.indexes.json" -o "$IDX_FILE" 2>/dev/null || true
+fi
+if [[ -f "$IDX_SCRIPT" && -f "$IDX_FILE" ]]; then
+  GCP_PROJECT_ID="${GCP_PROJECT_ID}" FIRESTORE_INDEX_FILE="$IDX_FILE" \
+    bash "$IDX_SCRIPT" || warn "Index provisioning had errors (non-fatal — indexes build asynchronously)"
 else
-  # Fallback: download from repo
-  IDXSCRIPT="$(curl -fsSL "${CORE_BASE}/infra/bootstrap/provision-firestore-indexes.sh" 2>/dev/null)" || true
-  if [[ -n "$IDXSCRIPT" ]]; then
-    echo "$IDXSCRIPT" | GCP_PROJECT_ID="${GCP_PROJECT_ID}" bash || warn "Index provisioning had errors (non-fatal)"
-  else
-    warn "provision-firestore-indexes.sh not found — skipping index setup"
-  fi
+  warn "Index provisioner or firestore.indexes.json unavailable — skipping index setup"
 fi
 
 # ---- Done ----
@@ -491,7 +548,10 @@ echo "============================================"
 echo "  PRIME VM SETUP COMPLETE"
 echo "============================================"
 echo "  Log file       : ${LOG_FILE}"
-echo "  Gateway token  : ${MY_TOKEN}"
+# C-8: never print the token. Startup-script output lands in the serial console,
+# readable by anyone with compute.viewer. A fingerprint is enough to confirm the
+# ears/mouth/brain all hold the same one.
+echo "  Gateway token  : ${CORE_DIR}/.gateway-token (sha256:$(printf '%s' "${MY_TOKEN}" | sha256sum | cut -c1-12))"
 echo "  CoreKit        : ${GH_OWNER}/${GH_REPO}@${CORE_REF}"
 echo "  Project        : ${GCP_PROJECT_ID}"
 echo "  Prime ID       : ${PRIME_ID}"

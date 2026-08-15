@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { projectsCol } from "@/lib/firestore";
+import { withCanonicalId } from "@/lib/entity";
 
 interface RouteContext {
   params: Promise<{ projectId: string }>;
@@ -69,10 +70,12 @@ export async function PUT(req: NextRequest, ctx: RouteContext) {
       }
     }
 
-    const update = {
+    // C-31: stamp the path ID last — it both self-heals records written before
+    // the canonical-ID fix and overrides any `id` a caller tried to smuggle in.
+    const update = withCanonicalId(projectId, {
       ...body,
       updated_at: new Date().toISOString(),
-    };
+    });
 
     await docRef.update(update);
 

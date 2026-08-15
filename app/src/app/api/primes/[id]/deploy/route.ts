@@ -92,6 +92,39 @@ export async function POST(_req: NextRequest, ctx: RouteContext) {
 /**
  * Get access token from the metadata server (Cloud Run SA).
  */
+/**
+ * Resolve a human channel (branch, tag) to an immutable commit SHA.
+ *
+ * C-35: a branch is a moving target — activating one makes "what is running?"
+ * unanswerable and rollback impossible. Throws rather than falling back, so a
+ * resolution failure aborts the deploy instead of provisioning from whatever
+ * `main` happens to be when the VM boots.
+ */
+async function resolveChannelToSha(
+  owner: string,
+  repo: string,
+  channel: string
+): Promise<string> {
+  if (/^[0-9a-f]{40}$/.test(channel)) return channel;
+
+  const res = await fetch(
+    `https://api.github.com/repos/${owner}/${repo}/commits/${channel}`,
+    { headers: { Accept: "application/vnd.github.v3+json" } }
+  );
+  if (!res.ok) {
+    throw new Error(
+      `Could not resolve ${owner}/${repo}@${channel} to a commit (HTTP ${res.status}). ` +
+        `Refusing to deploy from a mutable ref.`
+    );
+  }
+  const commit = await res.json();
+  const sha = commit?.sha;
+  if (!/^[0-9a-f]{40}$/.test(sha || "")) {
+    throw new Error(`GitHub returned no usable commit SHA for ${owner}/${repo}@${channel}.`);
+  }
+  return sha;
+}
+
 async function getAccessToken(): Promise<string> {
   const res = await fetch(
     "http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token",
@@ -123,6 +156,12 @@ async function createVM(
   const ghOwner = getGitHubOwner();
   const ghRepo = getGitHubRepo();
   const startupScript = getStartupScript(ghOwner, ghRepo);
+
+  // C-35: a VM is stamped with an immutable commit, never a branch. Resolving
+  // here — at the boundary where the human channel enters the system — means the
+  // VM's own record of what it runs is exact, and two Primes deployed minutes
+  // apart cannot silently differ.
+  const coreRef = await resolveChannelToSha(ghOwner, ghRepo, "main");
 
   // Get the project number for the default compute SA
   const projRes = await fetch(
@@ -157,7 +196,7 @@ async function createVM(
         { key: "startup-script", value: startupScript },
         { key: "prime_id", value: primeId },
         { key: "agent_id", value: "prime" },
-        { key: "core_ref", value: "main" },
+        { key: "core_ref", value: coreRef },
         { key: "gh_owner", value: ghOwner },
         { key: "gh_repo", value: ghRepo },
         { key: "gcp_project_id", value: projectId },
@@ -210,7 +249,13 @@ function getStartupScript(ghOwner: string, ghRepo: string): string {
     '# Read repo coordinates from VM metadata',
     'META="http://metadata.google.internal/computeMetadata/v1"',
     'MH="Metadata-Flavor: Google"',
-    'CORE_REF="$(curl -sf -H "$MH" "$META/instance/attributes/core_ref" || echo main)"',
+    // C-35: no branch fallback. The deploy route stamped an immutable commit
+    // into metadata; if we cannot read it back, the VM must not guess.
+    'CORE_REF="$(curl -sf -H "$MH" "$META/instance/attributes/core_ref" || true)"',
+    'if [[ ! "$CORE_REF" =~ ^[0-9a-f]{40}$ ]]; then',
+    '  echo "FATAL: core_ref metadata is not a commit SHA (got: ${CORE_REF:-<empty>}). Refusing to bootstrap." >&2',
+    '  exit 1',
+    'fi',
     `GH_OWNER="$(curl -sf -H "$MH" "$META/instance/attributes/gh_owner" || echo ${ghOwner})"`,
     `GH_REPO="$(curl -sf -H "$MH" "$META/instance/attributes/gh_repo" || echo ${ghRepo})"`,
     '',

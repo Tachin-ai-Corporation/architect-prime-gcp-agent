@@ -5,7 +5,6 @@
 // Collections migrated:
 //   primes/{primeId}/work/*        → work/*
 //   primes/{primeId}/processes/*   → processes/*
-//   primes/{primeId}/plans/*       → plans/*
 //   primes/{primeId}/approvals/*   → approvals/*
 //   primes/{primeId}/skill-proposals/* → skill-proposals/* (if exists)
 //
@@ -15,7 +14,12 @@
 //   node migrate-to-project-rooted.mjs --cleanup         # delete old subcollections
 //
 // The script is idempotent — re-running --apply skips docs that already exist
-// at the target. --cleanup only deletes docs that have a verified copy.
+// at the target. --cleanup deletes a source document ONLY when the target holds
+// a content-identical copy (sha256 over the canonicalized field map, excluding
+// the fields this migration adds). An ID collision alone is never sufficient
+// evidence — see cleanupDecision().
+
+import { createHash } from 'node:crypto';
 
 const DRY_RUN = !process.argv.includes('--apply') && !process.argv.includes('--cleanup');
 const CLEANUP = process.argv.includes('--cleanup');
@@ -31,7 +35,9 @@ if (!GCP_PROJECT_ID) {
 const FIRESTORE_BASE = `https://firestore.googleapis.com/v1/projects/${GCP_PROJECT_ID}/databases/(default)/documents`;
 
 // Collections to migrate from primes/{primeId}/ to top-level
-const COLLECTIONS_TO_MIGRATE = ['work', 'processes', 'plans', 'approvals', 'skill-proposals'];
+// `plans` was dropped with the Plan primitive (C-14, v2026.08.15) — it was never
+// written, so there is nothing to migrate.
+const COLLECTIONS_TO_MIGRATE = ['work', 'processes', 'approvals', 'skill-proposals'];
 
 // Fields to stamp on migrated work documents
 const STAMP_FIELDS = ['owner', 'prime_id'];
@@ -147,6 +153,64 @@ function fieldValue(fields, key) {
   return f.stringValue ?? f.integerValue ?? f.booleanValue ?? f.doubleValue ?? null;
 }
 
+// ── Content fingerprinting for safe deletion ──────────────
+//
+// `--cleanup` used to delete a source document as soon as *something* existed at
+// the destination ID. An ID collision is not proof of a copy: a partial write, a
+// pre-existing unrelated record, or an interrupted earlier run all present as
+// "the target exists", and the source was destroyed on that evidence alone.
+//
+// Deletion now requires the two documents to carry the same content. The
+// comparison excludes exactly the fields this migration is designed to add
+// (`prime_id`, and `owner` when it was derived during the copy), so a correctly
+// migrated pair still matches.
+
+/** Fields the migration stamps on the target; excluded from the comparison. */
+const MIGRATION_ADDED_FIELDS = new Set(['prime_id', 'owner']);
+
+/** Canonical JSON: key order must not change a fingerprint. */
+function canonicalize(value) {
+  if (Array.isArray(value)) return value.map(canonicalize);
+  if (value && typeof value === 'object') {
+    return Object.keys(value)
+      .sort()
+      .reduce((acc, k) => {
+        acc[k] = canonicalize(value[k]);
+        return acc;
+      }, {});
+  }
+  return value;
+}
+
+export function fingerprintFields(fields) {
+  const comparable = {};
+  for (const [k, v] of Object.entries(fields || {})) {
+    if (MIGRATION_ADDED_FIELDS.has(k)) continue;
+    comparable[k] = v;
+  }
+  return createHash('sha256').update(JSON.stringify(canonicalize(comparable))).digest('hex');
+}
+
+/**
+ * Decide whether a source document may be deleted.
+ *
+ * @returns {{ safe: boolean, reason: string }}
+ */
+export function cleanupDecision(sourceFields, targetFields) {
+  if (!targetFields) return { safe: false, reason: 'no copy at the target path' };
+
+  const src = fingerprintFields(sourceFields);
+  const dst = fingerprintFields(targetFields);
+  if (src !== dst) {
+    return {
+      safe: false,
+      reason: `content differs (source ${src.slice(0, 12)} vs target ${dst.slice(0, 12)}) — ` +
+        `the target is a different record, not a copy`,
+    };
+  }
+  return { safe: true, reason: `content verified (${src.slice(0, 12)})` };
+}
+
 // ── Main migration logic ─────────────────────────────────
 async function migrate() {
   console.log(`\n══════════════════════════════════════════════════`);
@@ -161,7 +225,8 @@ async function migrate() {
   const stats = {
     scanned: 0,
     copied: 0,
-    skipped: 0,  // already exists at target
+    skipped: 0,      // already exists at target
+    collisions: 0,   // cleanup refused: target absent or content differs
     deleted: 0,
     errors: 0,
   };
@@ -186,14 +251,15 @@ async function migrate() {
         const targetPath = `${collection}/${id}`;
 
         if (CLEANUP) {
-          // Verify the copy exists before deleting
+          // Identity AND content must match before anything is destroyed.
           const existing = await readDocument(targetPath, token);
-          if (!existing) {
-            console.log(`    ⚠ SKIP DELETE ${id} — no copy at ${targetPath}`);
-            stats.errors++;
+          const decision = cleanupDecision(doc.fields, existing?.fields);
+          if (!decision.safe) {
+            console.log(`    ⚠ SKIP DELETE ${id} — ${decision.reason}`);
+            stats.collisions++;
             continue;
           }
-          console.log(`    🗑 DELETE ${sourcePath}/${id}`);
+          console.log(`    🗑 DELETE ${sourcePath}/${id} — ${decision.reason}`);
           await deleteDocument(`${sourcePath}/${id}`, token);
           stats.deleted++;
           continue;
@@ -244,6 +310,7 @@ async function migrate() {
   console.log(`  Copied:   ${stats.copied}`);
   console.log(`  Skipped:  ${stats.skipped} (already at target)`);
   console.log(`  Deleted:  ${stats.deleted}`);
+  if (CLEANUP) console.log(`  Refused:  ${stats.collisions} (unverified — source preserved)`);
   console.log(`  Errors:   ${stats.errors}`);
   console.log(`══════════════════════════════════════════════════\n`);
 

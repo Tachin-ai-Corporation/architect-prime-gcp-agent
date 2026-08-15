@@ -79,9 +79,12 @@ VM startup scripts are ~10-line stubs that curl bash from GitHub. Bootstrap chan
 
 ## V. The Culture of Work
 
-### C-14 · The nine primitives are a closed set
-Responsibility → Mission → Checkpoint → Task form the execution spine. Project, Process, Plan, Artifact, and Skill are the supporting cast. These nine cover all structured work and all codified procedure; inventing new envelope types, work abstractions, or knowledge containers is forbidden without a canon amendment.
-**Violation looks like:** a new envelope type; a "Sprint"/"Epic"/"Ticket" object in Firestore; a parallel work-tracking structure beside `work/`; a knowledge container outside Skills.
+### C-14 · The eight primitives are a closed set
+Responsibility → Mission → Checkpoint → Task form the execution spine. Project, Process, Artifact, and Skill are the supporting cast. These eight cover all structured work and all codified procedure; inventing new envelope types, work abstractions, or knowledge containers is forbidden without a canon amendment.
+
+**Every primitive is an executable contract.** A primitive named here has a schema, a storage path, a writer, and a reader in the running system. Documentation alone does not create one. *Plan* — an "unexecuted Mission blueprint" with a `draft → approved → executing` lifecycle — was carried in this set with a 212-line specification, a state diagram, two mutually contradictory Firestore paths, and **no implementation whatsoever**; it was retired at v2026.08.15. What it described is covered without a separate aggregate: the agent's own `checkpoint_plan` is the M→C→T layout (C-15), approvals gate the consequential checkpoints, and the draft→validate→evaluate→canary→promote lifecycle belongs to Fleet Definition content (C-31), not to work.
+
+**Violation looks like:** a new envelope type; a "Sprint"/"Epic"/"Ticket" object in Firestore; a parallel work-tracking structure beside `work/`; a knowledge container outside Skills; a primitive that exists only in documentation.
 
 ### C-15 · R→M→C→T is the execution spine; no exceptions
 All executable work flows Responsibility (optional wrapper) → Mission → Checkpoint → Task. Missions are always flat — they never nest other Missions. Projects are the **sole** recursive primitive, max depth 4. Every Mission has a `project_id`; never null. The spine is laid out exactly one way — the agent's own `checkpoint_plan` — never by a competing step-machine; a recalled process narrative informs that plan as a prior but never dispatches it (C-28).
@@ -217,7 +220,7 @@ thing (the full map is [`docs/MODULE_CHARTER.md`](MODULE_CHARTER.md)):
 
 The dividing line between the two know-how layers: *a skill teaches HOW to drive a tool; a process
 narrates WHAT has worked for a recurring kind of work*
-([`docs/primitives/09-SKILL.md`](primitives/09-SKILL.md)).
+([`docs/primitives/08-SKILL.md`](primitives/08-SKILL.md)).
 Content in the wrong layer is a defect regardless of whether it "works." The layers stratify by
 volatility: organs are the frozen identity core, the other three carry all iteration.
 
@@ -233,4 +236,111 @@ improvement-module taxonomy frozen into an organ; a mission particular, failure-
 state written to project context; a bash/curl block or an operator id inside a process narrative; a
 process written as executable steps / agent-per-step / gates instead of a narrative; a "skill" that
 governs zero tools and is really a playbook narrative; an organ edited without re-pinning the lock.
+
+### C-29 · Three planes: Foundation, Fleet Definition, Runtime State
+Every artifact in the system belongs to exactly one governance plane, and the plane is **independent of
+the semantic layer** it sits in (C-28). Organ/Skill/Project/Process says *what kind of thing* something
+is; the plane says *who may change it and how*. Base cortex wiring and a designer's role disposition are
+both organ content; only the first is platform firmware.
+- **Foundation** — deployment-independent mechanism. Repo-owned, release-versioned (`platformVersion`).
+- **Fleet Definition** — this deployment's roles, soul overlays, declarative skills, processes,
+  responsibilities, policies, assignments and eval suites. Deployment-owned, Prime-authored
+  (`fleetRelease` / `agentSpecDigest`).
+- **Runtime State** — live work, memory, approvals, health, evidence (`stateSchemaVersion`).
+
+No domain is wholly one plane. Brain, Roles, Souls, Skills, Tools, Processes, Responsibilities,
+Projects, Culture of Work, Memory, Secrets, Models, Fleet, Artifacts and Evals each split into
+**mechanism** (Foundation), **definition** (Fleet Definition) and **instance/state** (Runtime State).
+The classification test and the domain-by-domain table are
+[`ADR-001`](adr/ADR-001-three-planes-two-loops.md) and [`MODULE_CHARTER`](MODULE_CHARTER.md).
+
+**Violation looks like:** a deployment-specific role, soul overlay or playbook that can only change by a
+generic repository commit; a platform mechanism made editable from a deployment; a document or table
+that treats the four semantic layers as the mutability boundary; "is it an organ?" answered as if it
+settled "who may change it?"
+
+### C-30 · Foundation is release-owned, not frozen — and unwritable from deployed cognition
+Foundation code changes: security defects, performance work, provider changes and schema migrations are
+all legitimate. What Foundation guarantees is that it is independent of any customer, application, role
+or fleet; semantically stable and backward-compatible; owned by the product repository; changed only
+through an explicit platform release; **never writable by a deployed agent**; and exposed to mutable
+content only through versioned contracts. The boundary is structural, not behavioral (C-21): installed
+Foundation files are read-only to agent cognition, and no agent tool grants a write path to them.
+
+**Violation looks like:** an agent tool that can write under the installed platform root; "Foundation is
+immutable" used to block a security fix; a deployed agent holding credentials that can push the generic
+repository; a prompt instruction relied upon as the only thing stopping a Foundation write.
+
+### C-31 · Fleet Definitions are immutable revisions; activation is an atomic pointer
+A definition is never edited in place. Every revision carries `schemaVersion`, a stable `id`, an
+immutable `revision` plus content digest, its parent revision, author identity and timestamp, scope,
+platform compatibility range, declared capabilities / tool bindings / secret handles / egress class, and
+its validation and evaluation evidence. Every mutation supplies a `baseRevision` and fails closed on
+concurrent drift (`409`) rather than overwriting another change. Making a definition live is an atomic
+pointer swap; rollback is the same operation aimed at the predecessor.
+
+**Violation looks like:** a definition document mutated in place with no prior revision retained; a write
+without `baseRevision` that silently clobbers a concurrent edit; "active" represented by a mutable blob
+with no digest; a rollback implemented by re-authoring the old content instead of repointing.
+
+### C-32 · Every mission pins the exact spec that produced it
+Work is stamped with `platformVersion`, `fleetRelease` and `agentSpecDigest` at creation, and reads the
+pinned spec for its whole life. Definitions never change underneath running work; a new release applies
+at an idle mission boundary unless an emergency rollback policy applies. Behavior is therefore
+attributable and replayable.
+
+**Violation looks like:** a running mission picking up a mid-flight soul or skill change; telemetry that
+cannot say which content produced a behavior; an eval comparing a candidate against a baseline whose
+version coordinates were not pinned.
+
+### C-33 · A definition cannot self-grant capability
+The compiler computes capability closure. No overlay may replace a Foundation field, add an undeclared
+capability, broaden egress, grant IAM, or inject a secret. "Skills are mutable" splits three ways:
+a **skill definition** (instructions, cues, recovery, examples, bindings to already-approved tools) is
+freely authorable; a **sandbox skill package** (isolated runner, declared CPU/time/filesystem/egress/data
+limits, no platform paths, no ambient credentials) is authorable under risk policy; a **capability
+provider** (privileged binary, connector, host service, secret injection, IAM integration, new egress
+class, daemon action) is Foundation and may only be *requested*.
+
+**Violation looks like:** a SKILL.md that ships a new privileged binary; a role definition naming a
+provider that does not exist or that its profile does not grant; an overlay that widens an egress class;
+a definition that reaches ambient credentials; capability enforcement living in a prompt rather than the
+compiler.
+
+### C-34 · The Platform Finding is the only bridge from a deployment to the repository
+When a deployment need genuinely requires a new provider, permission class, schema, state transition or
+runtime mechanism, the answer is a structured **Platform Finding** — severity, frequency, scope, version
+coordinates, mission evidence, sanitized logs, deterministic reproduction, the desired invariant (not an
+unreviewed implementation demand), why no Definition-plane solution is valid, the required capability
+class, a privacy/secret scan result, and any fleet-level workaround with its limitations. Prime may
+monitor a finding's status and explain upgrade impact. It does not clone, patch, push, merge or deploy
+the generic repository as part of fleet improvement.
+
+**Violation looks like:** a deployed agent opening a PR against the product repository; a "temporary"
+hand-patch of installed platform files; a platform gap worked around by broadening an agent's raw tool
+reach; a finding filed as a free-text complaint with no reproduction or version coordinates.
+
+### C-35 · Activation resolves to immutable digests — never a branch, tag, or fallback ref
+A human channel (`STABLE`) resolves to immutable identifiers **before** installation: full source SHA,
+CoreKit artifact digest, control-plane image digest, installer and manifest-graph digest, contract and
+state-schema epochs, supported Fleet Definition schema range, ordered migration IDs and checksums, build
+provenance, and the previous supported rollback release. `main`, `latest`, and "could not resolve SHA,
+using the branch name" are not activatable. Installation stages into an inactive slot, verifies, probes,
+switches a pointer atomically, health-checks, and returns to the prior slot on failure. Contract and
+manifest validation is fatal before services start (C-19).
+
+**Violation looks like:** an install or upgrade that activates a branch name or a mutable container tag;
+a SHA-resolution failure that degrades to the branch instead of aborting; files copied into the live tree
+one at a time; contract validation that warns and continues; a failed activation that leaves a hybrid
+runtime and restarts services anyway.
+
+### C-36 · Fleet definitions and runtime state survive the Foundation lifecycle
+A Foundation upgrade, rollback, reboot or agent replacement never erases or silently replaces
+deployment-owned content. No manifest owns a path that holds tenant definitions. Definition schemas
+carry an N/N-1 compatibility policy with shipped migrations, validated before activation. Rolling out
+fleet content never invokes a CoreKit upgrade, and the dashboard never labels one as the other.
+
+**Violation looks like:** a manifest line that overwrites a tenant-authored soul, responsibility or
+skill; content rollout implemented as a platform upgrade; an upgrade that drops assignments, profiles or
+memory; a definition schema bump with no migration and no compatibility window.
 

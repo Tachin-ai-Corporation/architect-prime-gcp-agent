@@ -82,15 +82,7 @@ into the planning context as a prior; the cortex still plans its own checkpoints
 Input → cortex classify → new_mission → cortex checkpoint_plan (playbook recalled if matched) → M→C→T stamped
 ```
 
-### 2. Plan Stamping (`stampPlan`)
-
-When a Plan is approved:
-
-```
-Plan (approved) → stampPlan() → M→C→T stamped → Plan.mission_id linked
-```
-
-### 3. Responsibility Firing (`fireResponsibility`)
+### 2. Responsibility Firing (`fireResponsibility`)
 
 When a cron schedule triggers:
 

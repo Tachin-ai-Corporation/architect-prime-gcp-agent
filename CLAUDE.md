@@ -100,7 +100,7 @@ Non-prefixed commits break the dashboard version display.
 - **C-5**: LLMs think in structured JSON; daemons move the data
 - **C-7**: contracts.json is the single source of truth
 - **C-9**: Manifest discipline is absolute (file + manifest entry = same commit)
-- **C-14**: Nine CoW primitives are a closed set
+- **C-14**: Eight CoW primitives are a closed set (each an executable contract)
 - **C-15**: R->M->C->T always, missions never nest
 - **C-24**: Git is the artifact substrate; objects-before-refs
 - **C-27**: The mouth is the sole outbound egress

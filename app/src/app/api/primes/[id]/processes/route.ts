@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { processesCol } from "@/lib/firestore";
+import { withCanonicalId } from "@/lib/entity";
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -53,7 +54,9 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
 
     const now = new Date().toISOString();
 
-    const process = {
+    // C-31: the stored body carries its own canonical ID. Without it the runtime
+    // process registry skipped the record and no agent could ever recall it.
+    const process = withCanonicalId(body.id, {
       name: body.name,
       description: body.description || "",
       narrative: body.narrative,
@@ -65,12 +68,12 @@ export async function POST(req: NextRequest, ctx: RouteContext) {
       created_at: now,
       updated_at: now,
       updated_by: "operator",
-    };
+    });
 
     const col = processesCol();
     await col.doc(body.id).set(process);
 
-    return NextResponse.json({ process: { id: body.id, ...process } });
+    return NextResponse.json({ process });
   } catch (err) {
     console.error(`[api/primes/processes] POST error:`, err);
     return NextResponse.json({ error: "Failed to create process" }, { status: 500 });
