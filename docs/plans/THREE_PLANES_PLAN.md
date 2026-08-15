@@ -255,6 +255,42 @@ deployment converge to the same effective state for the same two version coordin
 
 ---
 
+## Progress log
+
+| Phase | Commit | Proven on the canary |
+|---|---|---|
+| **P0** integrity & doctrine | `be099b5` | Gateway refuses an unauthenticated call (401, was served); zero `follow_process` reaching cognition; a record stored with no `id` — the old dashboard shape — went from **SKIPPED** to **LOADED** through the installed production code path |
+| **P1a** contracts package, C-7 split | `4887972` | 32 Foundation / 202 deployment values, lossless round trip; provenance visible on the VM |
+| **P1b** Work state machine | `25f5e52` | Real mission on millie completed with **0** `illegal_transition` observations — the table matches the daemon |
+| **P2** registry & compiler | `65f8de3`…`e084492` | Live tenant: 106 definitions sealed → validated → released `fr-bc76ebe656e2` → millie pinned → spec compiled (12 skills, 74 capabilities, closure clean) |
+| **P3** runtime apply & stamping | `eca92bb`…`6f238c4` | **A soul change reached millie with no GitHub commit and no CoreKit upgrade** (`coreRef` unchanged across the apply); mission stamped with all three coordinates |
+
+### The P3 exit gate, demonstrated
+
+```
+author  → change fc-2b380a2f921b (persona assistant-cortex, +74 chars)
+diff    → "persona 'assistant-cortex': body: rewritten" · impacted: ["millie"]
+validate→ ok, 6 checks
+release → fr-6a524ab97fd1
+apply   → 3 written, 24 unchanged   ← no-op detection working
+result  → marker in live SOUL.md: 0 → 1
+          coreRef before and after: 6f238c45b259 (unchanged)
+mission → platform_version 6f238c45b259…
+          fleet_release    fr-6a524ab97fd1
+          agent_spec_digest sha256:a7404054cc66… (= CONTENT.json)
+```
+
+### Carried forward (not done, not implied)
+
+- Agent profiles / deep truths still live in the manifest-managed `workspace/SOUL.md` tail.
+- Responsibilities still ship as manifest-installed local files.
+- `agent-content-sync.timer` is installed but not yet enabled by bootstrap — the canary runs it
+  by hand. Enabling it is a bootstrap edit, not a mechanism change.
+- The transition guard stays in `observe`; `enforce` after a wider clean window.
+- Dashboard lint (56 errors) becomes a CI gate in CLEANUP.
+
+---
+
 ## Canary proof loop (roadmap §11.3) — the real definition of done
 
 Run on `prime-candicejr` (author) and `fleet-millie` (target). Loop until all ten pass.
