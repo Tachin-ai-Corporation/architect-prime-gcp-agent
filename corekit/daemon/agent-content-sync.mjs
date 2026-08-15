@@ -113,6 +113,15 @@ async function inFlight(db, agentEmail) {
 
 async function onePass() {
   const projectId = await resolveProject();
+
+  // git-store resolves its bucket and Firestore base from the environment and
+  // caches that on first use. Under systemd (and under sudo) the daemon inherits
+  // neither GCP_PROJECT_ID nor GOOGLE_CLOUD_PROJECT, which yielded a `projects//`
+  // URL and a 400 that reads like a malformed request rather than a missing
+  // variable. Set it from the value we just resolved, before anything touches
+  // the store.
+  process.env.GCP_PROJECT_ID = process.env.GCP_PROJECT_ID || projectId;
+
   const agent = agentId();
   const cfg = chatConfig();
   const agentEmail = cfg.agentUserEmail || `${agent}@local`;
