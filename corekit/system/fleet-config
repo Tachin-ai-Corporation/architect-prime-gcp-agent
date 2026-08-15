@@ -1,0 +1,355 @@
+#!/usr/bin/env node
+// fleet-config — the Fleet Definition lifecycle, as one command.
+//
+// This is the single entry point for the mutable plane (C-29). Prime's authoring
+// tools and the dashboard's control-plane routes are both clients of it, so
+// there is exactly one implementation of "what happens when a definition
+// changes" rather than one per surface — the condition that let a dashboard
+// write become invisible to the runtime in the first place.
+//
+//   fleet-config import [--dry-run]        one-time: seed the registry from the bundled catalog
+//   fleet-config list [kind]               what this deployment currently defines
+//   fleet-config get <kind> <id>           one definition, with its provenance
+//   fleet-config diff <changeId>           what a draft changes, in domain terms
+//   fleet-config validate <changeId>       run every validator and record the verdict
+//   fleet-config release <changeId...>     form an immutable release from validated changes
+//   fleet-config assign <releaseId> --agents a,b [--pin]
+//   fleet-config rollback <releaseId> --reason "..."
+//   fleet-config compile <agentId>         the Effective Agent Spec, with its digest
+//   fleet-config status                    releases, assignments, drift
+//
+// Output is JSON on stdout, human notes on stderr — so an agent can parse it and
+// an operator can read it, without either getting the other's stream.
+
+import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import { createRegistry } from '../lib/fleet-config/registry.mjs';
+import {
+  importRole, importPersona, importSkill, importProcess, importResponsibility,
+} from '../lib/fleet-config/importer.mjs';
+import { compileAgentSpec } from '../lib/fleet-config/compiler.mjs';
+import { validateSet, VALIDATOR_NAMES } from '../lib/fleet-config/validators.mjs';
+import { diffSets, renderDiff, impactedAgents } from '../lib/fleet-config/diff.mjs';
+import { DEFINITION_KINDS, sealRevision } from '../contracts/index.mjs';
+
+const CORE_DIR = process.env.CORE_DIR || '/opt/corekit';
+const note = (...a) => console.error('[fleet-config]', ...a);
+const emit = (o) => console.log(JSON.stringify(o, null, 2));
+
+function die(message, code = 1) {
+  note('ERROR:', message);
+  process.exit(code);
+}
+
+async function resolveProject() {
+  if (process.env.GCP_PROJECT_ID) return process.env.GCP_PROJECT_ID;
+  try {
+    const r = await fetch('http://metadata.google.internal/computeMetadata/v1/project/project-id', {
+      headers: { 'Metadata-Flavor': 'Google' },
+    });
+    if (r.ok) return (await r.text()).trim();
+  } catch { /* not on GCE */ }
+  die('cannot resolve the GCP project — set GCP_PROJECT_ID');
+}
+
+function actorId() {
+  return process.env.FLEET_CONFIG_ACTOR || process.env.AGENT_ID || 'prime';
+}
+
+function platformVersion() {
+  // The deployed CoreKit ref is the platform coordinate a definition is
+  // validated against (C-32).
+  try {
+    const state = JSON.parse(readFileSync(join(CORE_DIR, 'corekit', 'STATE.json'), 'utf8'));
+    return state.version || state.coreRef || 'unknown';
+  } catch {
+    return process.env.PLATFORM_VERSION || 'unknown';
+  }
+}
+
+// ── Catalog reading (import only) ──────────────────────────────────────
+
+/** Locate the bundled catalog: the repo when run from a checkout, CORE_DIR on a VM. */
+function catalogRoot() {
+  const repo = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
+  if (existsSync(join(repo, 'specialties'))) return repo;
+  if (existsSync(join(CORE_DIR, 'specialties'))) return CORE_DIR;
+  die('cannot find the bundled catalog to import from');
+}
+
+function readCatalog(root) {
+  const skillJsons = new Map();
+  const skillDocs = new Map();
+
+  const addSkillDir = (dir, id) => {
+    const meta = join(dir, 'skill.json');
+    if (!existsSync(meta)) return;
+    skillJsons.set(id, JSON.parse(readFileSync(meta, 'utf8')));
+    const doc = join(dir, 'SKILL.md');
+    if (existsSync(doc)) skillDocs.set(id, readFileSync(doc, 'utf8'));
+  };
+
+  const coreDir = join(root, 'skills');
+  if (existsSync(coreDir)) for (const d of readdirSync(coreDir)) addSkillDir(join(coreDir, d), d);
+
+  const specialties = existsSync(join(root, 'specialties'))
+    ? readdirSync(join(root, 'specialties')).filter((d) => statSync(join(root, 'specialties', d)).isDirectory())
+    : [];
+
+  for (const spec of specialties) {
+    const sd = join(root, 'specialties', spec, 'skills');
+    if (existsSync(sd)) for (const d of readdirSync(sd)) addSkillDir(join(sd, d), d);
+  }
+
+  let agentTypes = {};
+  const atPath = join(root, 'corekit', 'config', 'agent-types.json');
+  if (existsSync(atPath)) agentTypes = JSON.parse(readFileSync(atPath, 'utf8')).types || {};
+
+  return { specialties, skillJsons, skillDocs, agentTypes };
+}
+
+// ── Commands ───────────────────────────────────────────────────────────
+
+async function cmdImport(registry, args) {
+  const dryRun = args.includes('--dry-run');
+  const root = catalogRoot();
+  const { specialties, skillJsons, skillDocs, agentTypes } = readCatalog(root);
+  const typeFor = (id) => Object.values(agentTypes).find((t) => t.id === id) || null;
+
+  const edits = [];
+  const notes = [];
+
+  for (const id of specialties) {
+    const kitPath = join(root, 'specialties', id, 'kit.json');
+    const kit = existsSync(kitPath) ? JSON.parse(readFileSync(kitPath, 'utf8')) : null;
+    const { role, notes: roleNotes } = importRole({ id, agentType: typeFor(id), kit, skillJsons });
+    edits.push({ kind: 'role', draft: role });
+    notes.push(...roleNotes.map((n) => `role/${id}: ${n}`));
+
+    const brainDir = join(root, 'specialties', id, 'brain');
+    if (existsSync(brainDir)) {
+      for (const organ of readdirSync(brainDir)) {
+        const p = join(brainDir, organ, 'SOUL_APPEND.md');
+        if (!existsSync(p)) continue;
+        edits.push({ kind: 'persona', draft: importPersona({ roleId: id, organ, body: readFileSync(p, 'utf8') }) });
+      }
+    }
+
+    const respPath = join(root, 'specialties', id, `responsibilities-${id}.json`);
+    if (existsSync(respPath)) {
+      const parsed = JSON.parse(readFileSync(respPath, 'utf8'));
+      for (const r of parsed.responsibilities || []) {
+        edits.push({ kind: 'responsibility', draft: importResponsibility(r, id) });
+      }
+    }
+  }
+
+  for (const [id, meta] of skillJsons) {
+    const doc = skillDocs.get(id);
+    if (!doc) { notes.push(`skill/${id}: no SKILL.md — skipped`); continue; }
+    edits.push({ kind: 'skill', draft: importSkill({ meta, doc }) });
+  }
+
+  const procDir = join(root, 'corekit', 'config', 'processes');
+  if (existsSync(procDir)) {
+    for (const f of readdirSync(procDir).filter((x) => x.endsWith('.json'))) {
+      edits.push({ kind: 'process', draft: importProcess(JSON.parse(readFileSync(join(procDir, f), 'utf8'))) });
+    }
+  }
+
+  const byKind = edits.reduce((acc, e) => { acc[e.kind] = (acc[e.kind] || 0) + 1; return acc; }, {});
+  for (const n of notes) note(n);
+
+  if (dryRun) {
+    emit({ dryRun: true, root, counts: byKind, total: edits.length, notes });
+    return;
+  }
+
+  // Seal everything first so a schema failure aborts before anything is written.
+  for (const e of edits) sealRevision(e.kind, e.draft, { actor: actorId() });
+
+  const result = await registry.createChange({
+    title: 'Import the bundled catalog',
+    rationale:
+      'One-time seed of the tenant Fleet Definition registry from the catalog shipped with this ' +
+      'platform release. After this the registry is the authority and the catalog is seed content.',
+    edits,
+    risk: 'low',
+  });
+  if (!result.ok) die(`import failed:\n${JSON.stringify(result.conflicts, null, 2)}`);
+
+  emit({ change: result.change.id, counts: byKind, total: edits.length, notes });
+}
+
+async function cmdList(registry, args) {
+  const kind = args[0];
+  const { definitions, corrupt } = await registry.readDefinitions();
+  const rows = [];
+  for (const [key, def] of definitions) {
+    const [k, id] = [key.split('/')[0], key.split('/').slice(1).join('/')];
+    if (kind && k !== kind) continue;
+    rows.push({ kind: k, id, revision: def.revision, status: def.status, name: def.name || null });
+  }
+  emit({ definitions: rows.sort((a, b) => `${a.kind}/${a.id}`.localeCompare(`${b.kind}/${b.id}`)), corrupt });
+}
+
+async function cmdGet(registry, args) {
+  const [kind, id] = args;
+  if (!kind || !id) die('usage: fleet-config get <kind> <id>');
+  const { definitions } = await registry.readDefinitions();
+  const def = definitions.get(`${kind}/${id}`);
+  if (!def) die(`no such definition: ${kind}/${id}`);
+  emit(def);
+}
+
+async function cmdValidate(registry, args) {
+  const [changeId] = args;
+  if (!changeId) die('usage: fleet-config validate <changeId>');
+
+  const change = await registry._db.read(`fleet_changes/${changeId}`);
+  if (!change) die(`unknown change '${changeId}'`);
+
+  const { definitions } = await registry.readDefinitions({ branch: `change/${changeId}` });
+  const list = [...definitions.entries()].map(([key, def]) => ({ kind: key.split('/')[0], def }));
+
+  const available = {};
+  for (const k of DEFINITION_KINDS) available[k] = new Set();
+  for (const [key] of definitions) {
+    const [k, ...rest] = key.split('/');
+    available[k]?.add(rest.join('/'));
+  }
+
+  const result = validateSet({ definitions: list, available, platformVersion: platformVersion() });
+  await registry.recordValidation(changeId, {
+    passed: result.ok,
+    errors: result.errors.map((e) => `${e.code}: ${e.message}`),
+    checks: VALIDATOR_NAMES,
+  });
+
+  emit({ change: changeId, ok: result.ok, errors: result.errors, warnings: result.warnings, checks: VALIDATOR_NAMES });
+  if (!result.ok) process.exit(2);
+}
+
+async function cmdDiff(registry, args) {
+  const [changeId] = args;
+  if (!changeId) die('usage: fleet-config diff <changeId>');
+
+  const before = (await registry.readDefinitions()).definitions;
+  const after = (await registry.readDefinitions({ branch: `change/${changeId}` })).definitions;
+  const entries = diffSets(before, after);
+
+  const roles = new Map();
+  for (const [key, def] of after) if (key.startsWith('role/')) roles.set(def.id, def);
+  const assignments = (await registry.listAssignments()).map((a) => ({ agent_id: a.id, role_id: a.role_id }));
+
+  emit({ change: changeId, diff: entries, rendered: renderDiff(entries), impacted: impactedAgents(entries, roles, assignments) });
+}
+
+async function cmdRelease(registry, args) {
+  const changeIds = args.filter((a) => !a.startsWith('--'));
+  if (!changeIds.length) die('usage: fleet-config release <changeId...>');
+  const approvedBy = argValue(args, '--approved-by');
+  try {
+    emit(await registry.createRelease({ changeIds, platformVersion: platformVersion(), approvedBy }));
+  } catch (e) {
+    if (e.code === 'CONFLICT') { emit({ ok: false, conflicts: e.conflicts }); process.exit(3); }
+    throw e;
+  }
+}
+
+async function cmdAssign(registry, args) {
+  const [releaseId] = args.filter((a) => !a.startsWith('--'));
+  if (!releaseId) die('usage: fleet-config assign <releaseId> --agents a,b [--pin]');
+  const agents = (argValue(args, '--agents') || '').split(',').map((s) => s.trim()).filter(Boolean);
+  if (!agents.length) die('--agents is required');
+  emit(await registry.assign({ releaseId, agents, specDigests: {}, pinned: args.includes('--pin') }));
+}
+
+async function cmdRollback(registry, args) {
+  const [releaseId] = args.filter((a) => !a.startsWith('--'));
+  if (!releaseId) die('usage: fleet-config rollback <releaseId> --reason "..."');
+  const reason = argValue(args, '--reason') || 'unspecified';
+  emit(await registry.rollback({ releaseId, reason }));
+}
+
+async function cmdCompile(registry, args) {
+  const [agentId] = args.filter((a) => !a.startsWith('--'));
+  if (!agentId) die('usage: fleet-config compile <agentId>');
+
+  const assignment = await registry._db.read(`fleet_assignments/${agentId}`);
+  const roleId = argValue(args, '--role') || assignment?.role_id;
+  if (!roleId) die(`no role for agent '${agentId}' — pass --role`);
+
+  const { definitions } = await registry.readDefinitions();
+  const role = definitions.get(`role/${roleId}`);
+  if (!role) die(`no such role '${roleId}'`);
+
+  const personas = [...definitions.values()].filter((d) => d.kind === 'persona' && d.role_id === roleId);
+  const skills = (role.default_skills || [])
+    .map((id) => definitions.get(`skill/${id}`))
+    .filter(Boolean);
+  const responsibilities = (role.responsibilities || [])
+    .map((id) => definitions.get(`responsibility/${id}`))
+    .filter(Boolean);
+
+  const firmware = {};
+  for (const organ of new Set(personas.map((p) => p.organ))) {
+    const p = join(CORE_DIR, `workspace-${organ}`, 'SOUL.md');
+    firmware[organ] = existsSync(p) ? readFileSync(p, 'utf8') : `# ${organ}\n`;
+  }
+
+  const { spec, files, closure, warnings } = compileAgentSpec({
+    agentId,
+    platformVersion: platformVersion(),
+    fleetRelease: assignment?.desired_release || 'fr-uncommitted',
+    role, personas, skills, responsibilities, firmware,
+    compiledAt: new Date().toISOString(),
+  });
+
+  for (const w of warnings) note('WARN:', w);
+  emit({ spec, closure, files: Object.keys(files).sort(), warnings });
+}
+
+async function cmdStatus(registry) {
+  const assignments = await registry.listAssignments();
+  const active = await registry.activeReleaseId();
+  emit({
+    active_release: active,
+    platform_version: platformVersion(),
+    agents: assignments.map((a) => ({
+      agent: a.id, role: a.role_id, desired: a.desired_release, actual: a.actual_release,
+      drift: a.drift, pinned: a.pinned, error: a.last_error,
+    })),
+  });
+}
+
+function argValue(args, flag) {
+  const i = args.indexOf(flag);
+  return i === -1 ? null : args[i + 1];
+}
+
+// ── Entry ──────────────────────────────────────────────────────────────
+
+const [command, ...rest] = process.argv.slice(2);
+if (!command || command === '--help' || command === '-h') {
+  note(readFileSync(fileURLToPath(import.meta.url), 'utf8').split('\n').slice(2, 22).map((l) => l.replace(/^\/\/ ?/, '')).join('\n'));
+  process.exit(command ? 0 : 1);
+}
+
+const registry = createRegistry({ projectId: await resolveProject(), actor: actorId(), logger: (lvl, m) => note(`${lvl}: ${m}`) });
+
+const COMMANDS = {
+  import: cmdImport, list: cmdList, get: cmdGet, diff: cmdDiff, validate: cmdValidate,
+  release: cmdRelease, assign: cmdAssign, rollback: cmdRollback, compile: cmdCompile, status: cmdStatus,
+};
+
+const handler = COMMANDS[command];
+if (!handler) die(`unknown command '${command}' (try --help)`);
+
+try {
+  await handler(registry, rest);
+} catch (e) {
+  die(e.message);
+}

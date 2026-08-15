@@ -128,6 +128,16 @@ corekit/contracts/schemas/lifecycle.mjs corekit/contracts/schemas/lifecycle.mjs
 corekit/contracts/schemas/runtime.mjs corekit/contracts/schemas/runtime.mjs
 corekit/contracts/schemas/spec.mjs corekit/contracts/schemas/spec.mjs
 corekit/contracts/work-transitions.mjs corekit/contracts/work-transitions.mjs
+
+# Fleet Definition plane (P2). The registry and compiler ship to every VM because
+# content-sync reads and compiles a definition set locally; authoring goes through
+# the Prime-only fleet-config CLI (role-prime.txt).
+corekit/lib/fleet-config/registry.mjs corekit/lib/fleet-config/registry.mjs
+corekit/lib/fleet-config/compiler.mjs corekit/lib/fleet-config/compiler.mjs
+corekit/lib/fleet-config/validators.mjs corekit/lib/fleet-config/validators.mjs
+corekit/lib/fleet-config/importer.mjs corekit/lib/fleet-config/importer.mjs
+corekit/lib/fleet-config/packages.mjs corekit/lib/fleet-config/packages.mjs
+corekit/lib/fleet-config/diff.mjs corekit/lib/fleet-config/diff.mjs
 corekit/lib/json-repair.mjs corekit/lib/json-repair.mjs
 corekit/lib/vertex-text.mjs corekit/lib/vertex-text.mjs
 corekit/lib/projects.mjs corekit/lib/projects.mjs

@@ -30,6 +30,10 @@ corekit/memory/update-deep-truths bin/update-deep-truths
 corekit/memory/session-summary bin/session-summary
 
 
+# Fleet Definition authoring (C-29). Prime is the delegated author of this
+# deployment's roles, souls, skills, processes and responsibilities.
+corekit/system/fleet-config bin/fleet-config
+
 # Firestore index authority (C-7: one source; the provisioner reads it, declares nothing)
 firestore.indexes.json corekit/firestore.indexes.json
 infra/bootstrap/provision-firestore-indexes.sh bin/provision-firestore-indexes
