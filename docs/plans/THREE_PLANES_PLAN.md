@@ -267,6 +267,7 @@ deployment converge to the same effective state for the same two version coordin
 | **P4** Prime as Fleet Architect | `d847527`…`eebc848` | All four repo push paths **absent** on candicejr; a Platform Finding refuses missing fields, refuses an embedded secret, and files when complete |
 | **P5** evaluation & rollout gate | `1377be6`…`a6361e9` | Gate runs live against the tenant: a candidate clearing every floor but regressing on its baseline still rolls back; a critical breach does not wait for the window |
 | **P5 fix** idempotent composition | `a5e8138` | **Applying the same release three times is applying it once** — see below |
+| **P5 fix** the gate reads its own release | `8c1ba91`…`7918999` | Five real missions on millie: `hold` at three, `promote` at five, all rates clean |
 
 ### The P3 exit gate, demonstrated
 
@@ -386,6 +387,23 @@ sample that reads as a census is how a partial view becomes a confident verdict.
 The detail that let this hide: the fake db ignored `limit`. A caller that reads
 a capped slice and filters locally is perfectly correct against an unbounded
 fake and wrong against Firestore. The fake honours `limit` now.
+
+### The P5 exit gate, demonstrated
+
+Five real missions on millie, all carrying the same stable stamp, judged by the
+gate running on candicejr:
+
+```
+3 missions  → hold     "only 3 of 5 finished mission(s) — too early to judge"
+5 missions  → promote  "clean over 5 finished mission(s)"
+
+candidate: completion_rate 1 · false_complete_rate 0 · failure_rate 0
+           stalled_rate 0 · mean_iterations 1 · tool_error_rate 0
+```
+
+The hold is as much of the proof as the promote: the gate declined to judge on
+three missions and changed its verdict only when the evidence arrived, rather
+than promoting whatever it saw first.
 
 **The test that would have caught it** now exists —
 `test/content-sync-idempotence.test.mjs` applies the same release five times and
