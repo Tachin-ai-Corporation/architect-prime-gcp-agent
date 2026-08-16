@@ -522,6 +522,39 @@ Before this, that same route answered from a three-week-old commit and called it
 caveat. chuck still reads 3ee2763… from June and will correct itself on its next upgrade — which is
 the mechanism working, not a gap.
 
+
+#### Step 1 DONE, and step 2 measured
+
+`brain/` -> `platform/organ-firmware/` shipped (`58d436c`): src-only, dest path set byte-identical
+at 260, soft-lock re-pinned and negative-tested at the new location.
+
+Step 2 — skills/, specialties/, config catalogs -> `catalog/` — has two properties worth knowing
+before starting, both found by measuring rather than estimating:
+
+**Four dest roots change, not one.** The content currently lands at `skills/<name>/`,
+`corekit/specialties/<id>/`, `corekit/processes/` and `corekit/config/eval-suites/`. That is 494
+manifest lines across four separate VM locations.
+
+**An organ SOUL hardcodes one of those paths.** `platform/organ-firmware/prime/motor/SOUL.md`
+instructs the motor organ:
+
+```
+I use `readFile /opt/corekit/skills/<id>/SKILL.md` to get exact command syntax.
+```
+
+Move skills and that instruction points at nothing. Fixing it is an ORGAN edit, so it needs a
+re-pin of ORGAN_LOCK.json and an `organ-change: intended` trailer — the C-28 gate. The move is
+therefore not mechanical: it drags a governed content change along with it.
+
+**Runtime readers to update, by file:** install.sh (7 sites — sweeps and orphan scans),
+corekit/system/skill-setup (SKILLS_DIR, SPECIALTIES_DIR and the per-specialty search path),
+platform/work/process-registry.mjs, platform/runtime/agent-brain.mjs (skill index),
+platform/runtime/agent-introspect.mjs.
+
+Proof required: canary upgrade, then a FRESH deploy — skill-setup and the install.sh sweeps only
+run there, and a skill tree at the wrong path yields an agent that boots healthy with no
+capabilities, which is the quiet failure mode this phase keeps turning up.
+
 ---
 
 ## Progress log
