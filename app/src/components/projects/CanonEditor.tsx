@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import styles from "./CanonEditor.module.css";
 
 /* ---- Types ---- */
@@ -31,8 +31,12 @@ export function CanonEditor({ canon, onChange }: CanonEditorProps) {
   const [showAddForm, setShowAddForm] = useState(false);
   const [form, setForm] = useState({ ...BLANK_FORM });
 
-  const entries = canon?.entries ?? [];
-  const authority = canon?.authority ?? [];
+  // Memoised because `?? []` builds a NEW array whenever canon is absent, and
+  // three useCallbacks below depend on these. A fresh array each render made
+  // every one of those callbacks a new function each render, which defeats the
+  // memoisation they were written for.
+  const entries = useMemo(() => canon?.entries ?? [], [canon?.entries]);
+  const authority = useMemo(() => canon?.authority ?? [], [canon?.authority]);
 
   /* ---- Start editing ---- */
   const startEdit = useCallback((entry: CanonEntry) => {

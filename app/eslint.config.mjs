@@ -2,6 +2,26 @@ import { defineConfig, globalIgnores } from "eslint/config";
 import nextVitals from "eslint-config-next/core-web-vitals";
 import nextTs from "eslint-config-next/typescript";
 
+// react-hooks v6 arrived with the Next 16 upgrade and promoted a family of rules
+// from advisory to error, flagging 32 real patterns. They ran as warnings for one
+// commit so `npm run lint` could gate everything else; all five are now at zero
+// and back at their default severity, so there is no override block here.
+//
+// What they were, and what fixing them found:
+//   purity                       Math.random() during render re-rolled the fleet
+//                                animation timings on every unrelated re-render.
+//   refs                         a ref read during render duplicated a piece of
+//                                state the renderer could already see.
+//   set-state-in-effect          25 sites. The fix is an async IIFE: the body
+//                                runs synchronously to its first await, so the
+//                                updates keep their tick and their order and
+//                                merely leave the effect's own path.
+//   exhaustive-deps              two pollers depended on a derived key while
+//                                closing over the array it came from, so a prime
+//                                swapped for another with the same count kept
+//                                being polled at its old id.
+//   preserve-manual-memoization  a `?? []` fallback built a new array each
+//                                render, defeating the useCallbacks below it.
 const eslintConfig = defineConfig([
   ...nextVitals,
   ...nextTs,
@@ -13,51 +33,6 @@ const eslintConfig = defineConfig([
     "build/**",
     "next-env.d.ts",
   ]),
-  {
-    // ---- react-hooks v6: warnings, not errors, and deliberately so ----
-    //
-    // The Next 16 upgrade brought react-hooks v6, which promoted a family of
-    // rules from advisory to error. They flag 33 real patterns in this app —
-    // mostly `setState` called synchronously inside an effect, which does cause
-    // cascading renders and should be fixed.
-    //
-    // They are warnings here because fixing them correctly changes runtime
-    // behaviour, and this dashboard sits behind NextAuth: there is no way to
-    // verify a hook change without a signed-in session, so "it type-checks and
-    // builds" is not evidence that a screen still works. Turning them into
-    // errors today would either block every commit or invite a sweep of
-    // unverified edits to fetch-and-render paths.
-    //
-    // Everything else IS a gate now — `npm run lint` runs in CI and fails on
-    // any error. no-explicit-any, unescaped entities and redundant casts were
-    // fixed rather than suppressed; the WorkEnvelope type the routes needed had
-    // existed all along and simply was not used.
-    //
-    // To close these out: run the dashboard locally with a session, fix a file,
-    // check the screen, repeat. Then delete the rule from this block — it is
-    // sized so that removing one line at a time is the natural motion.
-    // Closed out — back to errors, and staying there:
-    //   react-hooks/purity              Math.random() during render in
-    //                                   FleetVisualization re-rolled every
-    //                                   animation duration on every render.
-    //   react-hooks/refs                MemoryViewer read didInitRef during
-    //                                   render; it was only ever
-    //                                   `lastRefreshed !== null`.
-    //   react-hooks/set-state-in-effect all 25 fixed, each checked on its screen.
-    //                                   The transformation is an async IIFE: the
-    //                                   body runs synchronously to its first
-    //                                   await, so the updates keep their tick and
-    //                                   their order and simply leave the effect's
-    //                                   own path. setTimeout also satisfies the
-    //                                   rule and is worse — it delays the first
-    //                                   update by a task, so a component paints
-    //                                   its empty state before its spinner.
-    files: ["src/**/*.{ts,tsx}"],
-    rules: {
-      "react-hooks/exhaustive-deps": "warn",
-      "react-hooks/preserve-manual-memoization": "warn",
-    },
-  },
 ]);
 
 export default eslintConfig;

@@ -83,12 +83,17 @@ export function useOperations(primeIds: string[]) {
   const [operations, setOperations] = useState<Operation[]>([]);
   const [loading, setLoading] = useState(false);
 
+  // The key IS the dependency, so it is also the source. `poll` used to depend
+  // on primeIdsKey while reading `primeIds`, which meant the array it fetched
+  // and the value that decided whether to rebuild it could disagree — a prime
+  // swapped for another with the same count kept polling the old one.
   const primeIdsKey = JSON.stringify(primeIds);
   const poll = useCallback(async () => {
-    if (primeIds.length === 0) return;
+    const ids: string[] = JSON.parse(primeIdsKey);
+    if (ids.length === 0) return;
     try {
       const results = await Promise.all(
-        primeIds.map(async (pid) => {
+        ids.map(async (pid) => {
           try {
             const res = await fetch(`/api/primes/${pid}/ops`);
             if (res.ok) {
@@ -118,7 +123,7 @@ export function useOperations(primeIds: string[]) {
   }, [primeIdsKey]);
 
   useEffect(() => {
-    if (primeIds.length === 0) {
+    if (JSON.parse(primeIdsKey).length === 0) {
       void (async () => { setOperations([]); })();
       return;
     }
@@ -129,7 +134,7 @@ export function useOperations(primeIds: string[]) {
     })();
     const iv = setInterval(poll, 5000);
     return () => clearInterval(iv);
-  }, [primeIds, poll]);
+  }, [primeIdsKey, poll]);
 
   const activeCount = operations.filter(
     (op) => op.status === "pending" || op.status === "running"

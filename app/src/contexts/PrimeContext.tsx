@@ -103,27 +103,35 @@ export function PrimeProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   /* ---- Fleet polling (every 8s, all primes) ---- */
+  //
+  // Keyed on the ids, not the count. The dependency was `primes.length` while
+  // the loop closed over `primes` itself, so swapping one prime for another —
+  // same count, different id — left the poller fetching the old one forever.
+  // `primes` is a new array on every refresh, so depending on it directly would
+  // tear down and re-subscribe the interval on each poll instead.
+  const primeIdsKey = primes.map((p) => p.id).join(",");
   useEffect(() => {
-    if (primes.length === 0) return;
+    const ids = primeIdsKey ? primeIdsKey.split(",") : [];
+    if (ids.length === 0) return;
 
     const loadAllFleet = async () => {
-      for (const p of primes) {
-        const data = await api<{ fleet: FleetAgent[] }>(`/api/primes/${p.id}/fleet`);
+      for (const id of ids) {
+        const data = await api<{ fleet: FleetAgent[] }>(`/api/primes/${id}/fleet`);
         if (data?.fleet) {
-          setSidebarFleet((prev) => ({ ...prev, [p.id]: data.fleet }));
+          setSidebarFleet((prev) => ({ ...prev, [id]: data.fleet }));
         }
       }
     };
 
     // Initial fetch
-    loadAllFleet();
+    void loadAllFleet();
 
     // Poll every 8s
     fleetPollRef.current = setInterval(loadAllFleet, 8000);
     return () => {
       if (fleetPollRef.current) clearInterval(fleetPollRef.current);
     };
-  }, [primes.length]); // re-setup when prime count changes
+  }, [primeIdsKey]);
 
   /* ---- Value ---- */
   const value: PrimeContextType = {
