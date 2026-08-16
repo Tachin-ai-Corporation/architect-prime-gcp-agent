@@ -36,18 +36,17 @@ const EMAIL = /[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}/g;
 /**
  * Files whose addresses are not ours to control or not shipped as our content.
  *
- * `.github/CODEOWNERS` is exempt TEMPORARILY. It is the one file whose owner
- * must resolve to a real GitHub identity or every rule in it silently becomes a
- * no-op — a placeholder there would leave branch protection configured and
- * unenforced, which is worse than the address it replaced. The exemption is
- * removed in the same commit that moves the file to a team handle, at which
- * point it holds no address at all.
+ * `.github/CODEOWNERS` used to be exempt. It was the one file that had to name a
+ * resolvable GitHub identity — a placeholder there makes every rule a silent
+ * no-op, leaving branch protection configured and unenforced, which is worse
+ * than the address it replaced. It now names a TEAM
+ * (`@org/platform-maintainers`), which resolves without being an address, so
+ * the carve-out is gone and the file is scanned like everything else.
  */
 export const EXEMPT = [
   /(^|\/)package-lock\.json$/,   // third-party author metadata, not ours
   /(^|\/)node_modules\//,
   /^operator\//,                 // charter-exempt: operator-specific by design
-  /^\.github\/CODEOWNERS$/,      // temporary — see above
 ];
 
 const SCANNED = /^(infra|corekit|app|\.github)\//;

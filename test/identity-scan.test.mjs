@@ -95,12 +95,22 @@ test('third-party and operator-owned areas are out of scope', () => {
   assert.equal(inScope('app/src/lib/coordinates.ts'), true);
 });
 
-test('CODEOWNERS is exempt, and that is deliberate rather than accidental', () => {
-  // Its owner must resolve to a real GitHub identity or every rule in it becomes
-  // a silent no-op — branch protection configured and unenforced, which is worse
-  // than the address it would replace. The exemption goes when the file moves to
-  // a team handle and holds no address at all.
-  assert.equal(inScope('.github/CODEOWNERS'), false);
+test('CODEOWNERS is scanned — the exemption it needed is gone', () => {
+  // It was exempt while it named a person, because an owner has to resolve to a
+  // real GitHub identity: a placeholder makes every rule a silent no-op, leaving
+  // branch protection configured and unenforced — worse than the address it
+  // replaced. A team handle resolves without being an address, so the file now
+  // holds no identity at all and is covered like everything else.
+  assert.equal(inScope('.github/CODEOWNERS'), true);
+});
+
+test('…and a personal address reintroduced there would now be caught', () => {
+  const r = scanOperatorIdentity(
+    ['.github/CODEOWNERS'],
+    () => '* someone@realcompany.com\n',
+  );
+  assert.equal(r.ok, false);
+  assert.match(JSON.stringify(r), /someone@realcompany\.com/);
 });
 
 // ── It never passes vacuously ──────────────────────────────────────────

@@ -29,64 +29,64 @@
 # ---------------------------------------------------------------------------
 
 # Default owner
-* chill@tachin.ai
+* @Tachin-ai-Corporation/platform-maintainers
 
 # ---- Governance: canon, doctrine, and the rules that bind the rest ----
-/docs/PRODUCT_CANON.md      chill@tachin.ai
-/docs/BRAIN_CANON.md        chill@tachin.ai
-/docs/MODULE_CHARTER.md     chill@tachin.ai
-/docs/CULTURE_OF_WORK.md    chill@tachin.ai
-/docs/adr/                  chill@tachin.ai
-/CLAUDE.md                  chill@tachin.ai
-/MISSION_PLAN.md            chill@tachin.ai
+/docs/PRODUCT_CANON.md      @Tachin-ai-Corporation/platform-maintainers
+/docs/BRAIN_CANON.md        @Tachin-ai-Corporation/platform-maintainers
+/docs/MODULE_CHARTER.md     @Tachin-ai-Corporation/platform-maintainers
+/docs/CULTURE_OF_WORK.md    @Tachin-ai-Corporation/platform-maintainers
+/docs/adr/                  @Tachin-ai-Corporation/platform-maintainers
+/CLAUDE.md                  @Tachin-ai-Corporation/platform-maintainers
+/MISSION_PLAN.md            @Tachin-ai-Corporation/platform-maintainers
 
 # ---- CI, release, and repository configuration ----
-/.github/                   chill@tachin.ai
-/.gitattributes             chill@tachin.ai
-/.gitignore                 chill@tachin.ai
+/.github/                   @Tachin-ai-Corporation/platform-maintainers
+/.gitattributes             @Tachin-ai-Corporation/platform-maintainers
+/.gitignore                 @Tachin-ai-Corporation/platform-maintainers
 
 # ---- Contracts (C-7) ----
 # platform-defaults is Foundation mechanism and changes only by platform release.
 # fleet-policy is deployment-owned but still reviewed in the template repo.
 # contracts.json is GENERATED — review the sources, not the artifact.
-/infra/platform-defaults.json  chill@tachin.ai
-/infra/fleet-policy.json       chill@tachin.ai
-/infra/contracts.json          chill@tachin.ai
-/platform/contracts/           chill@tachin.ai
+/infra/platform-defaults.json  @Tachin-ai-Corporation/platform-maintainers
+/infra/fleet-policy.json       @Tachin-ai-Corporation/platform-maintainers
+/infra/contracts.json          @Tachin-ai-Corporation/platform-maintainers
+/platform/contracts/           @Tachin-ai-Corporation/platform-maintainers
 
 # ---- Installation and activation: what may become live, and how (C-35) ----
-/infra/install.sh           chill@tachin.ai
-/infra/bootstrap/           chill@tachin.ai
-/infra/deploy/              chill@tachin.ai
-/infra/manifests/           chill@tachin.ai
-/corekit/system/            chill@tachin.ai
-/corekit/fleet/             chill@tachin.ai
+/infra/install.sh           @Tachin-ai-Corporation/platform-maintainers
+/infra/bootstrap/           @Tachin-ai-Corporation/platform-maintainers
+/infra/deploy/              @Tachin-ai-Corporation/platform-maintainers
+/infra/manifests/           @Tachin-ai-Corporation/platform-maintainers
+/corekit/system/            @Tachin-ai-Corporation/platform-maintainers
+/corekit/fleet/             @Tachin-ai-Corporation/platform-maintainers
 
 # ---- Runtime kernel: the state machine and the organs' wiring ----
 # One rule for the whole of platform/ rather than a line per package. A rule
 # per package is a rule that has to be remembered when a package is added, and
 # a package added without one is unreviewed while the file still reads as
 # complete coverage. The broad path cannot develop that gap.
-/platform/                  chill@tachin.ai
-/corekit/brain/             chill@tachin.ai
-/corekit/config/            chill@tachin.ai
+/platform/                  @Tachin-ai-Corporation/platform-maintainers
+/corekit/brain/             @Tachin-ai-Corporation/platform-maintainers
+/corekit/config/            @Tachin-ai-Corporation/platform-maintainers
 
 # ---- Protected organ firmware (C-28 soft-lock, B-36) ----
-/brain/                     chill@tachin.ai
+/brain/                     @Tachin-ai-Corporation/platform-maintainers
 
 # ---- Control plane: authoritative commands and queries, and its auth ----
-/app/src/app/api/           chill@tachin.ai
-/app/src/lib/               chill@tachin.ai
-/app/src/middleware.ts      chill@tachin.ai
-/app/package.json           chill@tachin.ai
-/app/package-lock.json      chill@tachin.ai
-/app/Dockerfile             chill@tachin.ai
+/app/src/app/api/           @Tachin-ai-Corporation/platform-maintainers
+/app/src/lib/               @Tachin-ai-Corporation/platform-maintainers
+/app/src/middleware.ts      @Tachin-ai-Corporation/platform-maintainers
+/app/package.json           @Tachin-ai-Corporation/platform-maintainers
+/app/package-lock.json      @Tachin-ai-Corporation/platform-maintainers
+/app/Dockerfile             @Tachin-ai-Corporation/platform-maintainers
 
 # ---- Data-shape and infrastructure definitions ----
-/firestore.indexes.json     chill@tachin.ai
-/firebase.json              chill@tachin.ai
-/scripts/                   chill@tachin.ai
+/firestore.indexes.json     @Tachin-ai-Corporation/platform-maintainers
+/firebase.json              @Tachin-ai-Corporation/platform-maintainers
+/scripts/                   @Tachin-ai-Corporation/platform-maintainers
 
 # ---- Boundary and integrity tests: the gates themselves ----
-/test/                      chill@tachin.ai
-/tests/                     chill@tachin.ai
+/test/                      @Tachin-ai-Corporation/platform-maintainers
+/tests/                     @Tachin-ai-Corporation/platform-maintainers
