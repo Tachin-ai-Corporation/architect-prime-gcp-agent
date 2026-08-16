@@ -9,7 +9,7 @@
 //   LOCAL `.git/info/exclude` (never committed) rather than a tracked `.gitignore`.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { renderWorkspaceExcludes, resolveCommitAssets, motorWorkspaceSweepPlan } from '../corekit/lib/artifacts.mjs';
+import { renderWorkspaceExcludes, resolveCommitAssets, motorWorkspaceSweepPlan } from '../platform/persistence/artifacts.mjs';
 
 describe('renderWorkspaceExcludes', () => {
   it('emits the corekit block on an empty exclude file', () => {

@@ -11,7 +11,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   detectShape, summarizeResult, buildResultPacket, digestToolResults, packToolEvidence,
-} from '../corekit/lib/result-packet.mjs';
+} from '../platform/work/result-packet.mjs';
 
 // A read-only discovery motor result: negligible prose, the DATA lives in the tool outputs.
 const DISCOVERY = `I ran the requested discovery commands.

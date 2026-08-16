@@ -1,0 +1,67 @@
+#!/bin/bash
+# start-agent-mouth — Wrapper to launch agent-mouth.mjs natively on host
+# Reads chat-config.json for agent-specific values.
+
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+CONFIG="${CORE_DIR}/corekit/chat-config.json"
+PRIME_CFG="${CORE_DIR}/corekit/prime-config.json"
+
+# Auto-detect CHANNEL and identity from role config if not set via env
+if [ -f "$PRIME_CFG" ]; then
+  [ -z "$CHANNEL" ] && CHANNEL="dashboard"
+  [ -z "$GCP_PROJECT_ID" ] && GCP_PROJECT_ID="$(python3 -c "import json; print(json.load(open('$PRIME_CFG')).get('projectId',''))" 2>/dev/null)"
+  [ -z "$PRIME_ID" ] && PRIME_ID="$(python3 -c "import json; print(json.load(open('$PRIME_CFG')).get('primeId',''))" 2>/dev/null)"
+  [ -z "$AGENT_ID" ] && AGENT_ID="prime"
+elif [ -f "$CONFIG" ]; then
+  [ -z "$CHANNEL" ] && CHANNEL="gchat"
+else
+  [ -z "$CHANNEL" ] && CHANNEL="dashboard"  # safe default
+fi
+
+# Read GCP_PROJECT_ID from metadata if still missing
+if [ -z "$GCP_PROJECT_ID" ]; then
+  GCP_PROJECT_ID="$(curl -sf -H 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/project/project-id' 2>/dev/null)" || true
+fi
+
+# Read PRIME_ID from metadata if still missing (fleet agents need this)
+if [ -z "$PRIME_ID" ]; then
+  PRIME_ID="$(curl -sf -H 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/instance/attributes/prime_id' 2>/dev/null)" || true
+fi
+
+# Fallback: derive AGENT_ID from VM hostname (fleet-stan → stan)
+if [ -z "$AGENT_ID" ] || [ "$AGENT_ID" = "agent" ]; then
+  VM_NAME="$(hostname 2>/dev/null)"
+  if [[ "$VM_NAME" == fleet-* ]]; then
+    AGENT_ID="${VM_NAME#fleet-}"
+  fi
+fi
+
+# Read config values
+if [ -f "$CONFIG" ]; then
+  [ -z "$AGENT_USER_EMAIL" ] && AGENT_USER_EMAIL="$(python3 -c "import json; print(json.load(open('$CONFIG')).get('agentUserEmail',''))" 2>/dev/null)"
+  [ -z "$DWD_SIGNER_SA" ] && DWD_SIGNER_SA="$(python3 -c "import json; print(json.load(open('$CONFIG')).get('dwdSignerSa',''))" 2>/dev/null)"
+  [ -z "$AGENT_DISPLAY_NAME" ] && AGENT_DISPLAY_NAME="$(python3 -c "import json; print(json.load(open('$CONFIG')).get('agentDisplayName',''))" 2>/dev/null)"
+  [ -z "$AGENT_FIRST_NAME" ] && AGENT_FIRST_NAME="$(python3 -c "import json; print(json.load(open('$CONFIG')).get('agentFirstName',''))" 2>/dev/null)"
+fi
+
+# Mouth needs GOOGLE_CLOUD_LOCATION for Vertex AI classify call
+GOOGLE_CLOUD_LOCATION="${GOOGLE_CLOUD_LOCATION:-global}"
+
+# Kill any orphan agent-mouth processes on the host.
+pkill -f 'agent-mouth.mjs' 2>/dev/null || true
+sleep 1
+
+export CORE_DIR
+export CHANNEL="${CHANNEL:-gchat}"
+export GCP_PROJECT_ID
+export AGENT_ID="${AGENT_ID:-agent}"
+export AGENT_USER_EMAIL
+export AGENT_DISPLAY_NAME="${AGENT_DISPLAY_NAME:-}"
+export AGENT_FIRST_NAME="${AGENT_FIRST_NAME:-}"
+export DWD_SIGNER_SA
+export PRIME_ID
+export GOOGLE_CLOUD_LOCATION
+
+exec stdbuf -oL node "${CORE_DIR}/platform/runtime/agent-mouth.mjs"

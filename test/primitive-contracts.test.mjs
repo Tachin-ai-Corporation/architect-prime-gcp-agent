@@ -52,9 +52,17 @@ function walk(dir, out = []) {
 }
 
 let runtimeSource = '';
+/**
+ * Every line of deployed runtime source, concatenated.
+ *
+ * Both roots, because the runtime is split across them: platform/ holds the
+ * daemons and libraries, corekit/ still holds the gateway module, the system
+ * tools and the config. Reading only one would report a primitive as
+ * undocumented-and-unimplemented when it merely moved.
+ */
 function corekitSource() {
   if (!runtimeSource) {
-    runtimeSource = walk(join(REPO, 'corekit'))
+    runtimeSource = [...walk(join(REPO, 'platform')), ...walk(join(REPO, 'corekit'))]
       .map((f) => readFileSync(f, 'utf8'))
       .join('\n');
   }

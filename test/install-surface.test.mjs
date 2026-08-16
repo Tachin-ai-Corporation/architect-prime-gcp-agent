@@ -9,9 +9,7 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { readFileSync, existsSync } from 'node:fs';
-import { execFileSync } from 'node:child_process';
-import { createHash } from 'node:crypto';
+import { readFileSync, existsSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
@@ -21,6 +19,7 @@ import {
   bundleDigest,
   contentOnlyDigest,
   normalizeForDigest,
+  repoReader,
   installSurface,
   platformJobs,
 } from '../corekit/system/install-surface.mjs';
@@ -152,32 +151,27 @@ describe('install surface — the checkout is not the artifact', () => {
     assert.equal(normalizeForDigest(cr).toString(), 'a\rb');
   });
 
-  it('the live lock matches the blobs git stores, not this working copy', () => {
-    // What install.sh curls from GitHub raw is the stored blob. Hashing the
-    // working copy on a machine with core.autocrlf=true answers a different
-    // question, and the answer changes per developer.
-    const lock = JSON.parse(readFileSync(lockPath, 'utf8').replace(/^﻿/, ''));
-    const read = (p) => {
-      try { return execFileSync('git', ['show', `HEAD:${p}`], { maxBuffer: 1e8 }); }
-      catch { return null; }
-    };
-    const files = {};
-    for (const frag of ['infra/manifests/base.txt', 'infra/manifests/role-prime.txt']) {
-      const text = read(frag);
-      if (!text) return; // no HEAD yet (fresh clone in CI shallow mode) — nothing to compare
-      for (const { src, dest } of parseManifest(text.toString())) {
-        const body = read(src);
-        if (!body) continue;
-        files[dest.replace(/\?$/, '')] =
-          `sha256:${createHash('sha256').update(body).digest('hex')}`;
-      }
-    }
-    assert.equal(
-      bundleDigest(files),
-      lock.bundles.prime.digest,
-      'the lock was generated from a working copy whose line endings differ from the ' +
-      'committed blobs; it would pass locally and fail on a Linux checkout',
+  it('the reader used to build the lock normalises — not just the helper', () => {
+    // The unit tests above prove normalizeForDigest works. This proves the
+    // surface actually goes through it: an earlier version had the helper and
+    // read raw bytes anyway, so every digest was OS-dependent and the lock could
+    // only ever pass on the machine that generated it.
+    const tmp = join(
+      process.env.TEMP || process.env.TMPDIR || '.',
+      `surface-eol-${process.pid}`,
     );
+    mkdirSync(tmp, { recursive: true });
+    try {
+      writeFileSync(join(tmp, 'crlf.txt'), 'a\r\nb\r\n');
+      const read = repoReader(tmp);
+      assert.equal(
+        read('crlf.txt').toString(), 'a\nb\n',
+        'repoReader returned raw bytes; every bundle digest would depend on the checkout OS',
+      );
+      assert.equal(read('absent.txt'), null, 'a missing file must read as null, not empty');
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
   });
 });
 

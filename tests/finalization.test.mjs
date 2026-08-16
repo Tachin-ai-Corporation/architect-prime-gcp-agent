@@ -1,4 +1,4 @@
-// tests/finalization.test.mjs — pure-core tests for corekit/lib/finalization.mjs (B-19)
+// tests/finalization.test.mjs — pure-core tests for platform/work/finalization.mjs (B-19)
 //
 // The pathology being prevented, from mission w-1785610208442-flyer:
 //   CP1 tasks all report_pass (spec + copy written), the cerebellum CP1 milestone
@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import {
   isMilestoneVerdict, isWorkRow, isRealTaskFailure, isRealTaskSuccess,
   deliverableStandsDespiteMilestone,
-} from '../corekit/lib/finalization.mjs';
+} from '../platform/work/finalization.mjs';
 
 // Rows as checkpoint-executor.mjs actually pushes them.
 const taskOK      = { step: '1.1', agent: 'motor', success: true };

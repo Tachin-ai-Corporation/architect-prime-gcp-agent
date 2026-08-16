@@ -231,11 +231,11 @@ if [[ "$MODE" == "check" ]]; then
   # Two classes, reported distinctly so the label matches what actually happens:
   #   [ORPHAN] — under a reconciled dir (skills/, corekit/specialties/); step 4.6
   #             removes it on the next upgrade.
-  #   [EXTRA]  — under bin/, corekit/lib/, corekit/processes/; reported only.
+  #   [EXTRA]  — under bin/, platform/, corekit/processes/; reported only.
   #             bin/ is deliberately not swept (agents and skill-setup write there).
   extra_count=0
   orphan_count=0
-  for scan_dir in skills corekit/specialties bin corekit/lib corekit/processes; do
+  for scan_dir in skills corekit/specialties bin platform corekit/processes; do
     base="${INSTALL_ROOT}/${scan_dir}"
     run test -d "$base" 2>/dev/null || continue
     case "$scan_dir" in
@@ -426,12 +426,18 @@ done
 echo "Installed ${installed} files into ${INSTALL_ROOT}."
 
 # ---- 3b. Layout symlinks ----
-# bin/ daemon code is flattened into bin/ but imports ../../lib (= ${INSTALL_ROOT}/lib), while the
-# actual modules install to corekit/lib. Create the bridge symlink so those imports resolve.
-# Idempotent (ln -sfn) and self-healing. Older agents carry this symlink from an earlier install and
-# keep it across upgrades — which is why only FRESH deploys regressed without it (agent-brain
-# crash-loops with ERR_MODULE_NOT_FOUND on lib/*.mjs, e.g. lib/verdict.mjs from actions/synthesize).
-run ln -sfn "${INSTALL_ROOT}/corekit/lib" "${INSTALL_ROOT}/lib"
+# There are none, and that is the point.
+#
+# bin/ code used to import ../../lib while the modules installed to corekit/lib, bridged by a
+# symlink created here. It was invisible debt with a nasty shape: agents carried the link forward
+# across upgrades, so only FRESH deploys regressed when it was missing — agent-brain crash-looping
+# on ERR_MODULE_NOT_FOUND for lib/verdict.mjs, from a path no upgraded agent ever exercised.
+#
+# Every module now installs under platform/ at the same path it occupies in the repo, and every
+# importer names that path directly. Nothing resolves through a link, so nothing depends on one
+# having been created. Remove a stale one left by an older install; a dangling link would otherwise
+# shadow nothing but confuse anyone reading the tree.
+run rm -f "${INSTALL_ROOT}/lib"
 
 # ---- 4. Set permissions ----
 info "Setting ownership and permissions..."
@@ -486,8 +492,18 @@ if [[ -f "$STATE_FILE" && ${#file_hashes[@]} -gt 0 ]]; then
       pruned=$((pruned + 1))
     fi
   done < <(grep -o '"[^"]*":"sha256:[^"]*"' "$STATE_FILE" | sed 's/"\([^"]*\)":"sha256:.*/\1/')
-  # Sweep now-empty skill/action dirs left behind by pruned files.
-  run find "${INSTALL_ROOT}/skills" "${INSTALL_ROOT}/bin/actions" -mindepth 1 -type d -empty -delete 2>/dev/null || true
+  # Sweep dirs left empty by pruned files.
+  #
+  # bin/actions and corekit/lib|contracts are named because the platform/ move
+  # emptied all three at once: every module moved to the path it occupies in the
+  # repo, so the old locations prune to empty husks that read like real packages
+  # to anyone inspecting a VM. -type d -empty only removes a directory holding
+  # nothing, so a dir still carrying runtime state is never a candidate.
+  run find "${INSTALL_ROOT}/skills" "${INSTALL_ROOT}/bin/actions" \
+    "${INSTALL_ROOT}/corekit/lib" "${INSTALL_ROOT}/corekit/contracts" \
+    -mindepth 1 -type d -empty -delete 2>/dev/null || true
+  run rmdir "${INSTALL_ROOT}/corekit/lib" "${INSTALL_ROOT}/corekit/contracts" \
+    "${INSTALL_ROOT}/bin/actions" 2>/dev/null || true
   echo "Pruned ${pruned} decommissioned file(s)."
 fi
 

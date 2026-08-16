@@ -1,8 +1,8 @@
 // test/checkpoint-plan.test.mjs — Unit tests for invalid agent reject guard in checkpoint_plan action
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { handleCheckpointPlan } from '../corekit/daemon/actions/checkpoint_plan.mjs';
-import { extractCheckpoints } from '../corekit/lib/plan-utils.mjs';
+import { handleCheckpointPlan } from '../platform/runtime/actions/checkpoint_plan.mjs';
+import { extractCheckpoints } from '../platform/work/plan-utils.mjs';
 
 // Reusable mock dependencies builder
 function createMockDeps() {

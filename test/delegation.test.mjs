@@ -10,7 +10,7 @@ import {
   bumpRedelegation,
   redelegationKey,
   composeRedelegationEscalation,
-} from '../corekit/lib/delegation.mjs';
+} from '../platform/work/delegation.mjs';
 
 // ---- isDelegationMarker ----
 

@@ -30,19 +30,19 @@ import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { createRegistry } from '../lib/fleet-config/registry.mjs';
+import { createRegistry } from '../../platform/deployment/registry.mjs';
 import {
   importRole, importPersona, importSkill, importProcess, importResponsibility,
-} from '../lib/fleet-config/importer.mjs';
-import { compileAgentSpec } from '../lib/fleet-config/compiler.mjs';
-import { validateSet, VALIDATOR_NAMES } from '../lib/fleet-config/validators.mjs';
-import { diffSets, renderDiff, impactedAgents } from '../lib/fleet-config/diff.mjs';
-import { deriveMetrics, groupBySpec } from '../lib/fleet-config/metrics.mjs';
-import { evaluateRollout, renderDecision } from '../lib/fleet-config/rollout.mjs';
-import { runSuite, compareRuns, regressions, evaluationRecord, renderEvaluation } from '../lib/fleet-config/evals.mjs';
-import { DEFINITION_KINDS, sealRevision, assertValid, contentDigest } from '../contracts/index.mjs';
-import { PLATFORM_FINDING_SCHEMA } from '../contracts/schemas/lifecycle.mjs';
-import { pathFor } from '../contracts/ids.mjs';
+} from '../../platform/deployment/importer.mjs';
+import { compileAgentSpec } from '../../platform/deployment/compiler.mjs';
+import { validateSet, VALIDATOR_NAMES } from '../../platform/deployment/validators.mjs';
+import { diffSets, renderDiff, impactedAgents } from '../../platform/deployment/diff.mjs';
+import { deriveMetrics, groupBySpec } from '../../platform/deployment/metrics.mjs';
+import { evaluateRollout, renderDecision } from '../../platform/deployment/rollout.mjs';
+import { runSuite, compareRuns, regressions, evaluationRecord, renderEvaluation } from '../../platform/deployment/evals.mjs';
+import { DEFINITION_KINDS, sealRevision, assertValid, contentDigest } from '../../platform/contracts/index.mjs';
+import { PLATFORM_FINDING_SCHEMA } from '../../platform/contracts/schemas/lifecycle.mjs';
+import { pathFor } from '../../platform/contracts/ids.mjs';
 
 const CORE_DIR = process.env.CORE_DIR || '/opt/corekit';
 const note = (...a) => console.error('[fleet-config]', ...a);
@@ -93,7 +93,7 @@ function platformVersion() {
  * where the release does, against tenant credentials.
  *
  * `--from <path>` for an explicit checkout; `GCP_TOKEN` supplies credentials
- * when running off-VM (see corekit/lib/gce-auth.mjs).
+ * when running off-VM (see platform/security/gce-auth.mjs).
  */
 function catalogRoot(args = []) {
   const explicit = argValue(args, '--from');

@@ -22,7 +22,7 @@ import {
   WORK_SCHEMA, APPROVAL_SCHEMA, PLATFORM_FINDING_SCHEMA,
   EFFECTIVE_AGENT_SPEC_SCHEMA, FOUNDATION_RELEASE_SCHEMA, EVALUATION_SCHEMA,
   TERMINAL_STATUSES, ENVELOPE_STATUSES,
-} from '../corekit/contracts/index.mjs';
+} from '../platform/contracts/index.mjs';
 
 const AT = '2026-08-15T12:00:00Z';
 const SEAL = { actor: 'maintainer@example.com', now: AT };

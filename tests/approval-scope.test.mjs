@@ -8,7 +8,7 @@
 // same conversation) collapses that back to just the resolving agent's own, in-context gate.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { scopeApprovalsToAgent } from '../corekit/lib/approvals.mjs';
+import { scopeApprovalsToAgent } from '../platform/work/approvals.mjs';
 
 const TOM = 'web-agent-tom@tachin.ag';
 const SPACE_1HEALTH = 'spaces/AAQA2xzUYgM';

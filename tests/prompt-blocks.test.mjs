@@ -1,7 +1,7 @@
-// tests/prompt-blocks.test.mjs — pure-core tests for corekit/lib/prompt-blocks.mjs (B-19)
+// tests/prompt-blocks.test.mjs — pure-core tests for platform/context/prompt-blocks.mjs (B-19)
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { renderBlocks, toContentParts, computeBreakpointLayout, estimateTokens } from '../corekit/lib/prompt-blocks.mjs';
+import { renderBlocks, toContentParts, computeBreakpointLayout, estimateTokens } from '../platform/context/prompt-blocks.mjs';
 
 const blocks = [
   { label: 'BOOT-STABLE CONTEXT', text: '{"skill_index":[]}', tier: 'boot' },

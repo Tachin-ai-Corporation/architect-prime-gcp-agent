@@ -1,7 +1,7 @@
-// tests/thread-ledger.test.mjs — pure-core tests for corekit/lib/thread-ledger.mjs (B-19)
+// tests/thread-ledger.test.mjs — pure-core tests for platform/work/thread-ledger.mjs (B-19)
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { threadKeyFor, encodeResourceName } from '../corekit/lib/thread-ledger.mjs';
+import { threadKeyFor, encodeResourceName } from '../platform/work/thread-ledger.mjs';
 
 describe('encodeResourceName', () => {
   it('preserves case (lowercasing could merge distinct GChat threads)', () => {

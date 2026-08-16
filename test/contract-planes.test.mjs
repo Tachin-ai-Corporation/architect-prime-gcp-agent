@@ -19,7 +19,7 @@ import { execFileSync } from 'node:child_process';
 
 import {
   PLATFORM_PATHS, isPlatformPath, splitContracts, compileContracts, leafPaths,
-} from '../corekit/contracts/contract-planes.mjs';
+} from '../platform/contracts/contract-planes.mjs';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
 const readJson = (rel) => JSON.parse(readFileSync(join(REPO, rel), 'utf8'));

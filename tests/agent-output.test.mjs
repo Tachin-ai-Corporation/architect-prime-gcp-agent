@@ -7,7 +7,7 @@
 // recovered incident (annotate, let cerebellum arbitrate) from a real outcome failure.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { detectMotorFailure, isRecoveredToolError, toolLogShowsRetryRecovery, isDeliveryCriticalIntent } from '../corekit/lib/agent-output.mjs';
+import { detectMotorFailure, isRecoveredToolError, toolLogShowsRetryRecovery, isDeliveryCriticalIntent } from '../platform/work/agent-output.mjs';
 
 // A discovery that RECOVERED: a substantive clean answer, with the failure confined to one
 // tool-log line (a fragile count command), and a follow-up command that got the data anyway.

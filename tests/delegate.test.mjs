@@ -2,8 +2,8 @@
 // gates and the C-15 checkpoint wrap (M→C→T, never T directly under M).
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeTargetEmail } from '../corekit/lib/delegation.mjs';
-import { handleDelegate } from '../corekit/daemon/actions/delegate.mjs';
+import { normalizeTargetEmail } from '../platform/work/delegation.mjs';
+import { handleDelegate } from '../platform/runtime/actions/delegate.mjs';
 
 describe('normalizeTargetEmail', () => {
   it('strips a trailing sentence period (regex-extraction artifact)', () => {

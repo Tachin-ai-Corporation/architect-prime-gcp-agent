@@ -1470,7 +1470,7 @@ except (json.JSONDecodeError, ValueError):
         'summary': raw_value,
     }
 
-# C-28 layer purity (mirrors corekit/lib/project-context.mjs): a project holds the
+# C-28 layer purity (mirrors platform/control-plane/project-context.mjs): a project holds the
 # 40,000-ft working-area view — durable resource references only. Reject keys that name
 # history/state/particulars/process and values that are not a resource packet. See
 # docs/MODULE_CHARTER.md.

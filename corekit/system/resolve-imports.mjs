@@ -2,8 +2,8 @@
 //
 // The repo tree and the installed tree are not the same shape. `agent-brain.mjs`
 // lives at `corekit/daemon/` in the repo and at `bin/` on a VM, and its imports
-// are written for the VM: `../corekit/lib/gce-auth.mjs`. From the repo that
-// resolves to `corekit/corekit/lib/`, which has never existed. The daemons are
+// are written for the VM: `../platform/security/gce-auth.mjs`. From the repo
+// that resolves to `corekit/platform/…`, which does not exist. The daemons are
 // therefore unloadable from a checkout, and CI's syntax check cannot see it —
 // parsing a file does not resolve its imports.
 //
@@ -11,9 +11,9 @@
 // the graph the way node will: build the dest tree from the manifests, walk
 // every installed module, and follow each relative specifier from its dest.
 //
-// It also models the two things install.sh does to make that tree work — the
-// `lib -> corekit/lib` bridge symlink, and directory-index resolution — because
-// a checker that ignores them would report failures node does not have.
+// It models directory-index resolution, and symlinks, because a checker blind
+// to what install.sh does would report failures node does not have. The symlink
+// table is empty now — see LAYOUT_LINKS for why that is the interesting part.
 //
 // Not manifested: this inspects the repo, so it never ships to a VM.
 
@@ -22,15 +22,19 @@ import { join } from 'node:path';
 import { parseManifest, fragmentsFor, ROLE_FRAGMENTS } from './install-surface.mjs';
 
 /**
- * Symlinks install.sh creates after copying files.
+ * Symlinks install.sh creates after copying files. There are none.
  *
- * bin/ daemon code is flattened, but some modules import `../../lib/x.mjs`
- * while the modules install to `corekit/lib/`. install.sh bridges the two with
- * a symlink. Older agents carried it from an earlier install and kept it across
- * upgrades, so only FRESH deploys regressed when it went missing — the failure
- * mode this whole file exists to make visible.
+ * There used to be one: `lib -> corekit/lib`, bridging bin/ code that imported
+ * `../../lib/x.mjs` to modules installed at `corekit/lib/`. Agents carried it
+ * forward across upgrades, so only FRESH deploys regressed when it was missing
+ * — exactly the failure mode this file exists to make visible.
+ *
+ * Every module now installs under `platform/` at the path it occupies in the
+ * repo, and importers name that path. The mechanism is kept because resolution
+ * through a link is a real thing to model, and an empty table is a claim worth
+ * being able to break.
  */
-export const LAYOUT_LINKS = Object.freeze({ lib: 'corekit/lib' });
+export const LAYOUT_LINKS = Object.freeze({});
 
 /** Every relative import/export specifier in a module, with its line number. */
 export function relativeSpecifiers(source) {
@@ -107,14 +111,28 @@ export function brokenImports(repoRoot, tree) {
   const destSet = new Set(tree.keys());
   const broken = [];
   for (const [dest, src] of tree) {
-    if (!dest.endsWith('.mjs')) continue;
     const full = join(repoRoot, src);
     if (!existsSync(full)) continue;
-    for (const { spec, line } of relativeSpecifiers(readFileSync(full, 'utf8'))) {
+    let source;
+    try { source = readFileSync(full, 'utf8'); } catch { continue; }
+    // Extension is not what makes a file a module. `corekit/system/fleet-config`
+    // is an ES module with a shebang and no suffix; filtering on `.mjs` skipped
+    // it, and the platform/ move broke exactly those two files while this
+    // checker reported a clean tree.
+    if (!isModule(dest, source)) continue;
+    for (const { spec, line } of relativeSpecifiers(source)) {
       if (!resolveFrom(dest, spec, destSet)) broken.push({ dest, src, spec, line });
     }
   }
   return broken;
+}
+
+/** True when a file is JS that node will resolve imports for. */
+export function isModule(path, source) {
+  if (/\.(mjs|js|ts)$/.test(path)) return true;
+  if (/\.(sh|md|json|txt|service|timer|tmpl|png|ico|css)$/.test(path)) return false;
+  // No suffix: a node shebang, or an import/export at the start of a line.
+  return /^#!.*\bnode\b/.test(source) || /(?:^|\n)\s*(?:import|export)\s/.test(source);
 }
 
 /** The same question asked of the repo tree: can a checkout load this module? */
@@ -122,8 +140,11 @@ export function brokenInRepo(repoRoot, srcPaths) {
   const broken = [];
   for (const src of srcPaths) {
     const full = join(repoRoot, src);
-    if (!src.endsWith('.mjs') || !existsSync(full)) continue;
-    for (const { spec, line } of relativeSpecifiers(readFileSync(full, 'utf8'))) {
+    if (!existsSync(full)) continue;
+    let source;
+    try { source = readFileSync(full, 'utf8'); } catch { continue; }
+    if (!isModule(src, source)) continue;
+    for (const { spec, line } of relativeSpecifiers(source)) {
       const target = normalize(`${src.split('/').slice(0, -1).join('/')}/${spec}`);
       const hit = [target, `${target}/index.mjs`].some((c) => existsSync(join(repoRoot, c)));
       if (!hit) broken.push({ src, spec, line });

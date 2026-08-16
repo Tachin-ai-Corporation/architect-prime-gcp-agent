@@ -1,7 +1,7 @@
-// test/scheduler-cron.test.mjs — Unit tests for cron helpers in corekit/lib/scheduler.mjs
+// test/scheduler-cron.test.mjs — Unit tests for cron helpers in platform/work/scheduler.mjs
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { cronMatch, fieldMatches, cronNextFire } from '../corekit/lib/scheduler.mjs';
+import { cronMatch, fieldMatches, cronNextFire } from '../platform/work/scheduler.mjs';
 
 // ── fieldMatches ────────────────────────────────────────────────────
 

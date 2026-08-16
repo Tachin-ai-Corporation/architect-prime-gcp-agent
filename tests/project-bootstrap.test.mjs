@@ -5,7 +5,7 @@ import {
   projectBootstrapEnabled, missionOriginSpace, slugifyProjectId,
   findProjectBySpace, resolveTeam, membershipGap, buildProjectDoc,
   teammatesMissingResponsibilities,
-} from '../corekit/lib/project-bootstrap.mjs';
+} from '../platform/control-plane/project-bootstrap.mjs';
 
 const ROSTER = [
   { email: 'product-architect-agent-archie@tachin.ag', specialty: 'product-architect', status: 'online' },

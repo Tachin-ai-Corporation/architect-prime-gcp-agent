@@ -9,7 +9,7 @@ import {
   composeFallbackSummary,
   isEmptyDeliverable,
   stripArtifactFooter,
-} from '../corekit/lib/deliverable.mjs';
+} from '../platform/work/deliverable.mjs';
 
 const ARTIFACT_LINE = '\n\n📎 Artifacts: repo@main a1b2c3d4 — 5 file(s)';
 

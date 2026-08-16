@@ -52,7 +52,7 @@
 /infra/platform-defaults.json  chill@tachin.ai
 /infra/fleet-policy.json       chill@tachin.ai
 /infra/contracts.json          chill@tachin.ai
-/corekit/contracts/            chill@tachin.ai
+/platform/contracts/           chill@tachin.ai
 
 # ---- Installation and activation: what may become live, and how (C-35) ----
 /infra/install.sh           chill@tachin.ai
@@ -63,9 +63,12 @@
 /corekit/fleet/             chill@tachin.ai
 
 # ---- Runtime kernel: the state machine and the organs' wiring ----
-/corekit/daemon/            chill@tachin.ai
+# One rule for the whole of platform/ rather than a line per package. A rule
+# per package is a rule that has to be remembered when a package is added, and
+# a package added without one is unreviewed while the file still reads as
+# complete coverage. The broad path cannot develop that gap.
+/platform/                  chill@tachin.ai
 /corekit/brain/             chill@tachin.ai
-/corekit/lib/               chill@tachin.ai
 /corekit/config/            chill@tachin.ai
 
 # ---- Protected organ firmware (C-28 soft-lock, B-36) ----

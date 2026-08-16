@@ -1,0 +1,34 @@
+#!/bin/bash
+# start-agent-introspect — Launch agent introspection service natively on host
+
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+CONFIG="${CORE_DIR}/corekit/chat-config.json"
+PRIME_CFG="${CORE_DIR}/corekit/prime-config.json"
+
+# Auto-detect identity
+if [ -f "$PRIME_CFG" ]; then
+  [ -z "$GCP_PROJECT_ID" ] && GCP_PROJECT_ID="$(python3 -c "import json; print(json.load(open('$PRIME_CFG')).get('projectId',''))" 2>/dev/null)"
+  [ -z "$PRIME_ID" ] && PRIME_ID="$(python3 -c "import json; print(json.load(open('$PRIME_CFG')).get('primeId',''))" 2>/dev/null)"
+fi
+
+# Read GCP_PROJECT_ID from metadata if still missing
+if [ -z "$GCP_PROJECT_ID" ]; then
+  GCP_PROJECT_ID="$(curl -sf -H 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/project/project-id' 2>/dev/null)" || true
+fi
+
+# Fallback: read PRIME_ID from GCE instance metadata
+if [ -z "$PRIME_ID" ]; then
+  PRIME_ID="$(curl -sf -H 'Metadata-Flavor: Google' \
+    'http://metadata.google.internal/computeMetadata/v1/instance/attributes/prime_id' 2>/dev/null)" || true
+fi
+
+# Kill any orphan introspect processes on the host
+pkill -f 'agent-introspect.mjs' 2>/dev/null || true
+sleep 1
+
+export CORE_DIR
+export GCP_PROJECT_ID
+export PRIME_ID="${PRIME_ID:-}"
+
+exec stdbuf -oL node "${CORE_DIR}/platform/runtime/agent-introspect.mjs"

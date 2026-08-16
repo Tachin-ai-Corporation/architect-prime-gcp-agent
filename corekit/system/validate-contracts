@@ -111,7 +111,7 @@ if [[ "$MODE" == "repo" && -n "$REPO_ROOT" ]]; then
   fi
 
   # ---- Check 4: agent-ears.mjs model route ----
-  EARS_SCRIPT="corekit/daemon/agent-ears.mjs"
+  EARS_SCRIPT="platform/runtime/agent-ears.mjs"
   if [[ -f "$EARS_SCRIPT" ]]; then
     if grep -q "'brain/cortex'" "$EARS_SCRIPT"; then
       pass "agent-ears.mjs route = brain/cortex"
@@ -1033,7 +1033,7 @@ if [[ "$MODE" == "runtime" ]]; then
   fi
 
   # ---- Check 4: agent-ears.mjs route ----
-  EARS_SCRIPT="${CORE_DIR}/bin/agent-ears.mjs"
+  EARS_SCRIPT="${CORE_DIR}/platform/runtime/agent-ears.mjs"
   if [[ -f "$EARS_SCRIPT" ]]; then
     if grep -q "'brain/cortex'" "$EARS_SCRIPT"; then
       pass "agent-ears.mjs route = brain/cortex"

@@ -16,9 +16,9 @@ import { execSync } from 'node:child_process';
 import { join, dirname } from 'node:path';
 import { tmpdir } from 'node:os';
 
-import { createRegistry } from '../corekit/lib/fleet-config/registry.mjs';
-import { sealRevision } from '../corekit/contracts/index.mjs';
-import { pathFor } from '../corekit/contracts/ids.mjs';
+import { createRegistry } from '../platform/deployment/registry.mjs';
+import { sealRevision } from '../platform/contracts/index.mjs';
+import { pathFor } from '../platform/contracts/ids.mjs';
 
 // ── In-memory doubles ──────────────────────────────────────────────────
 

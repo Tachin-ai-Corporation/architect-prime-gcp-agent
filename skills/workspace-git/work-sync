@@ -11,7 +11,7 @@
 set -euo pipefail
 
 CORE_DIR="${CORE_DIR:-/opt/corekit}"
-GIT_STORE="${CORE_DIR}/corekit/lib/git-store.mjs"
+GIT_STORE="${CORE_DIR}/platform/persistence/git-store.mjs"
 die() { echo "[work-sync] [ERROR] $*" >&2; exit 1; }
 log() { echo "[work-sync] $*" >&2; }
 

@@ -3,9 +3,9 @@
 // Self-contained test script. No test runner required.
 // Run: node tests/cerebellum-verdict.test.mjs
 
-import { extractVerdict, extractFailRecommendation } from '../corekit/lib/verdict.mjs';
-import { detectMotorFailure } from '../corekit/lib/agent-output.mjs';
-import { extractCheckpoints } from '../corekit/lib/plan-utils.mjs';
+import { extractVerdict, extractFailRecommendation } from '../platform/work/verdict.mjs';
+import { detectMotorFailure } from '../platform/work/agent-output.mjs';
+import { extractCheckpoints } from '../platform/work/plan-utils.mjs';
 
 function assert(condition, message) {
   if (!condition) throw new Error(message);

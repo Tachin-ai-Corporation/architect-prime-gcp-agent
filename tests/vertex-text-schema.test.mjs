@@ -10,7 +10,7 @@
 // "action" is just the echoed mode marker ("action":"classify").
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { createVertexText } from '../corekit/lib/vertex-text.mjs';
+import { createVertexText } from '../platform/providers/vertex-text.mjs';
 
 const vtx = createVertexText({ projectId: 'test', location: 'us-central1', model: 'test-model' });
 // Bounded config for cases that intentionally fall through to the network

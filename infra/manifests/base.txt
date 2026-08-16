@@ -26,15 +26,15 @@ corekit/chat/dwd-token bin/dwd-token
 corekit/chat/chat-read bin/chat-read
 
 # Agent Ears (deterministic input) + Agent Mouth (output classification + delivery)
-corekit/daemon/agent-ears.mjs bin/agent-ears.mjs
-corekit/daemon/agent-mouth.mjs bin/agent-mouth.mjs
-corekit/daemon/mouth-classify-prompt.md bin/mouth-classify-prompt.md
-corekit/daemon/mouth-status-prompts.md bin/mouth-status-prompts.md
-corekit/daemon/ears-preprocess-prompt.md bin/ears-preprocess-prompt.md
-corekit/daemon/start-agent-ears bin/start-agent-ears
-corekit/daemon/start-agent-mouth bin/start-agent-mouth
-corekit/daemon/ears-health-check bin/ears-health-check
-corekit/daemon/mouth-health-check bin/mouth-health-check
+platform/runtime/agent-ears.mjs platform/runtime/agent-ears.mjs
+platform/runtime/agent-mouth.mjs platform/runtime/agent-mouth.mjs
+platform/runtime/mouth-classify-prompt.md bin/mouth-classify-prompt.md
+platform/runtime/mouth-status-prompts.md bin/mouth-status-prompts.md
+platform/runtime/ears-preprocess-prompt.md bin/ears-preprocess-prompt.md
+platform/runtime/start-agent-ears bin/start-agent-ears
+platform/runtime/start-agent-mouth bin/start-agent-mouth
+platform/runtime/ears-health-check bin/ears-health-check
+platform/runtime/mouth-health-check bin/mouth-health-check
 
 # Brain tools
 skills/web-search/web-search bin/web-search
@@ -104,106 +104,106 @@ corekit/config/agent-types.json corekit/agent-types.json
 corekit/config/chat-config.json.tmpl corekit/chat-config.json.tmpl
 
 # Ears/Mouth systemd units
-corekit/daemon/agent-ears.service corekit/agent-ears.service
-corekit/daemon/agent-mouth.service corekit/agent-mouth.service
+platform/runtime/agent-ears.service corekit/agent-ears.service
+platform/runtime/agent-mouth.service corekit/agent-mouth.service
 
 # Shared libraries (used by all daemons)
-corekit/lib/conversation-context.mjs corekit/lib/conversation-context.mjs
-corekit/lib/artifact-share.mjs corekit/lib/artifact-share.mjs
-corekit/lib/gce-auth.mjs corekit/lib/gce-auth.mjs
-corekit/lib/dwd-auth.mjs corekit/lib/dwd-auth.mjs
-corekit/lib/firestore.mjs corekit/lib/firestore.mjs
-corekit/lib/entity-id.mjs corekit/lib/entity-id.mjs
+platform/context/conversation-context.mjs platform/context/conversation-context.mjs
+platform/persistence/artifact-share.mjs platform/persistence/artifact-share.mjs
+platform/security/gce-auth.mjs platform/security/gce-auth.mjs
+platform/security/dwd-auth.mjs platform/security/dwd-auth.mjs
+platform/persistence/firestore.mjs platform/persistence/firestore.mjs
+platform/persistence/entity-id.mjs platform/persistence/entity-id.mjs
 
 # Contracts package (Foundation) — one executable definition of every persisted
 # shape, plus content addressing. The Fleet Definition registry and the compiler
 # both read it at runtime, so it ships to every VM. Pure: no network, no fs.
-corekit/contracts/index.mjs corekit/contracts/index.mjs
-corekit/contracts/validate.mjs corekit/contracts/validate.mjs
-corekit/contracts/digest.mjs corekit/contracts/digest.mjs
-corekit/contracts/ids.mjs corekit/contracts/ids.mjs
-corekit/contracts/contract-planes.mjs corekit/contracts/contract-planes.mjs
-corekit/contracts/schemas/definition.mjs corekit/contracts/schemas/definition.mjs
-corekit/contracts/schemas/lifecycle.mjs corekit/contracts/schemas/lifecycle.mjs
-corekit/contracts/schemas/runtime.mjs corekit/contracts/schemas/runtime.mjs
-corekit/contracts/schemas/spec.mjs corekit/contracts/schemas/spec.mjs
-corekit/contracts/work-transitions.mjs corekit/contracts/work-transitions.mjs
+platform/contracts/index.mjs platform/contracts/index.mjs
+platform/contracts/validate.mjs platform/contracts/validate.mjs
+platform/contracts/digest.mjs platform/contracts/digest.mjs
+platform/contracts/ids.mjs platform/contracts/ids.mjs
+platform/contracts/contract-planes.mjs platform/contracts/contract-planes.mjs
+platform/contracts/schemas/definition.mjs platform/contracts/schemas/definition.mjs
+platform/contracts/schemas/lifecycle.mjs platform/contracts/schemas/lifecycle.mjs
+platform/contracts/schemas/runtime.mjs platform/contracts/schemas/runtime.mjs
+platform/contracts/schemas/spec.mjs platform/contracts/schemas/spec.mjs
+platform/contracts/work-transitions.mjs platform/contracts/work-transitions.mjs
 
 # Fleet Definition plane (P2). The registry and compiler ship to every VM because
 # content-sync reads and compiles a definition set locally; authoring goes through
 # the Prime-only fleet-config CLI (role-prime.txt).
-corekit/lib/fleet-config/registry.mjs corekit/lib/fleet-config/registry.mjs
-corekit/lib/fleet-config/compiler.mjs corekit/lib/fleet-config/compiler.mjs
-corekit/lib/fleet-config/validators.mjs corekit/lib/fleet-config/validators.mjs
-corekit/lib/fleet-config/importer.mjs corekit/lib/fleet-config/importer.mjs
-corekit/lib/fleet-config/packages.mjs corekit/lib/fleet-config/packages.mjs
-corekit/lib/fleet-config/diff.mjs corekit/lib/fleet-config/diff.mjs
-corekit/lib/fleet-config/content-sync.mjs corekit/lib/fleet-config/content-sync.mjs
-corekit/lib/fleet-config/metrics.mjs corekit/lib/fleet-config/metrics.mjs
-corekit/lib/fleet-config/rollout.mjs corekit/lib/fleet-config/rollout.mjs
+platform/deployment/registry.mjs platform/deployment/registry.mjs
+platform/deployment/compiler.mjs platform/deployment/compiler.mjs
+platform/deployment/validators.mjs platform/deployment/validators.mjs
+platform/deployment/importer.mjs platform/deployment/importer.mjs
+platform/deployment/packages.mjs platform/deployment/packages.mjs
+platform/deployment/diff.mjs platform/deployment/diff.mjs
+platform/deployment/content-sync.mjs platform/deployment/content-sync.mjs
+platform/deployment/metrics.mjs platform/deployment/metrics.mjs
+platform/deployment/rollout.mjs platform/deployment/rollout.mjs
 # Deterministic structural evals — grade a candidate spec BEFORE any agent runs
 # on it. `observe` is honest and late; this asks the same question of the
 # artifact. Suites are seed content a deployment then owns.
-corekit/lib/fleet-config/evals.mjs corekit/lib/fleet-config/evals.mjs
+platform/deployment/evals.mjs platform/deployment/evals.mjs
 corekit/config/eval-suites/agent-core.json corekit/config/eval-suites/agent-core.json
 
 # Content sync — applies an assigned Fleet release on its own timer, independent
 # of any platform upgrade (C-36). Replaces assemble-persona's in-place SOUL
 # appends and the custom-skill block that used to ride upgrade-corekit.
-corekit/daemon/agent-content-sync.mjs bin/agent-content-sync.mjs
+platform/runtime/agent-content-sync.mjs platform/runtime/agent-content-sync.mjs
 corekit/config/agent-content-sync.service corekit/agent-content-sync.service
 corekit/config/agent-content-sync.timer corekit/agent-content-sync.timer
-corekit/lib/json-repair.mjs corekit/lib/json-repair.mjs
-corekit/lib/vertex-text.mjs corekit/lib/vertex-text.mjs
-corekit/lib/projects.mjs corekit/lib/projects.mjs
-corekit/lib/project-context.mjs corekit/lib/project-context.mjs
-corekit/lib/process-registry.mjs corekit/lib/process-registry.mjs
-corekit/lib/verdict.mjs corekit/lib/verdict.mjs
-corekit/lib/scheduler.mjs corekit/lib/scheduler.mjs
-corekit/lib/approvals.mjs corekit/lib/approvals.mjs
-corekit/lib/archival.mjs corekit/lib/archival.mjs
-corekit/lib/artifacts.mjs corekit/lib/artifacts.mjs
-corekit/lib/notifications.mjs corekit/lib/notifications.mjs
-corekit/lib/history.mjs corekit/lib/history.mjs
-corekit/lib/delegation.mjs corekit/lib/delegation.mjs
-corekit/lib/channel.mjs corekit/lib/channel.mjs
-corekit/lib/deliverable.mjs corekit/lib/deliverable.mjs
-corekit/lib/checkpoint-executor.mjs corekit/lib/checkpoint-executor.mjs
-corekit/lib/finalization.mjs corekit/lib/finalization.mjs
-corekit/lib/compaction.mjs corekit/lib/compaction.mjs
-corekit/lib/result-packet.mjs corekit/lib/result-packet.mjs
-corekit/lib/blackboard.mjs corekit/lib/blackboard.mjs
-corekit/lib/resource-ledger.mjs corekit/lib/resource-ledger.mjs
-corekit/lib/checkpoint-spine.mjs corekit/lib/checkpoint-spine.mjs
-corekit/lib/context-maintenance.mjs corekit/lib/context-maintenance.mjs
-corekit/lib/baton.mjs corekit/lib/baton.mjs
-corekit/lib/project-bootstrap.mjs corekit/lib/project-bootstrap.mjs
-corekit/lib/deploy-target.mjs corekit/lib/deploy-target.mjs
-corekit/lib/plan-lint.mjs corekit/lib/plan-lint.mjs
-corekit/lib/prompt-blocks.mjs corekit/lib/prompt-blocks.mjs
-corekit/lib/thread-ledger.mjs corekit/lib/thread-ledger.mjs
-corekit/lib/to-str.mjs corekit/lib/to-str.mjs
-corekit/lib/agent-output.mjs corekit/lib/agent-output.mjs
-corekit/lib/plan-utils.mjs corekit/lib/plan-utils.mjs
-corekit/lib/work-recall.mjs corekit/lib/work-recall.mjs
-corekit/lib/git-store.mjs corekit/lib/git-store.mjs
-corekit/lib/mission-record.mjs corekit/lib/mission-record.mjs
+platform/providers/json-repair.mjs platform/providers/json-repair.mjs
+platform/providers/vertex-text.mjs platform/providers/vertex-text.mjs
+platform/control-plane/projects.mjs platform/control-plane/projects.mjs
+platform/control-plane/project-context.mjs platform/control-plane/project-context.mjs
+platform/work/process-registry.mjs platform/work/process-registry.mjs
+platform/work/verdict.mjs platform/work/verdict.mjs
+platform/work/scheduler.mjs platform/work/scheduler.mjs
+platform/work/approvals.mjs platform/work/approvals.mjs
+platform/persistence/archival.mjs platform/persistence/archival.mjs
+platform/persistence/artifacts.mjs platform/persistence/artifacts.mjs
+platform/providers/notifications.mjs platform/providers/notifications.mjs
+platform/context/history.mjs platform/context/history.mjs
+platform/work/delegation.mjs platform/work/delegation.mjs
+platform/providers/channel.mjs platform/providers/channel.mjs
+platform/work/deliverable.mjs platform/work/deliverable.mjs
+platform/work/checkpoint-executor.mjs platform/work/checkpoint-executor.mjs
+platform/work/finalization.mjs platform/work/finalization.mjs
+platform/context/compaction.mjs platform/context/compaction.mjs
+platform/work/result-packet.mjs platform/work/result-packet.mjs
+platform/work/blackboard.mjs platform/work/blackboard.mjs
+platform/work/resource-ledger.mjs platform/work/resource-ledger.mjs
+platform/work/checkpoint-spine.mjs platform/work/checkpoint-spine.mjs
+platform/context/context-maintenance.mjs platform/context/context-maintenance.mjs
+platform/work/baton.mjs platform/work/baton.mjs
+platform/control-plane/project-bootstrap.mjs platform/control-plane/project-bootstrap.mjs
+platform/control-plane/deploy-target.mjs platform/control-plane/deploy-target.mjs
+platform/work/plan-lint.mjs platform/work/plan-lint.mjs
+platform/context/prompt-blocks.mjs platform/context/prompt-blocks.mjs
+platform/work/thread-ledger.mjs platform/work/thread-ledger.mjs
+platform/providers/to-str.mjs platform/providers/to-str.mjs
+platform/work/agent-output.mjs platform/work/agent-output.mjs
+platform/work/plan-utils.mjs platform/work/plan-utils.mjs
+platform/work/work-recall.mjs platform/work/work-recall.mjs
+platform/persistence/git-store.mjs platform/persistence/git-store.mjs
+platform/work/mission-record.mjs platform/work/mission-record.mjs
 
 # Brain v3 â€” orchestration service
-corekit/daemon/agent-brain.mjs bin/agent-brain.mjs
-corekit/daemon/actions/blocked.mjs bin/actions/blocked.mjs
-corekit/daemon/actions/checkpoint_plan.mjs bin/actions/checkpoint_plan.mjs
-corekit/daemon/actions/delegate.mjs bin/actions/delegate.mjs
-corekit/daemon/actions/project_bootstrap.mjs bin/actions/project_bootstrap.mjs
-corekit/daemon/actions/index.mjs bin/actions/index.mjs
-corekit/daemon/actions/needs_input.mjs bin/actions/needs_input.mjs
-corekit/daemon/actions/status_update.mjs bin/actions/status_update.mjs
-corekit/daemon/actions/synthesize.mjs bin/actions/synthesize.mjs
-corekit/daemon/actions/synthesize_with_failure.mjs bin/actions/synthesize_with_failure.mjs
-corekit/daemon/actions/trigger_responsibility.mjs bin/actions/trigger_responsibility.mjs
-corekit/daemon/actions/wait.mjs bin/actions/wait.mjs
-corekit/daemon/agent-brain.service corekit/agent-brain.service
-corekit/daemon/start-agent-brain bin/start-agent-brain
+platform/runtime/agent-brain.mjs platform/runtime/agent-brain.mjs
+platform/runtime/actions/blocked.mjs platform/runtime/actions/blocked.mjs
+platform/runtime/actions/checkpoint_plan.mjs platform/runtime/actions/checkpoint_plan.mjs
+platform/runtime/actions/delegate.mjs platform/runtime/actions/delegate.mjs
+platform/runtime/actions/project_bootstrap.mjs platform/runtime/actions/project_bootstrap.mjs
+platform/runtime/actions/index.mjs platform/runtime/actions/index.mjs
+platform/runtime/actions/needs_input.mjs platform/runtime/actions/needs_input.mjs
+platform/runtime/actions/status_update.mjs platform/runtime/actions/status_update.mjs
+platform/runtime/actions/synthesize.mjs platform/runtime/actions/synthesize.mjs
+platform/runtime/actions/synthesize_with_failure.mjs platform/runtime/actions/synthesize_with_failure.mjs
+platform/runtime/actions/trigger_responsibility.mjs platform/runtime/actions/trigger_responsibility.mjs
+platform/runtime/actions/wait.mjs platform/runtime/actions/wait.mjs
+platform/runtime/agent-brain.service corekit/agent-brain.service
+platform/runtime/start-agent-brain bin/start-agent-brain
 corekit/config/agent-registry.json corekit/agent-registry.json
 corekit/config/responsibilities.json corekit/responsibilities.json
 
@@ -220,9 +220,9 @@ corekit/config/processes/p-memory-consolidate.json corekit/processes/p-memory-co
 
 
 # Introspect â€” filesystem introspection service (Firestore bus)
-corekit/daemon/agent-introspect.mjs bin/agent-introspect.mjs
-corekit/daemon/agent-introspect.service corekit/agent-introspect.service
-corekit/daemon/start-agent-introspect bin/start-agent-introspect
+platform/runtime/agent-introspect.mjs platform/runtime/agent-introspect.mjs
+platform/runtime/agent-introspect.service corekit/agent-introspect.service
+platform/runtime/start-agent-introspect bin/start-agent-introspect
 
 # Agent runtime skeleton (seed files â€” no-clobber on upgrade)
 brain/agents/main/agent/auth-profiles.json agents/main/agent/auth-profiles.json?

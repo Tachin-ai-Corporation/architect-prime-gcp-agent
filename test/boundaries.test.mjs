@@ -57,7 +57,7 @@ export function importsIn(src) {
  *
  * Resolved against the importing file rather than pattern-matched on the
  * specifier. The first version of this counted `../` segments and so waved
- * through `../lib/firestore.mjs` from `corekit/contracts/` — precisely the
+ * through `../persistence/firestore.mjs` from `platform/contracts/` — precisely the
  * escape it exists to catch. Depth is not containment.
  */
 export function escapesPackage(fileRel, spec, packageRoot) {
@@ -71,7 +71,16 @@ export function escapesPackage(fileRel, spec, packageRoot) {
 const reachesCatalog = (spec) => /^(?:\.\.\/)+(brain|specialties|skills)\//.test(spec);
 
 const reachesDashboard = (spec) => /(^|\/)app\/src\//.test(spec);
-const reachesRuntime = (spec) => /corekit\//.test(spec);
+
+/**
+ * True when a specifier reaches into deployed runtime code.
+ *
+ * Matches both trees on purpose. `platform/` is where runtime code lives now;
+ * `corekit/` is where it lived, and a stray import of a path that no longer
+ * exists should fail as a boundary violation rather than as a resolution error
+ * whose message points at the wrong problem.
+ */
+const reachesRuntime = (spec) => /(^|\/)(platform|corekit)\//.test(spec);
 
 /** Lines that look like a direct write to a Fleet Definition collection. */
 export function directDefinitionWrites(src, collections) {
@@ -103,8 +112,8 @@ export function codeownersRules(text) {
 const DEFINITION_COLLECTIONS = ['fleet_definitions', 'fleet_changes', 'fleet_releases', 'fleet_assignments'];
 
 const FOUNDATION_PATHS = [
-  '/corekit/contracts/', '/corekit/daemon/', '/corekit/brain/', '/corekit/lib/',
-  '/corekit/system/', '/corekit/config/', '/infra/manifests/', '/infra/bootstrap/',
+  '/platform/', '/corekit/brain/', '/corekit/system/', '/corekit/config/',
+  '/infra/manifests/', '/infra/bootstrap/',
   '/infra/install.sh', '/brain/', '/app/src/app/api/', '/app/src/lib/',
   '/test/', '/tests/', '/.github/',
 ];
@@ -115,18 +124,18 @@ test('the contracts package depends on nothing but itself and node', () => {
   // It is the bottom of the stack: schemas, digests, the id grammar. If it can
   // import a library, the library can import it back, and "the shared
   // definition of a contract" becomes a cycle with a runtime in it.
-  for (const file of walk('corekit/contracts', ['.mjs'])) {
+  for (const file of walk('platform/contracts', ['.mjs'])) {
     for (const spec of importsIn(read(file))) {
-      assert.ok(!escapesPackage(file, spec, 'corekit/contracts'),
+      assert.ok(!escapesPackage(file, spec, 'platform/contracts'),
         `${file} imports '${spec}' — the contracts package must not reach outside itself`);
     }
   }
 });
 
 test('…and that check fires on a package that reaches out', () => {
-  const P = 'corekit/contracts';
-  const inPkg = 'corekit/contracts/index.mjs';
-  const inSchemas = 'corekit/contracts/schemas/definition.mjs';
+  const P = 'platform/contracts';
+  const inPkg = 'platform/contracts/index.mjs';
+  const inSchemas = 'platform/contracts/schemas/definition.mjs';
 
   assert.equal(escapesPackage(inPkg, '../lib/firestore.mjs', P), true, 'one level out is still out');
   assert.equal(escapesPackage(inPkg, '../../app/src/lib/entity.ts', P), true);
@@ -171,7 +180,7 @@ test('the runtime and the dashboard do not reach into each other (C-10)', () => 
 
 test('…and those checks fire on a reach-in', () => {
   assert.equal(reachesDashboard('../../app/src/lib/entity.ts'), true);
-  assert.equal(reachesRuntime('../../corekit/lib/fleet-config/registry.mjs'), true);
+  assert.equal(reachesRuntime('../../platform/deployment/registry.mjs'), true);
   assert.equal(reachesDashboard('./components/Card'), false);
   assert.equal(reachesRuntime('@/lib/entity'), false);
 });

@@ -1,4 +1,4 @@
-// tests/plan-lint.test.mjs — pure-core tests for corekit/lib/plan-lint.mjs (B-19)
+// tests/plan-lint.test.mjs — pure-core tests for platform/work/plan-lint.mjs (B-19)
 //
 // The pathology being measured, from the comp-addendum mission:
 //   CP1 Task 1  "Locate the master fixed comp addendum template within the … folder."
@@ -12,7 +12,7 @@
 // wrongly split in two. This file pins the detector for that shape.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { findBackReferences, matchBackReference, formatBackReference } from '../corekit/lib/plan-lint.mjs';
+import { findBackReferences, matchBackReference, formatBackReference } from '../platform/work/plan-lint.mjs';
 
 // The real two tasks, verbatim in shape (ids are placeholders — never a real Drive id).
 const REAL_PLAN = [

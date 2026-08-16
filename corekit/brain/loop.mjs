@@ -5,7 +5,7 @@
 
 import { getGoogleClient, getAnthropicClient, parseModel } from './router.mjs';
 import { toGoogleSchema } from './tools.mjs';
-import { computeBreakpointLayout, estimateTokens } from '../lib/prompt-blocks.mjs';
+import { computeBreakpointLayout, estimateTokens } from '../../platform/context/prompt-blocks.mjs';
 import { createHash } from 'node:crypto';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';

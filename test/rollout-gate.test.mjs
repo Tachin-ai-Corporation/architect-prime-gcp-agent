@@ -14,8 +14,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { deriveMetrics, groupBySpec, compareMetrics, hasEnoughEvidence } from '../corekit/lib/fleet-config/metrics.mjs';
-import { evaluateRollout, renderDecision, nextStage, DEFAULT_THRESHOLDS } from '../corekit/lib/fleet-config/rollout.mjs';
+import { deriveMetrics, groupBySpec, compareMetrics, hasEnoughEvidence } from '../platform/deployment/metrics.mjs';
+import { evaluateRollout, renderDecision, nextStage, DEFAULT_THRESHOLDS } from '../platform/deployment/rollout.mjs';
 
 const AT = '2026-08-15T12:00:00Z';
 

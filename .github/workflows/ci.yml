@@ -229,7 +229,7 @@ jobs:
             echo ""
             echo '    ```'
             echo '    Scope:'
-            echo '    corekit/lib/**'
+            echo '    platform/work/**'
             echo '    test/**'
             echo '    ```'
             exit 1

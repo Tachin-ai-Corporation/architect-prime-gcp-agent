@@ -1,11 +1,11 @@
-// test/json-repair.test.mjs — Unit tests for corekit/lib/json-repair.mjs
+// test/json-repair.test.mjs — Unit tests for platform/providers/json-repair.mjs
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   parseJsonResponse,
   repairTruncatedJson,
   extractBalancedJson,
-} from '../corekit/lib/json-repair.mjs';
+} from '../platform/providers/json-repair.mjs';
 
 // ── parseJsonResponse ───────────────────────────────────────────────
 

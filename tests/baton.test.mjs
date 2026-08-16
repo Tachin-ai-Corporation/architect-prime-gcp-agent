@@ -5,7 +5,7 @@ import {
   sameAgent, effectiveAssignee, missionOriginator, checkpointAssignee,
   decideHop, myRunEnd, handoffPatch, isBatonStale, reclaimPatch, handoffModelEnabled,
   deriveHandoffCheckpoints, resolveAssignee,
-} from '../corekit/lib/baton.mjs';
+} from '../platform/work/baton.mjs';
 
 // A project team roster shaped like projects/{id}.team (tachin-web).
 const ROSTER = [

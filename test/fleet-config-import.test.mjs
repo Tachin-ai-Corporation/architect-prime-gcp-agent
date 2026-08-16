@@ -14,14 +14,14 @@ import { readFileSync, readdirSync, existsSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { sealRevision, SKILL_SCHEMA, ROLE_SCHEMA, validate } from '../corekit/contracts/index.mjs';
+import { sealRevision, SKILL_SCHEMA, ROLE_SCHEMA, validate } from '../platform/contracts/index.mjs';
 import {
   importRole, importPersona, importSkill, importProcess, importPresentation, extractRecovery,
-} from '../corekit/lib/fleet-config/importer.mjs';
-import { capabilitiesOf, capabilityFor, resolveSkill, parseManifest } from '../corekit/lib/fleet-config/packages.mjs';
-import { compileAgentSpec, capabilityClosure, composePersona, resolveEgress } from '../corekit/lib/fleet-config/compiler.mjs';
-import { validateSet, compareVersions, VALIDATOR_NAMES } from '../corekit/lib/fleet-config/validators.mjs';
-import { diffSets, diffRevision, renderDiff, impactedAgents } from '../corekit/lib/fleet-config/diff.mjs';
+} from '../platform/deployment/importer.mjs';
+import { capabilitiesOf, capabilityFor, resolveSkill, parseManifest } from '../platform/deployment/packages.mjs';
+import { compileAgentSpec, capabilityClosure, composePersona, resolveEgress } from '../platform/deployment/compiler.mjs';
+import { validateSet, compareVersions, VALIDATOR_NAMES } from '../platform/deployment/validators.mjs';
+import { diffSets, diffRevision, renderDiff, impactedAgents } from '../platform/deployment/diff.mjs';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
 const read = (rel) => readFileSync(join(REPO, rel), 'utf8');

@@ -1,4 +1,4 @@
-// tests/deploy-target.test.mjs — pure-core tests for corekit/lib/deploy-target.mjs (B-19)
+// tests/deploy-target.test.mjs — pure-core tests for platform/control-plane/deploy-target.mjs (B-19)
 //
 // The pathology being prevented, from the live 1health delivery: a devops agent confused
 // the GCP project id (tachin-website) with the Hosting site id (1health-website) and a
@@ -9,7 +9,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   normalizeDeployDescriptor, validateDeployDescriptor, renderDeployBlock, deployTargetLine,
-} from '../corekit/lib/deploy-target.mjs';
+} from '../platform/control-plane/deploy-target.mjs';
 
 const FULL = {
   platform: 'firebase-hosting',

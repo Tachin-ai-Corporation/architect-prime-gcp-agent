@@ -1,4 +1,4 @@
-// test/git-store.test.mjs — Tests for corekit/lib/git-store.mjs
+// test/git-store.test.mjs — Tests for platform/persistence/git-store.mjs
 // Run on a GCE VM with git installed and ADC available:
 //   GCP_PROJECT_ID=<project> node test/git-store.test.mjs
 //
@@ -7,7 +7,7 @@
 //   2. Non-fast-forward: stale updateTime → NON_FAST_FORWARD → fetch+retry
 //   3. Crash-safety: objects written before ref (ordering assertion)
 
-import { ensureRepo, cloneRepo, fetchBranch, pushBranch, pushWithRetry, readRef, listRefs, mergeBranch, gc, buildManifest } from '../corekit/lib/git-store.mjs';
+import { ensureRepo, cloneRepo, fetchBranch, pushBranch, pushWithRetry, readRef, listRefs, mergeBranch, gc, buildManifest } from '../platform/persistence/git-store.mjs';
 import { execSync } from 'child_process';
 import { mkdirSync, writeFileSync, readFileSync, existsSync, readdirSync, rmSync } from 'fs';
 import { join } from 'path';

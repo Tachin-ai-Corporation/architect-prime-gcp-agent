@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
 # fleet-config-launcher — the PATH entry point for the fleet-config CLI.
 #
-# The CLI itself is an ES module whose relative imports (`../lib/fleet-config/…`,
-# `../contracts/…`) resolve correctly only from `corekit/system/`. Installing it
-# straight to `bin/` would put it one directory too shallow, and its first import
-# would look for `/opt/corekit/contracts/` instead of `/opt/corekit/corekit/contracts/`.
+# The CLI itself is an ES module whose relative imports (`../../platform/deployment/…`,
+# `../../platform/contracts/…`) resolve from `corekit/system/`. Installing it straight
+# to `bin/` would put it one directory too shallow, and its first import would look
+# for a `platform/` that sits above the install root.
 #
 # So the real module installs where its imports work, and this launcher is what
 # goes on PATH — the same split the daemons use, and the reason a tool can be

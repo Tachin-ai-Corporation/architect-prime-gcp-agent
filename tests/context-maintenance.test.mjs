@@ -1,7 +1,7 @@
 // tests/context-maintenance.test.mjs — pure-core tests for the temporal-memory auto-maintenance reflex.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { shouldMaintainContext, buildMaintenancePrompt, parseMaintenanceResponse, shouldMaintainProcesses, buildProcessMaintenancePrompt } from '../corekit/lib/context-maintenance.mjs';
+import { shouldMaintainContext, buildMaintenancePrompt, parseMaintenanceResponse, shouldMaintainProcesses, buildProcessMaintenancePrompt } from '../platform/context/context-maintenance.mjs';
 
 const FLAG_ON = { dispatch: { context_maintenance: true } };
 const FLAG_OFF = { dispatch: { context_maintenance: false } };

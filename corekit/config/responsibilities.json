@@ -41,12 +41,12 @@
       "min_spacing_minutes": 10080,
       "triggerable": true,
       "singleton": true,
-      "instruction": "Run garbage collection on git artifact repos to consolidate bundle chains. For each active project, execute: node /opt/corekit/corekit/lib/git-store.mjs gc <projectId> main. List active projects first with project-manage list. Report the number of bundles consolidated per repo.",
+      "instruction": "Run garbage collection on git artifact repos to consolidate bundle chains. For each active project, execute: node /opt/corekit/platform/persistence/git-store.mjs gc <projectId> main. List active projects first with project-manage list. Report the number of bundles consolidated per repo.",
       "context": {
         "purpose": "Git artifact repos accumulate bundle objects in GCS as missions create, push, and merge branches. Over time, bundle chains grow long as each push adds incremental bundles. GC consolidates these chains into fewer, larger bundles to improve clone/fetch performance and reduce object count.",
         "process": [
           "STEP 1 — LIST ACTIVE PROJECTS: Run `project-manage list` to get all active project IDs (these are the repoIds).",
-          "STEP 2 — RUN GC: For each project repo, execute `node /opt/corekit/corekit/lib/git-store.mjs gc <repoId> main`. This consolidates bundle chains by repacking incremental bundles into fewer objects.",
+          "STEP 2 — RUN GC: For each project repo, execute `node /opt/corekit/platform/persistence/git-store.mjs gc <repoId> main`. This consolidates bundle chains by repacking incremental bundles into fewer objects.",
           "STEP 3 — REPORT: Summarize results — repos processed, bundles consolidated per repo."
         ],
         "success_criteria": "GC ran on all active project repos. Report shows repos processed and bundles consolidated per repo. No errors during consolidation."

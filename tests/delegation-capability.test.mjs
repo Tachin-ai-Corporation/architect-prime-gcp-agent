@@ -7,7 +7,7 @@
 // distinctive capability the target lacks but the delegator owns.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { checkDelegationCapability, checkExecutionCapability, summarizeDelegationResult, delegationResultAgent } from '../corekit/lib/delegation.mjs';
+import { checkDelegationCapability, checkExecutionCapability, summarizeDelegationResult, delegationResultAgent } from '../platform/work/delegation.mjs';
 
 // Mirrors corekit/config/agent-types.json.
 const specialtySkills = {

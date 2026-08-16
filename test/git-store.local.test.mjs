@@ -29,7 +29,7 @@ import {
   readRef,
   sanitizeRepoId,
   buildManifest,
-} from '../corekit/lib/git-store.mjs';
+} from '../platform/persistence/git-store.mjs';
 
 // ═══════════════════════════════════════════════════════════════════════
 //  Filesystem-backed mock store

@@ -10,8 +10,8 @@
 //
 // The live defect this replaces: `POST /api/projects` and
 // `POST /api/primes/[id]/processes` persisted under `doc(body.id)` while
-// omitting `id` from the object. `corekit/lib/projects.mjs` and
-// `corekit/lib/process-registry.mjs` accepted only records with a truthy `id`,
+// omitting `id` from the object. `platform/control-plane/projects.mjs` and
+// `platform/work/process-registry.mjs` accepted only records with a truthy `id`,
 // so the dashboard reported success and no agent ever saw the record.
 
 import { test } from 'node:test';
@@ -20,7 +20,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { docIdFromName, reconcileEntityId, withCanonicalId } from '../corekit/lib/entity-id.mjs';
+import { docIdFromName, reconcileEntityId, withCanonicalId } from '../platform/persistence/entity-id.mjs';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -105,7 +105,7 @@ test('withCanonicalId overrides an id a caller tried to smuggle in', () => {
 // ── Runtime loaders derive identity from the document path ─────────────
 
 test('runtime loaders reconcile identity from the document path', () => {
-  for (const rel of ['corekit/lib/projects.mjs', 'corekit/lib/process-registry.mjs']) {
+  for (const rel of ['platform/control-plane/projects.mjs', 'platform/work/process-registry.mjs']) {
     const src = readFileSync(join(REPO, rel), 'utf8');
     assert.match(
       src,
@@ -165,7 +165,7 @@ test('the canonical-id helper exists on both surfaces', () => {
   const dash = readFileSync(join(REPO, 'app', 'src', 'lib', 'entity.ts'), 'utf8');
   assert.match(dash, /export function withCanonicalId/);
 
-  const runtime = readFileSync(join(REPO, 'corekit', 'lib', 'entity-id.mjs'), 'utf8');
+  const runtime = readFileSync(join(REPO, 'platform', 'persistence', 'entity-id.mjs'), 'utf8');
   assert.match(runtime, /export function reconcileEntityId/);
   assert.match(runtime, /export function docIdFromName/);
   assert.match(runtime, /export function withCanonicalId/);

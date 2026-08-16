@@ -17,8 +17,8 @@ import assert from 'node:assert/strict';
 import {
   planApply, verifyStaged, isIdle, reconcile, installPath, installPaths,
   STAGING_DIR, PREVIOUS_DIR,
-} from '../corekit/lib/fleet-config/content-sync.mjs';
-import { bytesDigest, treeDigest } from '../corekit/contracts/digest.mjs';
+} from '../platform/deployment/content-sync.mjs';
+import { bytesDigest, treeDigest } from '../platform/contracts/digest.mjs';
 
 const files = { 'workspace-cortex/SOUL.md': '# cortex\n', 'skills/a/SKILL.md': '# a\n' };
 const specFor = (f) => ({

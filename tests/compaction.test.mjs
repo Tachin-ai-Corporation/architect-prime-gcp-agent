@@ -1,10 +1,10 @@
-// tests/compaction.test.mjs — pure-core tests for corekit/lib/compaction.mjs (B-19)
+// tests/compaction.test.mjs — pure-core tests for platform/context/compaction.mjs (B-19)
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   stepCheckpointNum, renderCheckpointDigest, buildPriorWorkContext,
   shouldCompact, splitIterationBlocks, redactSecrets, validateMissionDigest, spliceCompacted,
-} from '../corekit/lib/compaction.mjs';
+} from '../platform/context/compaction.mjs';
 
 describe('stepCheckpointNum', () => {
   it('extracts the checkpoint prefix', () => {

@@ -6,7 +6,7 @@
 // omitting `id` from the stored object. Every runtime loader accepted only
 // records whose decoded `id` was truthy, so a dashboard-created Project or
 // Process reported success and was invisible to the fleet. The runtime now
-// derives identity from the document path (`corekit/lib/entity-id.mjs`); this
+// derives identity from the document path (`platform/persistence/entity-id.mjs`); this
 // helper keeps the stored body in agreement so both surfaces read the same
 // thing.
 //

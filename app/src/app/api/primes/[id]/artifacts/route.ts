@@ -43,7 +43,7 @@ async function getProjectId(): Promise<string> {
  * GET /api/primes/[id]/artifacts?gcsPath=<object>
  * Streams a mission artifact. Session auth required; the object MUST live
  * under artifacts/primes/{id}/ — per-prime isolation is enforced here and
- * guaranteed by the upload layout in corekit/lib/artifact-share.mjs.
+ * guaranteed by the upload layout in platform/persistence/artifact-share.mjs.
  */
 export async function GET(req: NextRequest, ctx: RouteContext) {
   const { id: primeId } = await ctx.params;

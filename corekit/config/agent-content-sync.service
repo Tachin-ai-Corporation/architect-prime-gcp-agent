@@ -9,7 +9,7 @@ Type=oneshot
 User=root
 WorkingDirectory=/opt/corekit
 Environment=CORE_DIR=/opt/corekit
-ExecStart=/usr/bin/node /opt/corekit/bin/agent-content-sync.mjs
+ExecStart=/usr/bin/node /opt/corekit/platform/runtime/agent-content-sync.mjs
 
 # A pass that finds nothing to do is the common case and exits 0. A failure is
 # real — a digest that did not match what was approved, or a staged render that

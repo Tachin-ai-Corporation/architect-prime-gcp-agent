@@ -12,7 +12,7 @@
 // what makes the lie detectable, so the whole class turns on the separation asserted here.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { isMissingEvidenceFail } from '../corekit/lib/verdict.mjs';
+import { isMissingEvidenceFail } from '../platform/work/verdict.mjs';
 
 // Verbatim, from mission w-1785103256254-935eda69 CP2.
 const REAL_VERDICT = "The `ops.json` content for Marnie B's addendum is not fully visible in "

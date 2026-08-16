@@ -19,11 +19,11 @@ import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, rmSync } from 'nod
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { compileAgentSpec } from '../corekit/lib/fleet-config/compiler.mjs';
+import { compileAgentSpec } from '../platform/deployment/compiler.mjs';
 import {
   planApply, reconcile, bundleMatches, installPath, firmwarePath,
-} from '../corekit/lib/fleet-config/content-sync.mjs';
-import { bytesDigest } from '../corekit/contracts/digest.mjs';
+} from '../platform/deployment/content-sync.mjs';
+import { bytesDigest } from '../platform/contracts/digest.mjs';
 
 const AT = '2026-08-15T12:00:00Z';
 const BASE_SOUL = '# Cortex\n\nI decide what happens next.\n';

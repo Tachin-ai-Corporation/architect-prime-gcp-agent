@@ -16,7 +16,7 @@ import { readFileSync, readdirSync, statSync } from 'node:fs';
 import { join, dirname, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { ACTION_NAMES } from '../corekit/daemon/actions/index.mjs';
+import { ACTION_NAMES } from '../platform/runtime/actions/index.mjs';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -73,7 +73,7 @@ test('no prompt surface instructs a retired action', () => {
     offenders,
     [],
     'A prompt-bearing surface instructs a move the daemon will reject.\n' +
-      'Legal actions come from corekit/daemon/actions/index.mjs ACTION_NAMES.\n' +
+      'Legal actions come from platform/runtime/actions/index.mjs ACTION_NAMES.\n' +
       offenders.join('\n')
   );
 });

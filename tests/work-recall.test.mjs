@@ -4,7 +4,7 @@
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert';
-import { extractCues, scoreRelevance, searchWork, recentWorkDigest } from '../corekit/lib/work-recall.mjs';
+import { extractCues, scoreRelevance, searchWork, recentWorkDigest } from '../platform/work/work-recall.mjs';
 
 // ── helpers ─────────────────────────────────────────────────────────
 

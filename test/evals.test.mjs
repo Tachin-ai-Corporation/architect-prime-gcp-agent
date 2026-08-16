@@ -15,7 +15,7 @@ import assert from 'node:assert/strict';
 
 import {
   runCase, runSuite, compareRuns, regressions, evaluationRecord, renderEvaluation, ASSERTIONS,
-} from '../corekit/lib/fleet-config/evals.mjs';
+} from '../platform/deployment/evals.mjs';
 
 const OVERLAY = 'I am an assistant. I keep the calendar honest.';
 

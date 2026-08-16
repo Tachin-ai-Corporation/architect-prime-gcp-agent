@@ -1,4 +1,4 @@
-// tests/checkpoint-spine.test.mjs — pure-core tests for corekit/lib/checkpoint-spine.mjs (B-19)
+// tests/checkpoint-spine.test.mjs — pure-core tests for platform/work/checkpoint-spine.mjs (B-19)
 //
 // The pathology being prevented, from mission w-1785088147648-98907cc3:
 //   17:54:36  Cerebellum PASS on CP1 milestone
@@ -11,7 +11,7 @@ import assert from 'node:assert/strict';
 import {
   buildSpine, firstIncompleteIndex, markCheckpoint, applyReplan, rebuildFromSpine, spineSummary,
   finalizeBlockedBySpine, checkpointFailureHalts, probeGatedFinalizeAction,
-} from '../corekit/lib/checkpoint-spine.mjs';
+} from '../platform/work/checkpoint-spine.mjs';
 
 const PLAN = [
   { instruction: 'Gather all required information', accept_criteria: 'Template + contracts read', tasks: [{ agent: 'motor', task: 'read template' }] },

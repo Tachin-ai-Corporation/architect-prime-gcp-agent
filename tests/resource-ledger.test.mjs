@@ -1,4 +1,4 @@
-// tests/resource-ledger.test.mjs — pure-core tests for corekit/lib/resource-ledger.mjs (B-19)
+// tests/resource-ledger.test.mjs — pure-core tests for platform/work/resource-ledger.mjs (B-19)
 //
 // Fixtures are the ACTUAL shapes observed in mission w-1785077032655-6a93efcf,
 // including the escaped-JSON-inside-runCommand_response nesting that real motor
@@ -8,7 +8,7 @@ import assert from 'node:assert/strict';
 import {
   extractResources, extractResourcesFromProse, mergeResources, renderResources,
   resourceKey, normalizeName, seedFromProse, repairIds, isEditDistanceOne,
-} from '../corekit/lib/resource-ledger.mjs';
+} from '../platform/work/resource-ledger.mjs';
 
 // The verbatim request from mission w-1785084942002-86b6c4ad. It named all three
 // folders WITH their ids, and the agent still searched for them by name — one

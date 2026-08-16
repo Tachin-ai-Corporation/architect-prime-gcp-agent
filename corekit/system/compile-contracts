@@ -18,8 +18,8 @@
 import { readFileSync, writeFileSync, existsSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { splitContracts, compileContracts, leafPaths } from '../contracts/contract-planes.mjs';
-import { bytesDigest, canonicalJson } from '../contracts/digest.mjs';
+import { splitContracts, compileContracts, leafPaths } from '../../platform/contracts/contract-planes.mjs';
+import { bytesDigest, canonicalJson } from '../../platform/contracts/digest.mjs';
 
 const REPO = join(dirname(fileURLToPath(import.meta.url)), '..', '..');
 const PLATFORM = join(REPO, 'infra', 'platform-defaults.json');

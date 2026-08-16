@@ -5,10 +5,12 @@
 // restarts the daemon. This resolves the graph the way node will, against the
 // tree the manifests actually lay down.
 //
-// The repo tree is checked separately and held on a ratchet. Five daemons are
-// unloadable from a checkout today because they live at `corekit/daemon/` and
-// install to `bin/`, so `../corekit/lib/…` resolves on a VM and nowhere else.
-// That is why no test can import a daemon. The list may shrink; it may not grow.
+// The repo tree is checked separately, and as of the platform/ move it is also
+// clean. Five daemons used to be unloadable from a checkout: they lived at
+// `corekit/daemon/` and installed to `bin/`, so their imports resolved on a VM
+// and nowhere else, and no test could import one. Every module now installs at
+// the path it occupies in the repo, so both trees answer the same. The ratchet
+// stays because that property is easy to lose and expensive to notice.
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
@@ -29,17 +31,11 @@ const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 /**
  * Modules that cannot be loaded from a checkout, only from an installed tree.
  *
- * Each is a daemon whose imports are written for its `bin/` dest. Making repo
- * path and VM path agree would empty this list and make the daemons testable
- * for the first time. Until then it is debt, counted rather than forgotten.
+ * Empty, and meant to stay that way. It held the five daemons until repo path
+ * and VM path were made to agree; keeping the list rather than deleting the
+ * check is the difference between "this is true now" and "this stays true".
  */
-const UNLOADABLE_FROM_REPO = Object.freeze([
-  'corekit/daemon/agent-brain.mjs',
-  'corekit/daemon/agent-content-sync.mjs',
-  'corekit/daemon/agent-ears.mjs',
-  'corekit/daemon/agent-introspect.mjs',
-  'corekit/daemon/agent-mouth.mjs',
-]);
+const UNLOADABLE_FROM_REPO = Object.freeze([]);
 
 describe('module resolution — specifier extraction', () => {
   it('finds static, named, and namespace imports', () => {
@@ -74,22 +70,29 @@ describe('module resolution — specifier extraction', () => {
 
 describe('module resolution — path arithmetic', () => {
   it('collapses parent segments', () => {
-    assert.equal(normalize('bin/../corekit/lib/x.mjs'), 'corekit/lib/x.mjs');
+    assert.equal(normalize('bin/../platform/work/x.mjs'), 'platform/work/x.mjs');
     assert.equal(normalize('a/./b//c'), 'a/b/c');
   });
 
-  it('follows the lib bridge symlink install.sh creates', () => {
-    assert.equal(followLinks('lib/verdict.mjs'), 'corekit/lib/verdict.mjs');
+  it('resolves through a symlink when one is declared', () => {
+    // LAYOUT_LINKS is empty now that every module installs at its repo path.
+    // The mechanism is still exercised, because an empty table should be a fact
+    // about this tree rather than an untested branch.
+    assert.equal(followLinks('lib/verdict.mjs', { lib: 'platform/work' }), 'platform/work/verdict.mjs');
   });
 
   it('does not treat a prefix match as a path segment', () => {
-    assert.equal(followLinks('library/x.mjs'), 'library/x.mjs');
+    assert.equal(followLinks('library/x.mjs', { lib: 'platform/work' }), 'library/x.mjs');
+  });
+
+  it('leaves every path alone when no link is declared', () => {
+    assert.equal(followLinks('lib/verdict.mjs'), 'lib/verdict.mjs');
   });
 
   it('resolves a sibling and a directory index', () => {
-    const dests = new Set(['bin/a.mjs', 'corekit/lib/b.mjs', 'corekit/contracts/index.mjs']);
-    assert.equal(resolveFrom('bin/a.mjs', '../corekit/lib/b.mjs', dests), 'corekit/lib/b.mjs');
-    assert.equal(resolveFrom('bin/a.mjs', '../corekit/contracts', dests), 'corekit/contracts/index.mjs');
+    const dests = new Set(['bin/a.mjs', 'platform/work/b.mjs', 'platform/contracts/index.mjs']);
+    assert.equal(resolveFrom('bin/a.mjs', '../platform/work/b.mjs', dests), 'platform/work/b.mjs');
+    assert.equal(resolveFrom('bin/a.mjs', '../platform/contracts', dests), 'platform/contracts/index.mjs');
   });
 
   it('returns null for a specifier that lands on nothing', () => {

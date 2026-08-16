@@ -17,9 +17,9 @@ import {
   LEGAL_TRANSITIONS, TERMINAL_STATUSES, PAUSED_STATUSES, RUNNING_STATUSES,
   TRANSITION_REQUIREMENTS,
   canTransition, applyTransition, reachableFrom, isTerminal,
-} from '../corekit/contracts/work-transitions.mjs';
-import { ENVELOPE_STATUSES, WORK_SCHEMA } from '../corekit/contracts/index.mjs';
-import { validate } from '../corekit/contracts/validate.mjs';
+} from '../platform/contracts/work-transitions.mjs';
+import { ENVELOPE_STATUSES, WORK_SCHEMA } from '../platform/contracts/index.mjs';
+import { validate } from '../platform/contracts/validate.mjs';
 
 const AT = '2026-08-15T12:00:00Z';
 const LATER = '2026-08-15T12:05:00Z';
@@ -263,7 +263,7 @@ test('the dead unified-ceremony module is gone', async () => {
   const { readdirSync } = await import('node:fs');
   const { join, dirname } = await import('node:path');
   const { fileURLToPath } = await import('node:url');
-  const libDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'corekit', 'lib');
+  const libDir = join(dirname(fileURLToPath(import.meta.url)), '..', 'platform', 'work');
   assert.ok(
     !readdirSync(libDir).includes('envelope-lifecycle.mjs'),
     'the dead duplicate authority must not return'
@@ -279,7 +279,7 @@ test('the dead unified-ceremony module is gone', async () => {
 // leaving an operator to conclude the table is fine because nothing fired.
 
 test('the daemon reads a per-VM override before the fleet contract', () => {
-  const src = readFileSync(join(REPO, 'corekit', 'daemon', 'agent-brain.mjs'), 'utf8');
+  const src = readFileSync(join(REPO, 'platform', 'runtime', 'agent-brain.mjs'), 'utf8');
   const line = src.split('\n').find((l) => l.includes('transition_guard') && l.includes('CONTRACTS'));
   assert.ok(line, 'the guard must consult the contract');
   assert.match(line, /process\.env\.AGENT_TRANSITION_GUARD\s*\|\|/,

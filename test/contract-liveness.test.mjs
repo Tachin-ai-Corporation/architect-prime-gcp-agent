@@ -84,7 +84,10 @@ test('every contract key has a reader, or is recorded as debt', () => {
   assert.ok(keys.length > 100, `expected a substantial contract, found ${keys.length} keys — the scan is broken`);
 
   const code = [];
-  for (const dir of ['corekit', 'app/src', 'infra']) {
+  // platform/ carries the runtime; corekit/ still holds the gateway module,
+  // system tools and config. A scan root that misses where the code lives does
+  // not report less coverage — it reports the contract as dead.
+  for (const dir of ['platform', 'corekit', 'app/src', 'infra']) {
     for (const f of walk(join(ROOT, dir), (e) => /\.(mjs|ts|tsx|sh|yml)$/.test(e) || extname(e) === '')) {
       // The contract sources are where the keys are DEFINED, not read.
       if (/(contracts|fleet-policy|platform-defaults)\.json$/.test(f)) continue;
@@ -118,7 +121,7 @@ test('the debt list only shrinks — an entry that gained a reader must be remov
 });
 
 test('fleet_config.sync_enabled is honoured — the switch that started this', () => {
-  const src = readFileSync(join(ROOT, 'corekit', 'daemon', 'agent-content-sync.mjs'), 'utf8');
+  const src = readFileSync(join(ROOT, 'platform', 'runtime', 'agent-content-sync.mjs'), 'utf8');
   assert.match(src, /sync_enabled/,
     'the daemon must consult the flag that documents whether it should run at all');
   assert.match(src, /flag !== false/,
