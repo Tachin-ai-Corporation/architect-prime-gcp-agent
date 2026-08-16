@@ -24,7 +24,10 @@ function HomeInner() {
   const [selectedPrimeId, setSelectedPrimeId] = useState<string | null>(null);
   const [showDeploy, setShowDeploy] = useState(false);
   const [deploying, setDeploying] = useState(false);
-  const [showHire, setShowHire] = useState(false);
+  // Which prime a Hire click was made on. Previously the modal read
+  // `selectedPrimeId`, which on this page is whatever the auto-select picked —
+  // selecting a card navigates to /p/<id>, so it never reflects a Hire click.
+  const [hireTarget, setHireTarget] = useState<string | null>(null);
   const [upgradingPrime, setUpgradingPrime] = useState<string | null>(null);
   const [upgradingAgent, setUpgradingAgent] = useState<string | null>(null);
   const [deletingPrime, setDeletingPrime] = useState<string | null>(null);
@@ -40,11 +43,13 @@ function HomeInner() {
   const proximityRaf = useRef<number>(0);
 
   /* ---- Auto-select first prime ---- */
-  useEffect(() => {
-    if (primes.length > 0 && !selectedPrimeId) {
-      setSelectedPrimeId(primes[0].id);
-    }
-  }, [primes, selectedPrimeId]);
+  //
+  // Derived during render rather than written back from an effect. The effect
+  // version set state on the render after `primes` arrived, so there was always
+  // one frame with nothing selected, and the rule flagged the cascading render
+  // it caused. This produces the same selection with no extra render and no
+  // state to fall out of sync.
+  const effectivePrimeId = selectedPrimeId ?? primes[0]?.id ?? null;
 
   /* ---- Proximity glow effect ---- */
   useEffect(() => {
@@ -243,7 +248,7 @@ function HomeInner() {
       {/* ---- Scrollable Prime List ---- */}
       <div className={styles.primeList} ref={listRef}>
         {primes.map((p) => {
-          const isSelected = p.id === selectedPrimeId;
+          const isSelected = p.id === effectivePrimeId;
           const fleet = (sidebarFleet[p.id] || []).filter((a) => a.status !== "removed");
 
           return (
@@ -268,7 +273,7 @@ function HomeInner() {
                 upgradingAgent={upgradingAgent}
                 onSelectAgentChat={selectAgentChat}
                 onUpgradeAgent={handleUpgradeAgent}
-                onHireClick={() => setShowHire(true)}
+                onHireClick={() => setHireTarget(p.id)}
                 onActionModal={setActionModal}
               />
             </PrimeChip>
@@ -287,10 +292,10 @@ function HomeInner() {
 
       {/* ---- Hire Agent Modal ---- */}
       <HireModal
-        primeId={selectedPrimeId || ""}
+        primeId={hireTarget || ""}
         agentEmailDomain={setup.agentEmailDomain}
-        open={showHire}
-        onClose={() => setShowHire(false)}
+        open={!!hireTarget}
+        onClose={() => setHireTarget(null)}
         onHired={refreshPrimes}
       />
 
