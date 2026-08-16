@@ -10,6 +10,9 @@ set -uo pipefail
 log()  { echo "[validate-contracts] $*"; }
 fail() { echo "[validate-contracts] ❌ FAIL: $*" >&2; FAILURES=$((FAILURES + 1)); }
 pass() { echo "[validate-contracts]  ✅ $*"; }
+# Visible but non-fatal: a state that is expected right now and would be a
+# defect later. Used where a deploy is legitimately incomplete rather than wrong.
+warn_only() { echo "[validate-contracts]  ⚠️  $*"; }
 
 FAILURES=0
 MODE="repo"
@@ -1062,16 +1065,36 @@ if [[ "$MODE" == "runtime" ]]; then
     DWD_READY=1
   fi
 
+  # `is-active` is true during the brief window between a crash and the next
+  # restart, so a service looping every four seconds answers "active" about as
+  # often as a healthy one. This gate reported agent-ears active while it was on
+  # its 106th restart. A restart count is the difference between running and
+  # merely being started repeatedly.
+  RESTART_CEILING="${VALIDATE_RESTART_CEILING:-5}"
+  svc_restarts() { systemctl show "$1" -p NRestarts --value 2>/dev/null || echo 0; }
+
   for svc in agent-brain agent-introspect; do
-    if systemctl is-active --quiet "$svc" 2>/dev/null; then
-      pass "${svc} service active"
-    else
+    if ! systemctl is-active --quiet "$svc" 2>/dev/null; then
       fail "${svc} service not active"
+    elif [[ "$(svc_restarts "$svc")" -gt "$RESTART_CEILING" ]]; then
+      fail "${svc} is crash-looping ($(svc_restarts "$svc") restarts) — active is not healthy"
+    else
+      pass "${svc} service active"
     fi
   done
 
   for svc in agent-ears agent-mouth; do
-    if systemctl is-active --quiet "$svc" 2>/dev/null; then
+    restarts="$(svc_restarts "$svc")"
+    if [[ "$restarts" -gt "$RESTART_CEILING" ]]; then
+      # Looping is a distinct state from not-started, and its usual cause here is
+      # a Workspace user that does not exist yet — the daemon starts, fails the
+      # DWD healthcheck, and systemd tries again forever.
+      if [[ "$DWD_READY" == "1" ]]; then
+        fail "${svc} is crash-looping (${restarts} restarts) — check the DWD healthcheck"
+      else
+        warn_only "${svc} restarting (${restarts}×) — no Workspace user yet; it will settle once the account exists"
+      fi
+    elif systemctl is-active --quiet "$svc" 2>/dev/null; then
       pass "${svc} service active"
     elif [[ "$DWD_READY" == "1" ]]; then
       fail "${svc} service not active (a Workspace identity is configured, so it should be)"
