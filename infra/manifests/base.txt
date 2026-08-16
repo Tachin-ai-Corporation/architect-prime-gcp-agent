@@ -141,6 +141,11 @@ corekit/lib/fleet-config/diff.mjs corekit/lib/fleet-config/diff.mjs
 corekit/lib/fleet-config/content-sync.mjs corekit/lib/fleet-config/content-sync.mjs
 corekit/lib/fleet-config/metrics.mjs corekit/lib/fleet-config/metrics.mjs
 corekit/lib/fleet-config/rollout.mjs corekit/lib/fleet-config/rollout.mjs
+# Deterministic structural evals — grade a candidate spec BEFORE any agent runs
+# on it. `observe` is honest and late; this asks the same question of the
+# artifact. Suites are seed content a deployment then owns.
+corekit/lib/fleet-config/evals.mjs corekit/lib/fleet-config/evals.mjs
+corekit/config/eval-suites/agent-core.json corekit/config/eval-suites/agent-core.json
 
 # Content sync — applies an assigned Fleet release on its own timer, independent
 # of any platform upgrade (C-36). Replaces assemble-persona's in-place SOUL

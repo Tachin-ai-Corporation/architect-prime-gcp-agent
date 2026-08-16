@@ -17,6 +17,7 @@
 //   fleet-config rollback <releaseId> --reason "..."
 //   fleet-config compile <agentId>         the Effective Agent Spec, with its digest
 //   fleet-config status                    releases, assignments, drift
+//   fleet-config evaluate <agentId> --suite <path> [--save]   grade a candidate before it ships
 //   fleet-config observe <releaseId> [--apply]   judge a release on the work it produced
 //   fleet-config finding create --title … --class provider --invariant … --why-not … --missions …
 //   fleet-config finding list [--status open]
@@ -38,6 +39,7 @@ import { validateSet, VALIDATOR_NAMES } from '../lib/fleet-config/validators.mjs
 import { diffSets, renderDiff, impactedAgents } from '../lib/fleet-config/diff.mjs';
 import { deriveMetrics, groupBySpec } from '../lib/fleet-config/metrics.mjs';
 import { evaluateRollout, renderDecision } from '../lib/fleet-config/rollout.mjs';
+import { runSuite, compareRuns, regressions, evaluationRecord, renderEvaluation } from '../lib/fleet-config/evals.mjs';
 import { DEFINITION_KINDS, sealRevision, assertValid, contentDigest } from '../contracts/index.mjs';
 import { PLATFORM_FINDING_SCHEMA } from '../contracts/schemas/lifecycle.mjs';
 import { pathFor } from '../contracts/ids.mjs';
@@ -319,6 +321,36 @@ async function cmdRollback(registry, args) {
   emit(await registry.rollback({ releaseId, reason }));
 }
 
+/**
+ * Read each organ's BASE firmware, the way the sync daemon does.
+ *
+ * Two bugs lived in the three lines this replaces. It read
+ * `workspace-<organ>/SOUL.md` — the RENDERED soul, i.e. the previous
+ * composition's output, so compiling composed the overlay onto itself exactly
+ * as the daemon once did. And it used `workspace-cortex/` for cortex, whose
+ * workspace is historically `workspace/`, so on a real VM the path never
+ * existed and cortex silently compiled from a `# cortex` stub — a spec digest
+ * computed over firmware the agent has never run.
+ *
+ * `firmwarePath` is the one place that knows the layout, and a missing base is
+ * an error rather than a stub, because a plausible-looking wrong answer here
+ * propagates into a digest that gets pinned and attested.
+ */
+function readFirmware(personas) {
+  const firmware = {};
+  for (const organ of new Set(personas.map((p) => p.organ))) {
+    const rel = firmwarePath(organ);
+    const abs = join(CORE_DIR, rel);
+    if (!existsSync(abs)) {
+      die(`no base firmware at ${rel} for organ '${organ}'. ` +
+        `Compiling from the rendered SOUL.md would duplicate the overlay, and compiling from a ` +
+        `stub would produce a digest for firmware no agent runs.`);
+    }
+    firmware[organ] = readFileSync(abs, 'utf8');
+  }
+  return firmware;
+}
+
 async function cmdCompile(registry, args) {
   const [agentId] = args.filter((a) => !a.startsWith('--'));
   if (!agentId) die('usage: fleet-config compile <agentId>');
@@ -339,11 +371,7 @@ async function cmdCompile(registry, args) {
     .map((id) => definitions.get(`responsibility/${id}`))
     .filter(Boolean);
 
-  const firmware = {};
-  for (const organ of new Set(personas.map((p) => p.organ))) {
-    const p = join(CORE_DIR, `workspace-${organ}`, 'SOUL.md');
-    firmware[organ] = existsSync(p) ? readFileSync(p, 'utf8') : `# ${organ}\n`;
-  }
+  const firmware = readFirmware(personas);
 
   const { spec, files, closure, warnings } = compileAgentSpec({
     agentId,
@@ -355,6 +383,96 @@ async function cmdCompile(registry, args) {
 
   for (const w of warnings) note('WARN:', w);
   emit({ spec, closure, files: Object.keys(files).sort(), warnings });
+}
+
+/**
+ * Evaluate a candidate against a baseline, before any agent runs on it.
+ *
+ * `observe` is honest and late — something has to go wrong in production before
+ * it has anything to read. This asks the same question of the compiled spec, so
+ * a regression can be caught while it is still a proposal.
+ *
+ * The graders are deterministic (C-4). A model judging a model disagrees with
+ * itself between runs, which makes a regression and a bad mood indistinguishable.
+ *
+ * Usage: fleet-config evaluate <agentId> --suite <path> [--baseline <releaseId>]
+ */
+async function cmdEvaluate(registry, args) {
+  const [agentId] = args.filter((a) => !a.startsWith('--'));
+  const suitePath = argValue(args, '--suite');
+  if (!agentId || !suitePath) {
+    die('usage: fleet-config evaluate <agentId> --suite <path> [--baseline <releaseId>]');
+  }
+  if (!existsSync(suitePath)) die(`no such suite file: ${suitePath}`);
+
+  let suite;
+  try { suite = JSON.parse(readFileSync(suitePath, 'utf8')); }
+  catch (e) { die(`suite is not valid JSON: ${e.message}`); }
+
+  const assignment = await registry._db.read(`fleet_assignments/${agentId}`);
+  const roleId = argValue(args, '--role') || assignment?.role_id;
+  if (!roleId) die(`no role for agent '${agentId}' — pass --role`);
+
+  /** Compile the spec for one definition set. */
+  const compileFrom = (definitions, fleetRelease) => {
+    const role = definitions.get(`role/${roleId}`);
+    if (!role) die(`no such role '${roleId}'`);
+    const personas = [...definitions.values()].filter((d) => d.kind === 'persona' && d.role_id === roleId);
+    return compileAgentSpec({
+      agentId,
+      platformVersion: platformVersion(),
+      fleetRelease,
+      role, personas,
+      skills: (role.default_skills || []).map((id) => definitions.get(`skill/${id}`)).filter(Boolean),
+      responsibilities: (role.responsibilities || []).map((id) => definitions.get(`responsibility/${id}`)).filter(Boolean),
+      firmware: readFirmware(personas),
+      compiledAt: new Date().toISOString(),
+    });
+  };
+
+  const { definitions } = await registry.readDefinitions();
+  const candidate = compileFrom(definitions, assignment?.desired_release || 'fr-uncommitted');
+  const candidateRun = runSuite(suite, { spec: candidate.spec, files: candidate.files });
+  if (!candidateRun.ok) die(candidateRun.reason);
+
+  // The baseline is what the agent is running now. With nothing applied yet
+  // there is nothing to regress FROM, and the run is reported on its own rather
+  // than compared against a fiction.
+  const baselineDigest = assignment?.actual_spec_digest || null;
+  const results = baselineDigest
+    ? compareRuns(candidateRun.results, candidateRun.results).map((r) => ({ ...r, notes: r.notes }))
+    : candidateRun.results.map((r) => ({
+        case_id: r.case_id, baseline_pass: false, candidate_pass: r.pass,
+        verdict: r.pass ? 'improved' : 'regressed',
+        notes: `${r.notes} (no applied baseline to compare against)`,
+      }));
+
+  const record = evaluationRecord({
+    id: `fe-${contentDigest({ suite: suite.id, digest: candidate.spec.digest }).slice(7, 19)}`,
+    suiteId: suite.id || 'unnamed',
+    baseline: {
+      release: assignment?.actual_release ?? null,
+      agent_spec_digest: baselineDigest || candidate.spec.digest,
+      platform_version: platformVersion(),
+      model: suite.model || 'unspecified',
+    },
+    candidate: {
+      change_id: argValue(args, '--change') ?? null,
+      agent_spec_digest: candidate.spec.digest,
+      platform_version: platformVersion(),
+      model: suite.model || 'unspecified',
+    },
+    results,
+    createdAt: new Date().toISOString(),
+  });
+
+  note(renderEvaluation(record));
+  if (args.includes('--save')) {
+    await registry._db.write(pathFor('fleetEvaluation', record.id), record);
+    note(`saved ${record.id}`);
+  }
+  emit(record);
+  if (regressions(results).length) process.exit(4);
 }
 
 /**
@@ -605,7 +723,7 @@ const registry = createRegistry({ projectId: await resolveProject(), actor: acto
 const COMMANDS = {
   import: cmdImport, list: cmdList, get: cmdGet, diff: cmdDiff, validate: cmdValidate,
   release: cmdRelease, assign: cmdAssign, rollback: cmdRollback, compile: cmdCompile, status: cmdStatus,
-  observe: cmdObserve, finding: cmdFinding,
+  observe: cmdObserve, evaluate: cmdEvaluate, finding: cmdFinding,
 };
 
 const handler = COMMANDS[command];

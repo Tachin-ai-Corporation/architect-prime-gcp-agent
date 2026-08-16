@@ -1,0 +1,36 @@
+{
+  "id": "agent-core",
+  "_comment": "Starter evaluation suite — structural assertions over a compiled Effective Agent Spec, graded deterministically before any agent runs on the candidate (C-4). Seed content: a deployment owns its own suites, and these are the cases that generalise. Every case here corresponds to a defect this platform actually shipped.",
+  "cases": [
+    {
+      "id": "cortex-soul-present",
+      "describe": "the cortex soul is in the bundle at all",
+      "file": "workspace-cortex/SOUL.md",
+      "assert": { "kind": "file_present" }
+    },
+    {
+      "id": "cortex-soul-within-prompt-budget",
+      "describe": "the rendered cortex soul fits the runtime's 40,000-character cap, which truncates silently",
+      "file": "workspace-cortex/SOUL.md",
+      "assert": { "kind": "max_chars", "max": 40000 }
+    },
+    {
+      "id": "cortex-overlay-not-duplicated",
+      "describe": "the role overlay's provenance marker appears exactly once. This is the case that would have caught the soul-doubling defect: a `contains` check passed the whole time the overlay was landing twice, because it WAS there — twice. millie reached 7 copies and a 28KB soul before anything noticed.",
+      "file": "workspace-cortex/SOUL.md",
+      "assert": { "kind": "occurs", "value": "<!-- role:", "times": 1 }
+    },
+    {
+      "id": "no-retired-follow-process-action",
+      "describe": "no organ still instructs the follow_process action, deleted at v2026.08.14.6.15. A prompt naming an action the daemon no longer accepts wastes an iteration and reads to the model as a capability it has.",
+      "file": "workspace-cortex/SOUL.md",
+      "assert": { "kind": "not_contains", "value": "follow_process" }
+    },
+    {
+      "id": "soul-carries-no-tool-syntax",
+      "describe": "organ layer purity (C-28) — tool invocations belong in skills, not souls. A backticked command-with-flag in a soul is the shape that rots when the tool changes.",
+      "file": "workspace-cortex/SOUL.md",
+      "assert": { "kind": "matches", "value": "^(?!.*`[a-z][a-z0-9-]* --[a-z])", "flags": "s" }
+    }
+  ]
+}
