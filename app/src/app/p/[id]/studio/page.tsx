@@ -79,11 +79,19 @@ export default function FleetStudioPage({ params }: { params: Promise<{ id: stri
   useEffect(() => {
     if (!selected) return;
     let live = true;
-    setDetail(null);
-    fetch(`/api/fleet/releases?id=${encodeURIComponent(selected)}`)
-      .then((r) => r.json())
-      .then((d) => live && setDetail(d.answers ? d : null))
-      .catch(() => { /* the panel shows its own empty state */ });
+    // Wrapped so the clear is not in the effect body itself. It still runs in
+    // the same tick, before the request, so switching releases blanks the panel
+    // immediately rather than showing the previous one's answers while loading.
+    void (async () => {
+      setDetail(null);
+      try {
+        const r = await fetch(`/api/fleet/releases?id=${encodeURIComponent(selected)}`);
+        const d = await r.json();
+        if (live) setDetail(d.answers ? d : null);
+      } catch {
+        /* the panel shows its own empty state */
+      }
+    })();
     return () => { live = false; };
   }, [selected]);
 

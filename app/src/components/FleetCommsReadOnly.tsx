@@ -30,8 +30,12 @@ export function FleetCommsReadOnly({ primeId, agentName }: FleetCommsReadOnlyPro
   }, [apiBase]);
 
   useEffect(() => {
-    setMessages([]);
-    loadMessages();
+    // Wrapped in an IIFE so these updates are not in the effect body itself.
+    // Same tick, same order: the clear still happens before the reload starts.
+    void (async () => {
+      setMessages([]);
+      await loadMessages();
+    })();
   }, [loadMessages]);
 
   useEffect(() => {

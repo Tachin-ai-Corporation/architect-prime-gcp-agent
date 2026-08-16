@@ -8,23 +8,20 @@ export function GeneralTab() {
   const { setup, primes, sidebarFleet } = usePrime();
 
   // Agent email domain editing state
-  const [emailDomain, setEmailDomain] = useState(setup.agentEmailDomain || "");
+  // Uncontrolled until edited — see the same pattern in SystemTab. Seeding via
+  // an effect wrote state after context loaded and clobbered in-progress edits.
+  const [emailDomainEdit, setEmailDomainEdit] = useState<string | null>(null);
+  const emailDomain = emailDomainEdit ?? setup.agentEmailDomain ?? "";
+  const setEmailDomain = setEmailDomainEdit;
   const [domainSaving, setDomainSaving] = useState(false);
   const [domainSaved, setDomainSaved] = useState(false);
 
   // Artifacts root folder editing state
-  const [artifactsFolder, setArtifactsFolder] = useState(setup.artifactsRootFolderId || "");
+  const [artifactsFolderEdit, setArtifactsFolderEdit] = useState<string | null>(null);
+  const artifactsFolder = artifactsFolderEdit ?? setup.artifactsRootFolderId ?? "";
+  const setArtifactsFolder = setArtifactsFolderEdit;
   const [artifactsSaving, setArtifactsSaving] = useState(false);
   const [artifactsSaved, setArtifactsSaved] = useState(false);
-
-  // Sync local state when setup loads from context
-  useEffect(() => {
-    if (setup.agentEmailDomain) setEmailDomain(setup.agentEmailDomain);
-  }, [setup.agentEmailDomain]);
-
-  useEffect(() => {
-    if (setup.artifactsRootFolderId) setArtifactsFolder(setup.artifactsRootFolderId);
-  }, [setup.artifactsRootFolderId]);
 
   const handleSaveDomain = useCallback(async () => {
     setDomainSaving(true);

@@ -13,15 +13,19 @@ export function SystemTab() {
   const [upgrading, setUpgrading] = useState(false);
   const [buildStatus, setBuildStatus] = useState<string | null>(null);
 
-  const [owner, setOwner] = useState(setup?.githubOwner || "");
-  const [repo, setRepo] = useState(setup?.githubRepo || "");
+  // Uncontrolled until edited, then the edit wins.
+  //
+  // `setup` arrives asynchronously, so the fields used to be seeded by an
+  // effect that wrote state after it loaded — a cascading render, and a latent
+  // bug: any later context refresh overwrote whatever was being typed.
+  const [ownerEdit, setOwnerEdit] = useState<string | null>(null);
+  const [repoEdit, setRepoEdit] = useState<string | null>(null);
+  const owner = ownerEdit ?? setup?.githubOwner ?? "";
+  const repo = repoEdit ?? setup?.githubRepo ?? "";
+  const setOwner = setOwnerEdit;
+  const setRepo = setRepoEdit;
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
-
-  useEffect(() => {
-    if (setup?.githubOwner) setOwner(setup.githubOwner);
-    if (setup?.githubRepo) setRepo(setup.githubRepo);
-  }, [setup?.githubOwner, setup?.githubRepo]);
 
   const handleSaveGitHub = async () => {
     setSaving(true);

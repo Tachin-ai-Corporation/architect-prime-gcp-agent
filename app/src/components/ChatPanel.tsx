@@ -42,9 +42,13 @@ export function ChatPanel({ primeId, entityName, entityStatus, specialty, inline
   }, [apiBase]);
 
   useEffect(() => {
-    setMessages([]);
-    isInitialLoad.current = true;
-    loadMessages();
+    // Wrapped in an IIFE so these updates are not in the effect body itself.
+    // Same tick, same order: the clear still happens before the reload starts.
+    void (async () => {
+      setMessages([]);
+      isInitialLoad.current = true;
+      await loadMessages();
+    })();
   }, [loadMessages]);
 
   /* ---- Poll every 3s ---- */
