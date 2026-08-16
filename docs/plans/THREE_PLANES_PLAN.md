@@ -490,6 +490,40 @@ will catch living docs left pointing at the old tree.
 
 ---
 
+
+### CLEANUP — the coordinate the dashboard answers from
+
+`primes/<id>.coreRef` is what /api/contracts, /api/primes/[id]/brain-config and /api/agent-types
+resolve against. Nothing maintained it. The document is created with `"main"`, the deploy route
+resolves a real SHA into VM *metadata* rather than the document, and no upgrade path updates it
+afterwards — so the value is true once, at creation, and drifts silently. fleet-upgrade already
+reported this for AGENTS; Primes were never given the same treatment, and that asymmetry was the
+whole defect.
+
+Fixed at the install rather than at the trigger: `upgrade-corekit` reports the ref it just resolved
+and installed, so the record is correct no matter who asked — dashboard button, SSH, or fleet tool.
+Best-effort: a failed report prints and moves on, because failing a good upgrade over a status
+write would trade a stale field for a broken agent.
+
+**Proven on candicejr, including the part that made the first attempt look broken.** The upgrade
+that INSTALLS a new upgrade-corekit still RUNS the old one — it execs itself from /tmp specifically
+to survive being overwritten — so the report only appears on the following upgrade. First run: no
+report line. Second run against the same ref:
+
+```
+  Reported coreRef ab6a3781d510 to primes/candicejr
+
+  Firestore  candicejr  coreRef=ab6a3781…  updatedAt=2026-08-16T19:16:39Z   (was 3ee2763…)
+  /api/agent-types?primeId=candicejr   12 types  ref ab6a3781d510  pinned
+  /api/contracts?primeId=candicejr               ref ab6a3781d510  pinned
+```
+
+Before this, that same route answered from a three-week-old commit and called it `pinned` with no
+caveat. chuck still reads 3ee2763… from June and will correct itself on its next upgrade — which is
+the mechanism working, not a gap.
+
+---
+
 ## Progress log
 
 | Phase | Commit | Proven on the canary |
