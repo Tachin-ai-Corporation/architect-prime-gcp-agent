@@ -104,6 +104,11 @@ jobs:
       - name: Shipped files are stored with LF
         run: node --test test/line-endings.test.mjs
 
+      # bootstrap runs only on a fresh deploy, so a path it reads that the
+      # manifests stopped installing keeps working everywhere until the next hire.
+      - name: Bootstrap reads only what is installed
+        run: node --test test/bootstrap-paths.test.mjs
+
   codeowners:
     name: CODEOWNERS Resolves
     runs-on: ubuntu-latest

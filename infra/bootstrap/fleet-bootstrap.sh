@@ -351,11 +351,18 @@ fi
 
 # ---- 13) Install agent-ears, agent-mouth, agent-brain, agent-introspect as systemd services ----
 info "Installing systemd services..."
+# A missing unit used to be skipped in silence. The agent then booted, reported
+# healthy, and had no brain — and because bootstrap runs only on a fresh deploy,
+# every existing agent kept working, so nothing pointed at the cause. These four
+# are not optional; a deploy that cannot install them has failed.
 for svc in agent-ears agent-mouth agent-brain agent-introspect; do
   SVC_SRC="${CORE_DIR}/corekit/${svc}.service"
-  if [[ -f "$SVC_SRC" ]]; then
-    cp "$SVC_SRC" "/etc/systemd/system/${svc}.service"
+  if [[ ! -f "$SVC_SRC" ]]; then
+    echo "[ERROR] ${svc}.service missing at ${SVC_SRC} — the manifest did not install it." >&2
+    echo "        An agent without this unit boots and does nothing. Refusing to continue." >&2
+    exit 1
   fi
+  cp "$SVC_SRC" "/etc/systemd/system/${svc}.service"
 done
 
 systemctl daemon-reload
