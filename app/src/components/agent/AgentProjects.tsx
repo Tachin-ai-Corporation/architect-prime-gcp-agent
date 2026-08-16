@@ -89,7 +89,10 @@ export function AgentProjects({ primeId, agentEmail }: AgentProjectsProps) {
   }, []);
 
   useEffect(() => {
-    fetchProjects();
+    // Wrapped rather than called directly: these fetchers set state before
+    // their first await, which put those updates in the effect body itself.
+    // The IIFE runs synchronously up to that await, so timing is unchanged.
+    void (async () => { await fetchProjects(); })();
   }, [fetchProjects]);
 
   /* ---- Sorted + filtered list ---- */

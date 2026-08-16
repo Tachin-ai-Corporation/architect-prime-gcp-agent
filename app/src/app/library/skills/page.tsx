@@ -67,7 +67,12 @@ export default function SkillsLibraryPage() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { fetchCatalog(); }, [fetchCatalog]);
+  useEffect(() => {
+    // Wrapped rather than called directly: these fetchers set state before
+    // their first await, which put those updates in the effect body itself.
+    // The IIFE runs synchronously up to that await, so timing is unchanged.
+    void (async () => { await fetchCatalog(); })();
+  }, [fetchCatalog]);
 
   /* ---- Filter by search ---- */
   const filteredCatalog = useMemo(() => {

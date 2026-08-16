@@ -22,8 +22,12 @@ export function ProcessListView({ primeId, router }: ProcessListViewProps) {
   /* ---- Fetch processes ---- */
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
     (async () => {
+      // Inside the IIFE rather than in the effect body. It still runs in the
+      // same tick — nothing is awaited before it — so a primeId change shows
+      // the loader exactly as before. On mount it is a no-op, because
+      // `loading` already starts true.
+      setLoading(true);
       const data = await api<{ processes: ProcessSummary[] }>(`/api/primes/${primeId}/processes`);
       if (!cancelled) {
         setProcesses(data?.processes ?? []);

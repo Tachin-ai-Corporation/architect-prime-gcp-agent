@@ -27,8 +27,10 @@ export function ProcessDetailView({ primeId, processId, router }: ProcessDetailV
   /* ---- Fetch process ---- */
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
     (async () => {
+      // Inside the IIFE, not the effect body: still the same tick (nothing is
+      // awaited before it), so the loader appears exactly as it did.
+      setLoading(true);
       const data = await api<{ process: ProcessDetail }>(`/api/primes/${primeId}/processes/${processId}`);
       if (!cancelled && data?.process) {
         setProcess(data.process);

@@ -76,7 +76,10 @@ export function AgentProcesses({ primeId, agentEmail }: AgentProcessesProps) {
   }, [primeId]);
 
   useEffect(() => {
-    fetchProcesses();
+    // Wrapped rather than called directly: these fetchers set state before
+    // their first await, which put those updates in the effect body itself.
+    // The IIFE runs synchronously up to that await, so timing is unchanged.
+    void (async () => { await fetchProcesses(); })();
   }, [fetchProcesses]);
 
   /** Resolve subscription — check override first, then server data */

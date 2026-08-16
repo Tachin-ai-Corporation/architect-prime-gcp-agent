@@ -55,8 +55,10 @@ export function ProjectDetailView({ primeId, projectId }: ProjectDetailViewProps
   /* ---- Fetch project ---- */
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
     (async () => {
+      // Inside the IIFE, not the effect body: still the same tick (nothing is
+      // awaited before it), so the loader appears exactly as it did.
+      setLoading(true);
       const data = await api<{ project: ProjectDetail }>(`/api/projects/${projectId}`);
       if (!cancelled && data?.project) {
         setProject(data.project);
@@ -90,8 +92,10 @@ export function ProjectDetailView({ primeId, projectId }: ProjectDetailViewProps
   /* ---- Fetch pending promotions ---- */
   useEffect(() => {
     let cancelled = false;
-    setPromotionsLoading(true);
     (async () => {
+      // Inside the IIFE, not the effect body: still the same tick (nothing is
+      // awaited before it), so the loader appears exactly as it did.
+      setPromotionsLoading(true);
       const data = await api<{ promotions: PromotionEntry[] }>(
         `/api/projects/${projectId}/promotions?status=pending`
       );

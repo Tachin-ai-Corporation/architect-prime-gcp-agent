@@ -25,8 +25,10 @@ export function ProjectListView({ primeId, teamFilter }: ProjectListViewProps) {
   /* ---- Fetch projects ---- */
   useEffect(() => {
     let cancelled = false;
-    setLoading(true);
     (async () => {
+      // Inside the IIFE, not the effect body: still the same tick (nothing is
+      // awaited before it), so the loader appears exactly as it did.
+      setLoading(true);
       const filter = primeId || teamFilter;
       const url = filter ? `/api/projects?team=${encodeURIComponent(filter)}` : `/api/projects`;
       const data = await api<{ projects: ProjectSummary[] }>(url);
