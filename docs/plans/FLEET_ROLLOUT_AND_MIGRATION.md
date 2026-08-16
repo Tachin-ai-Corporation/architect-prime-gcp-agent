@@ -100,6 +100,34 @@ maintaining `coreRef` until the write-back added in `ab6a378`; it fires on upgra
 self-heals the moment it is rolled** and the two already rolled are correct. Until then, `STATE.json`
 on the VM is the only trustworthy source — this document was built that way.
 
+**Three sources disagree about the same fact**, which is worse than one being stale:
+
+| source | says | correct |
+|---|---|---|
+| `corekit/STATE.json` on the VM | `13be751` | ✅ |
+| Firestore `primes/chuck/fleet/*` | `3ee2763` / `UNSET` | ✗ |
+| `corekit/fleet-registry.json` on the Prime | `3ee2763`, `status: deploying` | ✗ |
+
+millie is `online` at `0a2b78d`; the Prime's local registry file still calls her `deploying` at
+`3ee2763`.
+
+**This is what made the Prime lie.** Asked to compare installed refs against registered refs, the
+canary Prime had no tool that could read an installed ref — `fleet-status` and `fleet-verify` did not
+mention `coreRef` anywhere. Motor said so and `report_fail`ed correctly; the mission then synthesised
+a table with both columns from one source, found no disagreement, and reported **"zero drift"** across
+a fleet where every agent had drifted. Fixed in `3f73233`: `fleet-status --probe` reads
+`installedRef` from the VM and sets `refDrift`, `reportedRef` is named for the question it actually
+answers, and no single "version" column exists to be compared against itself. A failed probe reports
+UNKNOWN rather than falling back to the registry.
+
+**Reproved on the canary** (`3f73233`, same mission text, same Prime). The agent reached for
+`fleet-status --probe --json` unprompted, cross-checked with `gcloud compute instances list`, and
+returned: millie `0a2b78d57dc7` reported / `0a2b78d57dc7` installed, no drift; mvprobe `UNREPORTED` /
+`UNKNOWN`, **flagged as a disagreement** with the reason that its VM no longer exists. It claimed no
+agents outside this Prime's registry — the first run had invented five — and its `[verified]` bins
+name only things it actually observed. The checkpoint that previously passed on a process criterion
+now **failed** and forced a re-plan, converging on a correct answer at iteration 3.
+
 ### S-2 · A prime is registered online with no VM
 
 `prime-chucknorris` — `status: online`, `coreRef: UNSET`, no instance. A ghost that any fleet-wide
@@ -149,7 +177,19 @@ that a rollout stops rather than continuing into a second broken agent.
 8. **Skills installed** — the quiet failure is an agent that boots healthy with no capabilities.
 
 Then, off-VM: **one real mission run to a terminal state with its artifact verified by re-derivation**
-(B-28), and **registry `coreRef` now matches disk**.
+(B-28), and **`fleet-status --probe` shows `refDrift: false`** for the agent just rolled.
+
+The gate reads `STATE.json` on the VM directly rather than asking the Prime, which is deliberate: at
+the time this was written the Prime could not answer the question at all, and the tool that now lets
+it (§3, S-1) is younger than the fleet it will be used on.
+
+> The gate's own first draft failed a healthy agent. Run as a positive control against millie —
+> already at HEAD, plainly fine — it failed her on "brain reached startup", because the check used a
+> fixed three-minute window and her startup banner was hours old. A gate that fails good agents
+> mid-rollout either halts a working rollout or teaches its operator to ignore it. It now anchors the
+> journal window on `installedAt` and asserts the assertion actually wanted: *the brain came up on
+> this content*, whenever the gate happens to run. **Run a gate against a known-good subject before
+> depending on it against an unknown one.**
 
 ### Order
 
