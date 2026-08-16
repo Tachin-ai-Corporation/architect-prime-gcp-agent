@@ -362,6 +362,20 @@ systemctl daemon-reload
 systemctl enable agent-ears agent-mouth agent-brain agent-introspect 2>/dev/null || true
 systemctl start agent-brain agent-introspect || warn "agent-brain/introspect start failed"
 
+# Fleet Definition sync (C-36). Installed but never enabled by bootstrap until
+# now, so a fresh agent would sit at its manifest-installed defaults forever and
+# only reconcile if an operator remembered to start the timer by hand.
+#
+# Safe to enable everywhere: a pass is a no-op unless this agent has an
+# assignment, and an agent with no `fleet_assignments` record skips immediately.
+# `fleet_config.sync_enabled: false` switches the whole mechanism off.
+if [[ -f "${CORE_DIR}/corekit/agent-content-sync.timer" ]]; then
+  cp "${CORE_DIR}/corekit/agent-content-sync.service" /etc/systemd/system/ 2>/dev/null || true
+  cp "${CORE_DIR}/corekit/agent-content-sync.timer" /etc/systemd/system/
+  systemctl daemon-reload
+  systemctl enable --now agent-content-sync.timer 2>/dev/null || warn "content-sync timer not enabled"
+fi
+
 if [[ -n "${AGENT_USER_EMAIL}" && -n "${DWD_SIGNER_SA}" ]]; then
   systemctl start agent-ears agent-mouth || warn "ears/mouth start failed (DWD may not be configured)"
 else

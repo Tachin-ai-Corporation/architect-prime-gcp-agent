@@ -7,6 +7,11 @@
 
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+const REPO = join(fileURLToPath(new URL('.', import.meta.url)), '..');
 
 import {
   LEGAL_TRANSITIONS, TERMINAL_STATUSES, PAUSED_STATUSES, RUNNING_STATUSES,
@@ -263,4 +268,31 @@ test('the dead unified-ceremony module is gone', async () => {
     !readdirSync(libDir).includes('envelope-lifecycle.mjs'),
     'the dead duplicate authority must not return'
   );
+});
+
+// ── The guard is canaryable ────────────────────────────────────────────
+//
+// The contract's own guidance is "move a canary to enforce once observe is
+// clean". There was no way to move ONE agent: `transition_guard` is a fleet-wide
+// contract value, so canarying meant hand-editing contracts.json on a VM — which
+// the next upgrade overwrites, silently reverting the canary mid-experiment and
+// leaving an operator to conclude the table is fine because nothing fired.
+
+test('the daemon reads a per-VM override before the fleet contract', () => {
+  const src = readFileSync(join(REPO, 'corekit', 'daemon', 'agent-brain.mjs'), 'utf8');
+  const line = src.split('\n').find((l) => l.includes('transition_guard') && l.includes('CONTRACTS'));
+  assert.ok(line, 'the guard must consult the contract');
+  assert.match(line, /process\.env\.AGENT_TRANSITION_GUARD\s*\|\|/,
+    'and an env override must come FIRST, or a canary cannot be moved without moving the fleet');
+  assert.match(line, /\|\|\s*'observe'/, "and the final fallback stays 'observe' — enforcing by default is how a table breaks live work");
+});
+
+test('enforce refuses exactly the transitions the table forbids', () => {
+  // The behaviour the canary is being asked to trust.
+  for (const [from, to] of [['complete', 'active'], ['archived', 'active'], ['failed', 'complete']]) {
+    assert.equal(canTransition(from, to).allowed, false, `${from} → ${to} must be refused`);
+  }
+  for (const [from, to] of [['pending', 'active'], ['active', 'complete'], ['complete', 'archived']]) {
+    assert.equal(canTransition(from, to).allowed, true, `${from} → ${to} must be allowed`);
+  }
 });

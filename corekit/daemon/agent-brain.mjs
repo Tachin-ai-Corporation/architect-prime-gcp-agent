@@ -2252,7 +2252,12 @@ async function completeEnvelope(envelope, opts) {
   //   observe (default) — record a disagreement, change nothing
   //   enforce           — refuse the write
   //   off               — skip entirely
-  const _tg = CONTRACTS.dispatch?.transition_guard || 'observe';
+  // A per-VM override, because the contract's own guidance is "move a canary to
+  // enforce once observe is clean" and there was no way to move ONE agent. The
+  // contract is fleet-wide, so canarying it meant hand-editing contracts.json on
+  // a VM — which the next upgrade overwrites, silently reverting the canary
+  // mid-experiment. Same shape as the other canary flags in this system.
+  const _tg = process.env.AGENT_TRANSITION_GUARD || CONTRACTS.dispatch?.transition_guard || 'observe';
   if (_tg !== 'off' && envelope.status !== status) {
     const verdict = canTransition(envelope.status, status);
     if (!verdict.allowed) {
