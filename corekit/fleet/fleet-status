@@ -22,23 +22,34 @@ die() { echo "[$(date -Is)] [fleet-status] [FATAL] $*" >&2; exit 1; }
 # ---- Parse args ----
 AGENT_NAME=""
 JSON_MODE=false
+PROBE=false
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --name) AGENT_NAME="$2"; shift 2 ;;
     --json) JSON_MODE=true; shift ;;
+    --probe) PROBE=true; shift ;;
     --help|-h)
-      echo "Usage: fleet-status [--name <agent>] [--json]"
+      echo "Usage: fleet-status [--name <agent>] [--json] [--probe]"
       echo ""
       echo "  --name    Show detailed status for a specific agent"
       echo "  --json    Output machine-readable JSON"
+      echo "  --probe   Read each VM's INSTALLED corekit ref over SSH and compare it"
+      echo "            against the ref the registry reports. Slower (one SSH per"
+      echo "            agent) and the only way to answer 'what is actually running'."
       echo ""
       echo "Without --name, shows a summary of all fleet agents."
+      echo ""
+      echo "reportedRef is what the agent last TOLD the registry, written on upgrade."
+      echo "It is not proof of what is installed: an agent upgraded by any path that"
+      echo "does not report leaves it stale, and it reads exactly like fact. Use"
+      echo "--probe when the answer matters."
       exit 0
       ;;
     *) die "Unknown arg: $1" ;;
   esac
 done
+export FLEET_STATUS_PROBE="$PROBE"
 
 # ---- Resolve project + prime ID ----
 PRIME_PROJECT="$(curl -s -f -H 'Metadata-Flavor: Google' \
@@ -159,6 +170,8 @@ if json_mode:
         "deployedAt": deployed_at,
         "deploySteps": deploy_steps,
         "actionRequired": action_required,
+        "reportedRef": fv(fields.get("coreRef")) or None,
+        "reportedRefAt": fv(fields.get("updatedAt")) or None,
     }, indent=2))
 else:
     live_icon = {True: "🟢 LIVE", False: "🔴 DOWN", None: "⚪ UNKNOWN"}[live]
@@ -178,6 +191,10 @@ else:
     print(f"  VM         : {vm}")
     print(f"  Zone       : {zone}")
     print(f"  Deployed   : {deployed_at}")
+    _rr = fv(fields.get("coreRef")) or ""
+    _ra = fv(fields.get("updatedAt")) or "never"
+    print(f"  Reported   : {(_rr[:12] or 'UNREPORTED')}  (told to the registry {_ra} — NOT proof of what is installed)")
+    print(f"               run `fleet-status --probe` to read the VM's installed ref")
 
     if deploy_steps:
         print(f"\n  Deploy Progress:")
@@ -225,11 +242,12 @@ fi
 RESP="$(curl -s -H "Authorization: Bearer $TOKEN" \
   "${FIRESTORE_URL}/primes/${PRIME_ID}/fleet" 2>/dev/null)"
 
-python3 - <<'PYEOF' "$RESP" "$JSON_MODE"
-import sys, json
+python3 - <<'PYEOF' "$RESP" "$JSON_MODE" "$PRIME_PROJECT"
+import sys, json, os
 
 resp = json.loads(sys.argv[1])
 json_mode = sys.argv[2] == "True"
+project = sys.argv[3]
 docs = resp.get("documents", [])
 
 def fv(f):
@@ -289,7 +307,49 @@ for doc in docs:
         "deployedAt": fv(fields.get("deployedAt")),
         "deploySteps": fv(fields.get("deploySteps")) or [],
         "actionRequired": fv(fields.get("actionRequired")) or None,
+        # What the agent last TOLD the registry. Named `reportedRef`, not
+        # `coreRef`, because the field is written on upgrade and by nothing else:
+        # an agent upgraded by any path that does not report leaves it stale while
+        # it still reads as fact. A fleet-health mission compared this value to
+        # itself, found no disagreement, and reported "zero drift" across a fleet
+        # where every agent had drifted. The name now says which question it answers.
+        "reportedRef": fv(fields.get("coreRef")) or None,
+        "reportedRefAt": fv(fields.get("updatedAt")) or None,
     })
+
+# ---- --probe: ground truth, read from the VM itself ----
+# The registry is a report; STATE.json is the install. Only this can tell them
+# apart, and until it existed a Prime asked to compare them had no mechanism at
+# all — motor said so, correctly, and was overruled by a synthesised answer.
+if os.environ.get("FLEET_STATUS_PROBE") == "true":
+    import subprocess
+    for a in agents:
+        vm, zone = a.get("vm"), a.get("zone")
+        if not vm or not zone:
+            a["installedRef"], a["refDrift"] = None, None
+            a["probeError"] = "no vm/zone in registry"
+            continue
+        try:
+            out = subprocess.run(
+                ["gcloud", "compute", "ssh", vm, f"--zone={zone}", f"--project={project}",
+                 "--tunnel-through-iap", "--ssh-flag=-oConnectTimeout=15", "--command",
+                 "sudo sed -n 's/.*\"coreRef\": *\"\\([^\"]*\\)\".*/\\1/p' "
+                 "/opt/corekit/corekit/STATE.json | head -1"],
+                capture_output=True, text=True, timeout=90,
+            )
+            ref = (out.stdout or "").strip().splitlines()
+            ref = ref[-1].strip() if ref else ""
+            if not ref:
+                a["installedRef"], a["refDrift"] = None, None
+                a["probeError"] = (out.stderr or "no coreRef in STATE.json").strip()[:160]
+            else:
+                a["installedRef"] = ref
+                rep = a.get("reportedRef") or ""
+                # Unreported is drift too: "we do not know" is not "they agree".
+                a["refDrift"] = (not rep) or (not ref.startswith(rep[:12]))
+        except Exception as e:
+            a["installedRef"], a["refDrift"] = None, None
+            a["probeError"] = f"{type(e).__name__}: {e}"[:160]
 
 if json_mode:
     print(json.dumps({"agents": agents, "count": len(agents)}, indent=2))
@@ -322,6 +382,21 @@ else:
                 live_note = ""
 
             print(f"  {status_icon}  {a['name']:12s}  {a['specialty']:10s}  {a['status']}{progress}{live_note}")
+
+            # Refs, always labelled by which question they answer. Never print a
+            # single "version" column: that is the shape that let a comparison be
+            # made against itself and reported as agreement.
+            rep = (a.get("reportedRef") or "")[:12] or "UNREPORTED"
+            if a.get("installedRef") or a.get("probeError"):
+                inst = (a.get("installedRef") or "")[:12] or "?"
+                if a.get("probeError"):
+                    print(f"       ref: reported {rep} · installed UNKNOWN — probe failed: {a['probeError']}")
+                elif a.get("refDrift"):
+                    print(f"       ref: reported {rep} · installed {inst}  ⚠️  DRIFT")
+                else:
+                    print(f"       ref: reported {rep} · installed {inst}  ✅ match")
+            else:
+                print(f"       ref: reported {rep}  (unverified — use --probe)")
 
             # Show action required if any
             ar = a.get("actionRequired")

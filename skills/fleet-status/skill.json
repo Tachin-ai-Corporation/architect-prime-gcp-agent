@@ -1,7 +1,7 @@
 {
   "id": "fleet-status",
   "name": "Fleet Status",
-  "version": 2,
+  "version": 3,
   "description": "Show current status of deployed fleet agents from Firestore.",
   "author": "architect-prime",
   "origin": "core",

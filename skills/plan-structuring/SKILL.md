@@ -129,6 +129,26 @@ that served the page at a reachable URL SUCCEEDED. Put a runtime detail in a cri
 the requester named it as a requirement — never invented from a tool's cosmetics or a recalled
 incident.
 
+**The SUBJECT of a criterion is the artifact, never an organ or a planning step.** Its sibling
+above bans an incidental *detail* of the tool run; this bans an incidental *actor*. A criterion
+naming cortex, prefrontal, motor, cerebellum, "the plan", "the premise" or "the approach is
+re-evaluated" describes the agent's own internal next move, and cerebellum can pass it honestly
+while the deliverable does not exist — verification asked the wrong question and got a truthful
+answer to it. Real incident: a fleet-health mission needed each VM's installed version; motor
+correctly `report_fail`ed that no tool could obtain it; the checkpoint criterion read "Cortex
+re-evaluates the mission's flawed premise and provides a valid mechanism"; cerebellum passed it
+(cortex *did* re-evaluate); cortex then synthesised a drift table from data it never had and the
+mission completed reporting "zero drift" on a fleet where every agent had drifted. A criterion
+someone OUTSIDE the agent could not check is not a criterion — it is a note to self. Write what a
+reader could confirm: "the report lists every agent with its installed ref and its registered ref,
+and names each disagreement", not "cortex obtains a valid mechanism".
+
+**When the missing thing is a capability, the checkpoint FAILS — it does not become a
+re-planning goal.** If an organ reports that no tool can do what the mission needs, that is a
+`needs_input` for the operator (the capability must be built or granted), not a criterion about
+trying again. Turning "I cannot do this" into "the agent works out how to do this" is how an
+impossible mission acquires a passable checkpoint.
+
 **A criterion must not require a mission-completion-time state — above all, a commit "on `main`".**
 An agent commits to its own `mission/<id>` branch; the daemon merges that branch to `main` only
 when the mission COMPLETES — a checkpoint cannot push to `main` itself (`work-commit`/`work-sync`

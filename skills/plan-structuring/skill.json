@@ -1,7 +1,7 @@
 {
   "id": "plan-structuring",
   "name": "Checkpoint Plan Structuring",
-  "version": 11,
+  "version": 12,
   "description": "Transform a goal and Brief into a structured checkpoint and task plan for execution.",
   "origin": "core",
   "category": "planning",
