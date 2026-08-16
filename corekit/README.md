@@ -5,7 +5,7 @@
 ## What this is
 A manifest-driven "core kit" for Architect Prime that includes:
 
-- Agent workspace files (`brain/prime/`, `brain/fleet/`, `specialties/`)
+- Agent workspace files (`platform/organ-firmware/prime/`, `platform/organ-firmware/fleet/`, `specialties/`)
 - The VM runtime (`platform/{contracts,security,persistence,providers,context,control-plane,work,deployment,runtime}/`)
 - CoreKit scripts (`corekit/{brain,fleet,chat,memory,dashboard,system}/`)
 - Infrastructure contracts (`infra/contracts.json`)

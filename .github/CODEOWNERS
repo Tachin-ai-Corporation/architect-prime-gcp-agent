@@ -71,9 +71,6 @@
 /corekit/brain/             @Tachin-ai-Corporation/platform-maintainers
 /corekit/config/            @Tachin-ai-Corporation/platform-maintainers
 
-# ---- Protected organ firmware (C-28 soft-lock, B-36) ----
-/brain/                     @Tachin-ai-Corporation/platform-maintainers
-
 # ---- Control plane: authoritative commands and queries, and its auth ----
 /app/src/app/api/           @Tachin-ai-Corporation/platform-maintainers
 /app/src/lib/               @Tachin-ai-Corporation/platform-maintainers

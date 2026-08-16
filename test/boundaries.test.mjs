@@ -114,7 +114,7 @@ const DEFINITION_COLLECTIONS = ['fleet_definitions', 'fleet_changes', 'fleet_rel
 const FOUNDATION_PATHS = [
   '/platform/', '/corekit/brain/', '/corekit/system/', '/corekit/config/',
   '/infra/manifests/', '/infra/bootstrap/',
-  '/infra/install.sh', '/brain/', '/app/src/app/api/', '/app/src/lib/',
+  '/infra/install.sh', '/app/src/app/api/', '/app/src/lib/',
   '/test/', '/tests/', '/.github/',
 ];
 
@@ -148,7 +148,7 @@ test('…and that check fires on a package that reaches out', () => {
 });
 
 test('Foundation code never imports a concrete definition from the catalog', () => {
-  // The catalog (brain/, specialties/, skills/) is seed CONTENT. Foundation
+  // The catalog (specialties/, skills/) is seed CONTENT. Foundation
   // that imports it can no longer be reasoned about independently of a
   // particular fleet's souls — the plane confusion C-29 exists to end.
   for (const file of walk('corekit', ['.mjs'])) {
@@ -159,7 +159,7 @@ test('Foundation code never imports a concrete definition from the catalog', () 
 });
 
 test('…and that check fires on a catalog import', () => {
-  assert.equal(reachesCatalog('../../brain/prime/cortex/SOUL.md'), true);
+  assert.equal(reachesCatalog('../../specialties/pm/brain/cortex/SOUL_APPEND.md'), true);
   assert.equal(reachesCatalog('../specialties/assistant/config.json'), true);
   assert.equal(reachesCatalog('../lib/firestore.mjs'), false);
   assert.equal(reachesCatalog('node:fs'), false);

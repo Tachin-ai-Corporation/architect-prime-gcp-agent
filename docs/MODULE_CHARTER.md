@@ -191,7 +191,7 @@ is *a named narrative of how a kind of work goes well*, it is a Process.
 
 - **Layer purity** — no tool flags, `p-*` ids or project tokens in organ bodies; project-context shape;
   process purity.
-- **Organ soft-lock** — content-hash pin in `brain/ORGAN_LOCK.json`, re-pinned by `update-organ-lock`
+- **Organ soft-lock** — content-hash pin in `platform/organ-firmware/ORGAN_LOCK.json`, re-pinned by `update-organ-lock`
   with an `organ-change: intended` commit trailer.
 - **Plane boundaries** — Foundation never imports concrete catalog or tenant definitions; no direct
   Firestore access outside persistence adapters; generated artifacts carry their source digest and are

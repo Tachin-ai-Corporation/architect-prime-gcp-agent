@@ -4,7 +4,7 @@
 # Then a job-specific manifest is layered on top.
 
 # Fleet workspace seeds
-brain/fleet/_base/IDENTITY.md workspace/IDENTITY.md
+platform/organ-firmware/fleet/_base/IDENTITY.md workspace/IDENTITY.md
 
 # Every organ SOUL installs TWICE, and the pair is the point:
 #
@@ -16,25 +16,25 @@ brain/fleet/_base/IDENTITY.md workspace/IDENTITY.md
 # Composition reads the base and writes the render. Before this split both
 # readers and writers used SOUL.md, so every pass composed onto its own output
 # and the specialty layer accumulated a copy per apply.
-brain/fleet/_brain/cortex/SOUL.md workspace/SOUL.base.md
-brain/fleet/_brain/cortex/SOUL.md workspace/SOUL.md
+platform/organ-firmware/fleet/_brain/cortex/SOUL.md workspace/SOUL.base.md
+platform/organ-firmware/fleet/_brain/cortex/SOUL.md workspace/SOUL.md
 
 # Shared brain sub-agent workspaces (used by ALL fleet agents)
-brain/fleet/_brain/prefrontal/SOUL.md workspace-prefrontal/SOUL.base.md
-brain/fleet/_brain/prefrontal/SOUL.md workspace-prefrontal/SOUL.md
-brain/fleet/_brain/prefrontal/IDENTITY.md workspace-prefrontal/IDENTITY.md
-brain/fleet/_brain/temporal-research/SOUL.md workspace-temporal-research/SOUL.base.md
-brain/fleet/_brain/temporal-research/SOUL.md workspace-temporal-research/SOUL.md
-brain/fleet/_brain/temporal-research/IDENTITY.md workspace-temporal-research/IDENTITY.md
-brain/fleet/_brain/temporal-memory/SOUL.md workspace-temporal-memory/SOUL.base.md
-brain/fleet/_brain/temporal-memory/SOUL.md workspace-temporal-memory/SOUL.md
-brain/fleet/_brain/temporal-memory/IDENTITY.md workspace-temporal-memory/IDENTITY.md
-brain/fleet/_brain/cerebellum/SOUL.md workspace-cerebellum/SOUL.base.md
-brain/fleet/_brain/cerebellum/SOUL.md workspace-cerebellum/SOUL.md
-brain/fleet/_brain/cerebellum/IDENTITY.md workspace-cerebellum/IDENTITY.md
-brain/fleet/_brain/motor/SOUL.md workspace-motor/SOUL.base.md
-brain/fleet/_brain/motor/SOUL.md workspace-motor/SOUL.md
-brain/fleet/_brain/motor/IDENTITY.md workspace-motor/IDENTITY.md
+platform/organ-firmware/fleet/_brain/prefrontal/SOUL.md workspace-prefrontal/SOUL.base.md
+platform/organ-firmware/fleet/_brain/prefrontal/SOUL.md workspace-prefrontal/SOUL.md
+platform/organ-firmware/fleet/_brain/prefrontal/IDENTITY.md workspace-prefrontal/IDENTITY.md
+platform/organ-firmware/fleet/_brain/temporal-research/SOUL.md workspace-temporal-research/SOUL.base.md
+platform/organ-firmware/fleet/_brain/temporal-research/SOUL.md workspace-temporal-research/SOUL.md
+platform/organ-firmware/fleet/_brain/temporal-research/IDENTITY.md workspace-temporal-research/IDENTITY.md
+platform/organ-firmware/fleet/_brain/temporal-memory/SOUL.md workspace-temporal-memory/SOUL.base.md
+platform/organ-firmware/fleet/_brain/temporal-memory/SOUL.md workspace-temporal-memory/SOUL.md
+platform/organ-firmware/fleet/_brain/temporal-memory/IDENTITY.md workspace-temporal-memory/IDENTITY.md
+platform/organ-firmware/fleet/_brain/cerebellum/SOUL.md workspace-cerebellum/SOUL.base.md
+platform/organ-firmware/fleet/_brain/cerebellum/SOUL.md workspace-cerebellum/SOUL.md
+platform/organ-firmware/fleet/_brain/cerebellum/IDENTITY.md workspace-cerebellum/IDENTITY.md
+platform/organ-firmware/fleet/_brain/motor/SOUL.md workspace-motor/SOUL.base.md
+platform/organ-firmware/fleet/_brain/motor/SOUL.md workspace-motor/SOUL.md
+platform/organ-firmware/fleet/_brain/motor/IDENTITY.md workspace-motor/IDENTITY.md
 
 # Workspace auth token (shared by all workspace skills)
 skills/workspace-drive/ws-token bin/ws-token

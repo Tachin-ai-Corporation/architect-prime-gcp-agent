@@ -2,7 +2,7 @@
 # update-organ-lock — re-pin the organ soft-lock (C-28).
 #
 # Organs are the static identity core; skills/projects/processes carry all iteration.
-# This script pins a content hash of every organ file into brain/ORGAN_LOCK.json.
+# This script pins a content hash of every organ file into platform/organ-firmware/ORGAN_LOCK.json.
 # validate-contracts fails on any un-acknowledged drift; running THIS script (plus an
 # `organ-change: intended` commit trailer) is the sanctioned acknowledgment that an
 # organ change is deliberate. Same verify-or-abort discipline as update-deep-truths.
@@ -11,7 +11,7 @@
 # body ABOVE the marker is hashed — so a deep-truths append never trips the lock.
 set -euo pipefail
 cd "$(git rev-parse --show-toplevel 2>/dev/null || echo .)"
-OUT="brain/ORGAN_LOCK.json"
+OUT="platform/organ-firmware/ORGAN_LOCK.json"
 
 # Resolve a real interpreter. On Windows `python3` is an App Execution Alias that
 # opens the Microsoft Store instead of running anything, so probe by execution
@@ -29,8 +29,8 @@ import hashlib, json, sys, glob, os
 out = sys.argv[1]
 MARKER = "<!-- Managed by update-deep-truths"
 patterns = [
-    "brain/fleet/_brain/*/SOUL.md", "brain/fleet/_brain/*/IDENTITY.md", "brain/fleet/_base/IDENTITY.md",
-    "brain/prime/*/SOUL.md", "brain/prime/*/IDENTITY.md",
+    "platform/organ-firmware/fleet/_brain/*/SOUL.md", "platform/organ-firmware/fleet/_brain/*/IDENTITY.md", "platform/organ-firmware/fleet/_base/IDENTITY.md",
+    "platform/organ-firmware/prime/*/SOUL.md", "platform/organ-firmware/prime/*/IDENTITY.md",
     "specialties/*/brain/*/SOUL_APPEND.md",
 ]
 files = sorted({f.replace(os.sep, "/") for p in patterns for f in glob.glob(p)})

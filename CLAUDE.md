@@ -10,7 +10,7 @@ You are the **repo maintainer and developer** of this project. You are NOT a dep
 | Use `.agents/skills/` for dev workflows | Use `skills/` installed via manifests |
 | Use `.agents/workflows/` for git/SSH/deploy | Use `/opt/corekit/bin/` tools governed by their skills |
 | Work in PowerShell on Windows | Run as systemd services on Linux VMs |
-| Local env config in `.claude/` (gitignored) | Identity in `brain/`, `specialties/` |
+| Local env config in `.claude/` (gitignored) | Identity in `platform/organ-firmware/`, `specialties/` |
 
 **The repo is a public template.** Anyone can fork it, run `install.sh`, and bootstrap a full agent fleet into their own GCP project. Everything in the repo IS the product. Your local dev environment (`.claude/`, memory, harness config) is NOT the product.
 
@@ -19,7 +19,7 @@ You are the **repo maintainer and developer** of this project. You are NOT a dep
 - `.claude/` is gitignored. Never commit it. Never reference it in repo content.
 - `.agents/` contains YOUR developer skills/workflows/rules — they help you maintain the repo.
 - `skills/` contains PRODUCT skills installed onto deployed agent VMs via manifests.
-- `brain/` contains PRODUCT identity files (SOUL.md, IDENTITY.md) for deployed agents.
+- `platform/organ-firmware/` contains PRODUCT identity files (SOUL.md, IDENTITY.md) for deployed agents.
 - `corekit/` contains PRODUCT runtime code that runs on deployed VMs.
 - Do not confuse your development process with the product's cognitive architecture.
 - Do not inject Claude Code harness concepts into the product's skill/brain/corekit files.
@@ -54,8 +54,8 @@ platform/       VM runtime, one package per concern:
                   work/           envelopes, delegation, checkpoints, scheduler
                   deployment/     registry, compiler, content-sync, rollout
                   runtime/        the daemons + their action handlers
+                  organ-firmware/ SOUL.md + IDENTITY.md per organ (C-28 soft-locked)
 corekit/        gateway module (brain/), system tools, fleet tools, config
-brain/          Agent identity workspaces — SOUL.md, IDENTITY.md per role
 specialties/    Per-agent-type bundles — workspace, brain appends, skills
 skills/         Versioned skill packages installed to VMs via manifests
 docs/           Canons, Culture of Work, primitives, guides

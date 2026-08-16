@@ -140,30 +140,30 @@ skills/scripting/skill.json     skills/scripting/skill.json
 # Composition reads the base and writes the render. Before this split both
 # readers and writers used SOUL.md, so every pass composed onto its own output
 # and the overlay accumulated a copy per apply.
-brain/prime/cortex/IDENTITY.md workspace/IDENTITY.md
-brain/prime/cortex/SOUL.md workspace/SOUL.base.md
-brain/prime/cortex/SOUL.md workspace/SOUL.md
-brain/prime/cortex/MEMORY.md workspace/MEMORY.md?
-brain/prime/cortex/checkpoint/progress.json workspace/checkpoint/progress.json?
+platform/organ-firmware/prime/cortex/IDENTITY.md workspace/IDENTITY.md
+platform/organ-firmware/prime/cortex/SOUL.md workspace/SOUL.base.md
+platform/organ-firmware/prime/cortex/SOUL.md workspace/SOUL.md
+platform/organ-firmware/prime/cortex/MEMORY.md workspace/MEMORY.md?
+platform/organ-firmware/prime/cortex/checkpoint/progress.json workspace/checkpoint/progress.json?
 
 
 
-brain/prime/temporal-research/SOUL.md workspace-temporal-research/SOUL.base.md
-brain/prime/temporal-research/SOUL.md workspace-temporal-research/SOUL.md
-brain/prime/temporal-research/IDENTITY.md workspace-temporal-research/IDENTITY.md
+platform/organ-firmware/prime/temporal-research/SOUL.md workspace-temporal-research/SOUL.base.md
+platform/organ-firmware/prime/temporal-research/SOUL.md workspace-temporal-research/SOUL.md
+platform/organ-firmware/prime/temporal-research/IDENTITY.md workspace-temporal-research/IDENTITY.md
 
-brain/prime/temporal-memory/SOUL.md workspace-temporal-memory/SOUL.base.md
-brain/prime/temporal-memory/SOUL.md workspace-temporal-memory/SOUL.md
-brain/prime/temporal-memory/IDENTITY.md workspace-temporal-memory/IDENTITY.md
+platform/organ-firmware/prime/temporal-memory/SOUL.md workspace-temporal-memory/SOUL.base.md
+platform/organ-firmware/prime/temporal-memory/SOUL.md workspace-temporal-memory/SOUL.md
+platform/organ-firmware/prime/temporal-memory/IDENTITY.md workspace-temporal-memory/IDENTITY.md
 
-brain/prime/prefrontal/SOUL.md workspace-prefrontal/SOUL.base.md
-brain/prime/prefrontal/SOUL.md workspace-prefrontal/SOUL.md
-brain/prime/prefrontal/IDENTITY.md workspace-prefrontal/IDENTITY.md
+platform/organ-firmware/prime/prefrontal/SOUL.md workspace-prefrontal/SOUL.base.md
+platform/organ-firmware/prime/prefrontal/SOUL.md workspace-prefrontal/SOUL.md
+platform/organ-firmware/prime/prefrontal/IDENTITY.md workspace-prefrontal/IDENTITY.md
 
-brain/prime/motor/SOUL.md workspace-motor/SOUL.base.md
-brain/prime/motor/SOUL.md workspace-motor/SOUL.md
-brain/prime/motor/IDENTITY.md workspace-motor/IDENTITY.md
+platform/organ-firmware/prime/motor/SOUL.md workspace-motor/SOUL.base.md
+platform/organ-firmware/prime/motor/SOUL.md workspace-motor/SOUL.md
+platform/organ-firmware/prime/motor/IDENTITY.md workspace-motor/IDENTITY.md
 
-brain/prime/cerebellum/SOUL.md workspace-cerebellum/SOUL.base.md
-brain/prime/cerebellum/SOUL.md workspace-cerebellum/SOUL.md
-brain/prime/cerebellum/IDENTITY.md workspace-cerebellum/IDENTITY.md
+platform/organ-firmware/prime/cerebellum/SOUL.md workspace-cerebellum/SOUL.base.md
+platform/organ-firmware/prime/cerebellum/SOUL.md workspace-cerebellum/SOUL.md
+platform/organ-firmware/prime/cerebellum/IDENTITY.md workspace-cerebellum/IDENTITY.md

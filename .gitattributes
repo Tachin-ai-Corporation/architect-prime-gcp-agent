@@ -20,10 +20,10 @@ skills/**       text eol=lf
 infra/**        text eol=lf
 bin/**          text eol=lf
 
-# Organ firmware and role bundles ship as content, not code, and are hashed.
-# A CRLF SOUL.md is a different content digest from the same SOUL.md, so an
-# agent would resync on every apply and never converge.
-brain/**        text eol=lf
+# Role bundles ship as content, not code, and are hashed. A CRLF SOUL_APPEND.md
+# is a different content digest from the same file, so an agent would resync on
+# every apply and never converge. Organ firmware now lives under platform/,
+# which is covered above.
 specialties/**  text eol=lf
 operator/**     text eol=lf
 

@@ -28,7 +28,7 @@ const prose = (text) => text
   .replace(/\s+/g, ' ');
 
 const ROLE_PRIME = read('infra/manifests/role-prime.txt');
-const PRIME_SOUL = read('brain/prime/cortex/SOUL.md');
+const PRIME_SOUL = read('platform/organ-firmware/prime/cortex/SOUL.md');
 
 /** Manifest lines that actually install something, ignoring commentary. */
 function installedPaths(manifest) {

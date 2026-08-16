@@ -68,7 +68,7 @@ Every file a manifest references exists in the same commit as the manifest entry
 ## IV. Structure
 
 ### C-10 · The six modules are the map
-`app/` (control plane) · `infra/` (contracts, manifests, bootstraps) · `corekit/` (VM runtime) · `brain/` (identity workspaces) · `specialties/` (per-type bundles) · `skills/` (skill packages). New code belongs in exactly one. Cross-module reach-ins (app importing corekit internals, corekit reading app code) are forbidden.
+`app/` (control plane) · `infra/` (contracts, manifests, bootstraps) · `corekit/` (VM runtime) · `platform/organ-firmware/` (identity workspaces) · `specialties/` (per-type bundles) · `skills/` (skill packages). New code belongs in exactly one. Cross-module reach-ins (app importing corekit internals, corekit reading app code) are forbidden.
 **Violation looks like:** a seventh top-level module without a canon amendment; runtime logic in `app/`; dashboard logic in `corekit/`; a specialty bundle scattering files across modules.
 
 ### C-11 · Modular manifests: base + role + job, chained
@@ -233,7 +233,7 @@ Content in the wrong layer is a defect regardless of whether it "works." The lay
 volatility: organs are the frozen identity core, the other three carry all iteration.
 
 **Organs are soft-locked.** An organ changes only by explicit intent. `validate-contracts` pins each
-organ file's content hash (`brain/ORGAN_LOCK.json`) and fails on any un-acknowledged drift;
+organ file's content hash (`platform/organ-firmware/ORGAN_LOCK.json`) and fails on any un-acknowledged drift;
 re-pinning with `update-organ-lock` plus an `organ-change: intended` commit trailer is the sanctioned
 acknowledgment — the same verify-or-abort discipline that already guards the `## Deep Truths` region
 (`corekit/memory/update-deep-truths`). A parallel always-on check rejects cross-layer leakage (tool

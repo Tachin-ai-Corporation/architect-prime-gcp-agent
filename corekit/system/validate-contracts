@@ -823,7 +823,7 @@ for (const id of [...new Set(shipped)].sort()) {
   # ---- Check 15: Organ layer purity (C-28) ----
   # Organ SOULs carry character, not tool syntax or process ids. Flag backtick-wrapped
   # command-with-flag invocations and backtick process ids. Skill NAMES are allowed.
-  ORGAN_FILES=$(ls brain/fleet/_brain/*/SOUL.md brain/prime/*/SOUL.md specialties/*/brain/*/SOUL_APPEND.md 2>/dev/null || true)
+  ORGAN_FILES=$(ls platform/organ-firmware/fleet/_brain/*/SOUL.md platform/organ-firmware/prime/*/SOUL.md specialties/*/brain/*/SOUL_APPEND.md 2>/dev/null || true)
   if [[ -n "$ORGAN_FILES" ]]; then
     ORGAN_HITS=$(grep -rEn '`p-[a-z][a-z-]*`|`[a-z][a-z0-9]*(-[a-z0-9]+)* +--[a-z]' $ORGAN_FILES 2>/dev/null || true)
     if [[ -n "$ORGAN_HITS" ]]; then
@@ -835,7 +835,7 @@ for (const id of [...new Set(shipped)].sort()) {
   fi
 
   # ---- Check 16: Organ soft-lock (C-28) ----
-  # Every organ file's content hash must match brain/ORGAN_LOCK.json. Any drift is an
+  # Every organ file's content hash must match platform/organ-firmware/ORGAN_LOCK.json. Any drift is an
   # un-acknowledged organ change: re-pin with corekit/system/update-organ-lock and include
   # an 'organ-change: intended' commit trailer. Deep-truths region is excluded from the hash.
   # Implemented in node, not python3. This repo is maintained from a Windows shell
@@ -844,19 +844,19 @@ for (const id of [...new Set(shipped)].sort()) {
   # A tripwire that always fires is a tripwire that gets ignored — it was effectively
   # disabled on the one machine that edits organ files. node is already this script's
   # interpreter of choice (Checks 14/14c) and is present in both environments.
-  if [[ -f "brain/ORGAN_LOCK.json" ]]; then
+  if [[ -f "platform/organ-firmware/ORGAN_LOCK.json" ]]; then
     LOCK_RESULT=$(node -e '
 const fs = require("fs"), path = require("path"), crypto = require("crypto");
 const MARKER = "<!-- Managed by update-deep-truths";
-const lock = JSON.parse(fs.readFileSync("brain/ORGAN_LOCK.json", "utf8")).files;
+const lock = JSON.parse(fs.readFileSync("platform/organ-firmware/ORGAN_LOCK.json", "utf8")).files;
 
 // Expand the same globs the pinner uses, without a glob dependency.
 const globs = [
-  ["brain/fleet/_brain", "*", "SOUL.md"],
-  ["brain/fleet/_brain", "*", "IDENTITY.md"],
-  ["brain/fleet/_base", null, "IDENTITY.md"],
-  ["brain/prime", "*", "SOUL.md"],
-  ["brain/prime", "*", "IDENTITY.md"],
+  ["platform/organ-firmware/fleet/_brain", "*", "SOUL.md"],
+  ["platform/organ-firmware/fleet/_brain", "*", "IDENTITY.md"],
+  ["platform/organ-firmware/fleet/_base", null, "IDENTITY.md"],
+  ["platform/organ-firmware/prime", "*", "SOUL.md"],
+  ["platform/organ-firmware/prime", "*", "IDENTITY.md"],
   ["specialties", "*/brain/*", "SOUL_APPEND.md"],
 ];
 const found = new Set();
@@ -890,7 +890,7 @@ for (const f of files) {
   // collapses \r\n and lone \r to \n before hashing — so the pinned hashes are of
   // LF-normalized content. readFileSync in node does no such translation, and
   // without this normalize every CRLF organ file reports a false CHANGED. One
-  // does: brain/prime/cortex/SOUL.md is 273 CRLF lines and flagged immediately.
+  // does: platform/organ-firmware/prime/cortex/SOUL.md is 273 CRLF lines and flagged immediately.
   // (No apostrophes in this block — it lives inside a single-quoted bash string.)
   const t = fs.readFileSync(f, "utf8").replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   const i = t.indexOf(MARKER);

@@ -225,5 +225,5 @@ platform/runtime/agent-introspect.service corekit/agent-introspect.service
 platform/runtime/start-agent-introspect bin/start-agent-introspect
 
 # Agent runtime skeleton (seed files â€” no-clobber on upgrade)
-brain/agents/main/agent/auth-profiles.json agents/main/agent/auth-profiles.json?
-brain/agents/main/sessions/sessions.json agents/main/sessions/sessions.json?
+platform/organ-firmware/agents/main/agent/auth-profiles.json agents/main/agent/auth-profiles.json?
+platform/organ-firmware/agents/main/sessions/sessions.json agents/main/sessions/sessions.json?
