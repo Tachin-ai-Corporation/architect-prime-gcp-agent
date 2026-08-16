@@ -7,6 +7,7 @@ specialties/data/workspace/MEMORY.md workspace/MEMORY.md?
 # Workspace skills â€” Sheets
 skills/workspace-sheets/SKILL.md skills/workspace-sheets/SKILL.md
 skills/workspace-sheets/skill.json skills/workspace-sheets/skill.json
+skills/workspace-sheets/sheets-create bin/sheets-create
 skills/workspace-sheets/sheets-get bin/sheets-get
 skills/workspace-sheets/sheets-append bin/sheets-append
 skills/workspace-sheets/sheets-update bin/sheets-update

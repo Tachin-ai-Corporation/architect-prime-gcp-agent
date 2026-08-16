@@ -1,13 +1,14 @@
 {
   "id": "workspace-sheets",
   "name": "Google Sheets",
-  "version": 4,
-  "description": "Read, understand, and write Google Sheets — discover tab structure, read ranges, update cells in place (preserving formatting), batch-update, insert rows, and append rows.",
+  "version": 5,
+  "description": "Create, read, understand, and write Google Sheets — create a spreadsheet, discover tab structure, read ranges, update cells in place (preserving formatting), batch-update, insert rows, and append rows.",
   "author": "architect-prime",
   "origin": "core",
   "category": "workspace",
   "agent_part": "motor",
   "scripts": [
+    "sheets-create",
     "sheets-info",
     "sheets-get",
     "sheets-update",
@@ -16,5 +17,5 @@
     "sheets-append"
   ],
   "requires": {},
-  "when_to_use": "When a task involves reading from, writing to, or appending rows in Google Sheets spreadsheets."
+  "when_to_use": "When a task involves creating a spreadsheet, or reading from, writing to, or appending rows in Google Sheets spreadsheets."
 }

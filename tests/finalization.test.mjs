@@ -10,8 +10,9 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   isMilestoneVerdict, isWorkRow, isRealTaskFailure, isRealTaskSuccess,
-  deliverableStandsDespiteMilestone,
+  deliverableStandsDespiteMilestone, articulateBlocker,
 } from '../platform/work/finalization.mjs';
+import { extractFailRecommendation } from '../platform/work/verdict.mjs';
 
 // Rows as checkpoint-executor.mjs actually pushes them.
 const taskOK      = { step: '1.1', agent: 'motor', success: true };
@@ -81,5 +82,83 @@ describe('deliverableStandsDespiteMilestone', () => {
     assert.equal(deliverableStandsDespiteMilestone([sysNudge]), false);
     assert.equal(deliverableStandsDespiteMilestone([]), false);
     assert.equal(deliverableStandsDespiteMilestone(null), false);
+  });
+});
+
+// ── articulateBlocker ──────────────────────────────────────────────────
+//
+// From a live assistant mission (QA, 2026-08-16): asked to create a Google Sheet,
+// motor tried `sheets-create`, then `sheets create`, then `drive-create`, then
+// READ its own SKILL.md, and concluded — correctly — that no tool creates a
+// spreadsheet. Its report_fail said "Provide the motor agent with a functional
+// tool or command to create Google Sheets."
+//
+// The mission terminated `blocked` with output "Blocked on external dependency."
+// and blocker "Unknown blocker". The diagnosis was produced and then discarded.
+describe('articulateBlocker', () => {
+  const failRow = (rec) => ({
+    step: '1.2', agent: 'motor', success: false,
+    result: `[TOOL] report_fail({"checks":[],"recommendation":"${rec}"}) → ok`,
+  });
+
+  it('recovers the failing task\'s own recommendation', () => {
+    const r = articulateBlocker(
+      [failRow('Provide a tool that creates Google Sheets')],
+      extractFailRecommendation,
+    );
+    assert.equal(r.detail, 'Provide a tool that creates Google Sheets');
+    assert.equal(r.step, '1.2');
+    assert.equal(r.agent, 'motor');
+  });
+
+  it('takes the LAST failure, because a re-plan supersedes earlier attempts', () => {
+    const r = articulateBlocker(
+      [failRow('first thing tried'), failRow('what is actually missing')],
+      extractFailRecommendation,
+    );
+    assert.equal(r.detail, 'what is actually missing');
+  });
+
+  it('falls back to the first substantive line when there is no report_fail', () => {
+    const r = articulateBlocker(
+      [{ step: '1.1', agent: 'motor', success: false, result: '[FAILED]\n\n---\nThe calendar API rejected the token as expired.' }],
+      extractFailRecommendation,
+    );
+    // The [FAILED] marker and the rule are structure; the sentence is the reason.
+    assert.equal(r.detail, 'The calendar API rejected the token as expired.');
+  });
+
+  it('returns null rather than inventing when there is nothing to say', () => {
+    assert.equal(articulateBlocker([], extractFailRecommendation), null);
+    assert.equal(articulateBlocker(null, extractFailRecommendation), null);
+    assert.equal(
+      articulateBlocker([{ step: '1.1', agent: 'motor', success: false, result: '[FAILED]' }], extractFailRecommendation),
+      null,
+      'a bare marker is not an explanation — the caller must say so, not paper over it',
+    );
+  });
+
+  it('ignores milestone verdicts and inconclusive rows, like every other predicate here', () => {
+    const milestone = { step: '1.verify', agent: 'cerebellum', success: false, result: 'FAIL: could not see the artifact' };
+    const inconclusive = { step: '1.1', agent: 'motor', success: false, inconclusive: true, result: 'no verdict returned at all' };
+    assert.equal(articulateBlocker([milestone], extractFailRecommendation), null);
+    assert.equal(articulateBlocker([inconclusive], extractFailRecommendation), null);
+  });
+
+  it('caps the detail so a blocker field cannot become a transcript', () => {
+    const r = articulateBlocker(
+      [{ step: '1.1', agent: 'motor', success: false, result: `x${'y'.repeat(2000)}` }],
+      extractFailRecommendation,
+    );
+    assert.ok(r.detail.length <= 601, `detail was ${r.detail.length} chars`);
+    assert.ok(r.detail.endsWith('…'));
+  });
+
+  it('survives a malformed tool log instead of losing the row', () => {
+    const r = articulateBlocker(
+      [{ step: '1.1', agent: 'motor', success: false, result: '[TOOL] report_fail({"recommendation": → broken\nThe sheet could not be created.' }],
+      extractFailRecommendation,
+    );
+    assert.ok(r && r.detail.length > 0, 'a broken log should degrade to the text, not to null');
   });
 });

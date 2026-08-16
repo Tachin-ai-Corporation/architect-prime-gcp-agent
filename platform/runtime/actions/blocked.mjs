@@ -1,5 +1,6 @@
 // Action handler: blocked
-import { deliverableStandsDespiteMilestone } from '../../work/finalization.mjs';
+import { deliverableStandsDespiteMilestone, articulateBlocker } from '../../work/finalization.mjs';
+import { extractFailRecommendation } from '../../work/verdict.mjs';
 
 // Blocker types that name a genuine external obstacle. When cortex declares one of these we
 // trust it and block; the guard below only catches the DEFAULT/absent 'other' case, where a
@@ -43,12 +44,36 @@ export async function handleBlocked(ctx, deps) {
     return { delegateAction: 'synthesize' };
   }
 
+  // ---- The handback must carry the handback information (B-29) ----
+  // Everything below is a fallback CHAIN, and its last link used to be a constant.
+  // When cortex named nothing, an operator received "Blocked on external
+  // dependency." over blocker "Unknown blocker" — while the failing task's own
+  // report_fail sat on the envelope saying precisely what was missing. Recover it
+  // rather than print a phrase; only when there is genuinely no evidence do we say
+  // that, and say it as the unusual thing it is instead of dressing it as a reason.
+  const stated = decision.escalation_message || decision.blocker_description || decision.blocker
+    || decision.synthesis || decision.content || decision.response || decision.message
+    || decision.instruction || '';
+  let output = stated;
+  let blocker = decision.blocker || '';
+  if (!output || !blocker) {
+    const evidence = articulateBlocker(priorResults, extractFailRecommendation);
+    if (evidence) {
+      const where = evidence.step ? ` (step ${evidence.step}${evidence.agent ? `, ${evidence.agent}` : ''})` : '';
+      if (!output) output = `Blocked${where}: ${evidence.detail}`;
+      if (!blocker) blocker = evidence.detail;
+      log('INFO', `[TELEMETRY] blocker_articulated_from_evidence mission=${envelope.id} step=${evidence.step}`);
+    }
+  }
+  if (!output) output = 'Blocked, and neither cortex nor any failed task recorded why — inspect the mission history.';
+  if (!blocker) blocker = 'Unarticulated blocker — no evidence on the envelope';
+
   await completeEnvelope(envelope, {
     status: 'blocked',
-    output: decision.escalation_message || decision.blocker_description || decision.blocker || decision.synthesis || decision.content || decision.response || decision.message || decision.instruction || 'Blocked on external dependency.',
-    blocker: decision.blocker || 'Unknown blocker',
+    output,
+    blocker,
     blockerType: decision.blocker_type || 'other',
-    historyDetail: `Blocked: ${toStr(decision.blocker).substring(0, 200)}`,
+    historyDetail: `Blocked: ${toStr(blocker).substring(0, 200)}`,
     tokenUsage: _tokenUsage,
   });
   return { exit: true };

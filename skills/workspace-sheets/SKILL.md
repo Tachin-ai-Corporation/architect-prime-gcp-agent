@@ -21,6 +21,19 @@ facts drive everything below:
 
 ## Commands
 
+### Create
+- `sheets-create --title "<Name>" [--tab "<First tab>"] [--folder <FOLDER_ID>]` —
+  Make a new spreadsheet. Prints `spreadsheetId` and `url`.
+  - **Idempotent**: a spreadsheet of that name (in that folder, if given) is
+    returned as `status: exists` rather than duplicated, so a re-planned step
+    that runs twice leaves one file, not two.
+  - Without `--folder` it lands in My Drive root. With one, it is created and
+    then moved; if the move fails the spreadsheet still exists and the output
+    says where it actually is.
+  - `--name` works as an alias for `--title`.
+  - It creates an EMPTY sheet. Put the header row in with `sheets-update`
+    (see *Start a new tracker from nothing* below).
+
 ### Discover
 - `sheets-info --sheet <ID>` — Structure of the whole spreadsheet: title, and for
   every tab its exact `title`, `rows`, `cols`, `lastColumn` letter, and any
@@ -82,6 +95,17 @@ to let Sheets interpret dates, numbers, and formulas the way the UI would.
   always do it (see procedures).
 
 ## Procedures
+
+### Start a new tracker from nothing
+When the request is "make me a sheet that tracks X" and no spreadsheet exists yet.
+1. `sheets-create --title "<Name>"` → note `spreadsheetId` and `url` from the output.
+   If it returns `status: exists`, that IS your sheet — do not create another.
+2. Write the header row: `sheets-update --sheet <ID> --range "A1:D1" --values
+   '[["Task","Owner","Due","Status"]]'`.
+3. Add the data rows with `sheets-append` (see *Add a new record to a table*).
+4. **Verify by reading it back**: `sheets-get --sheet <ID> --range "A1:D50"` and
+   count the rows returned. Report the `url` and the count you actually read —
+   not the count you intended to write.
 
 ### Understand an unfamiliar sheet
 1. `sheets-info --sheet <ID>` → note each tab's exact name and its `rows`/`cols`.
