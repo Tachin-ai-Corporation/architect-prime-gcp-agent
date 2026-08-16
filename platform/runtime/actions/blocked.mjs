@@ -65,8 +65,29 @@ export async function handleBlocked(ctx, deps) {
       log('INFO', `[TELEMETRY] blocker_articulated_from_evidence mission=${envelope.id} step=${evidence.step}`);
     }
   }
-  if (!output) output = 'Blocked, and neither cortex nor any failed task recorded why — inspect the mission history.';
-  if (!blocker) blocker = 'Unarticulated blocker — no evidence on the envelope';
+  // Nothing stated and nothing attempted. Observed live: asked to send an email —
+  // a capability this agent does not have — cortex correctly declined, but on the
+  // SECOND iteration, before dispatching a single task, and with every blocker
+  // field empty. There is no failure to recover a reason from because there was
+  // no failure; the decision to stop was made at planning time.
+  //
+  // Say exactly that, and say what was asked. An operator who knows the stop
+  // happened before execution knows to look at the plan and the agent's
+  // capabilities rather than hunt a failed step that does not exist.
+  if (!output || !blocker) {
+    const attempted = (Array.isArray(priorResults) ? priorResults : []).length > 0;
+    const asked = String(envelope.instruction || envelope.title || '').trim().slice(0, 300);
+    const where = attempted
+      ? 'Blocked, and neither cortex nor any failed task recorded why — inspect the mission history.'
+      : 'Blocked before any work was dispatched, and no blocker was stated. Nothing was attempted, '
+        + 'so there is no failed step to inspect: the decision to stop was made while planning.';
+    if (!output) output = asked ? `${where}\n\nThe request was: ${asked}` : where;
+    if (!blocker) blocker = attempted
+      ? 'Unarticulated blocker — no evidence on the envelope'
+      : 'Unarticulated blocker — stopped at planning time, before any step ran';
+    log('WARN', `[blocked] ${envelope.id} terminated with no blocker stated (attempted=${attempted})`);
+    log('INFO', `[TELEMETRY] blocker_unarticulated mission=${envelope.id} attempted=${attempted}`);
+  }
 
   await completeEnvelope(envelope, {
     status: 'blocked',
