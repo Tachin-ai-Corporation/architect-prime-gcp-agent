@@ -332,19 +332,17 @@ if [[ -x "$SKILL_SETUP" ]]; then
   "$SKILL_SETUP" --all || warn "skill-setup had errors"
 fi
 
-# ---- 12f) Contract validation gate (C-19: fail fast, before anything serves) ----
-# The install-time check was deferred because the runtime was not assembled yet.
-# It is assembled now, so this is the hard gate: a VM whose contracts do not hold
-# must not start daemons and must not report itself online.
+# ---- 12f) The validator must exist before we rely on it (C-19) ----
+# The gate itself runs at 13b. It used to run HERE, which could never pass: the
+# runtime check asserts the four daemons are active, and the step that installs
+# them is the next one. Every fresh fleet deploy failed at this line and exited
+# before installing a single unit — invisible for a month, because upgrades do
+# not run bootstrap and nobody hired an agent in between.
+#
+# A gate placed where the thing it checks cannot yet be true does not test the
+# system, it tests the ordering.
 VALIDATE="${CORE_DIR}/bin/validate-contracts"
-if [[ -x "$VALIDATE" ]]; then
-  info "Validating contracts..."
-  if ! CORE_ROOT="${CORE_ROOT}" "$VALIDATE" --runtime 2>&1; then
-    echo "[ERROR] Contract validation failed — refusing to start services (C-19)." >&2
-    exit 1
-  fi
-  info "Contracts validated"
-else
+if [[ ! -x "$VALIDATE" ]]; then
   echo "[ERROR] validate-contracts missing at ${VALIDATE} — cannot verify this install (C-19)." >&2
   exit 1
 fi
@@ -388,6 +386,20 @@ if [[ -n "${AGENT_USER_EMAIL}" && -n "${DWD_SIGNER_SA}" ]]; then
 else
   warn "ears/mouth not started — AGENT_USER_EMAIL or DWD_SIGNER_SA not set"
 fi
+
+# ---- 13b) Contract validation gate (C-19) ----
+# Runs HERE, not before step 13, because what it asserts — daemons active — is
+# only answerable once they have been installed and started. The intent is
+# unchanged: a VM whose contracts do not hold must not report itself online. It
+# now also stops what it started, so a failing VM is left inert rather than
+# half-serving.
+info "Validating contracts..."
+if ! CORE_ROOT="${CORE_ROOT}" "$VALIDATE" --runtime 2>&1; then
+  echo "[ERROR] Contract validation failed — stopping services and refusing to report online (C-19)." >&2
+  systemctl stop agent-brain agent-introspect agent-ears agent-mouth 2>/dev/null || true
+  exit 1
+fi
+info "Contracts validated"
 
 # ---- 14) Report completion to Firestore via Prime's API ----
 # Authenticated with this VM's own GCE workload identity: a Google-signed OIDC

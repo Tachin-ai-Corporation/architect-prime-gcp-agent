@@ -1043,11 +1043,40 @@ if [[ "$MODE" == "runtime" ]]; then
   fi
 
   # ---- Check 5: Daemons active ----
-  for svc in agent-ears agent-mouth agent-brain agent-introspect; do
+  #
+  # agent-ears and agent-mouth speak to Google Chat through domain-wide
+  # delegation, so they cannot start until a Workspace user exists for this
+  # agent. Hiring deliberately runs BEFORE that account is created — the deploy
+  # prints the admin steps and the agent "comes online automatically once the
+  # user exists". Treating that designed intermediate state as a contract
+  # violation makes a correct deploy indistinguishable from a broken one.
+  #
+  # So the two identity-bound daemons are required only once an identity is
+  # configured. brain and introspect have no such dependency and are always
+  # required: an agent without them is not waiting for anything, it is inert.
+  DWD_READY=0
+  if [[ -n "${AGENT_USER_EMAIL:-}" ]]; then
+    DWD_READY=1
+  elif [[ -f "${CORE_DIR}/corekit/chat-config.json" ]] \
+    && grep -q '"agentUserEmail" *: *"[^"]\+"' "${CORE_DIR}/corekit/chat-config.json" 2>/dev/null; then
+    DWD_READY=1
+  fi
+
+  for svc in agent-brain agent-introspect; do
     if systemctl is-active --quiet "$svc" 2>/dev/null; then
       pass "${svc} service active"
     else
       fail "${svc} service not active"
+    fi
+  done
+
+  for svc in agent-ears agent-mouth; do
+    if systemctl is-active --quiet "$svc" 2>/dev/null; then
+      pass "${svc} service active"
+    elif [[ "$DWD_READY" == "1" ]]; then
+      fail "${svc} service not active (a Workspace identity is configured, so it should be)"
+    else
+      pass "${svc} not started — no Workspace identity yet (expected before the user is created)"
     fi
   done
 

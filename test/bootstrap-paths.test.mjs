@@ -135,3 +135,48 @@ describe('bootstrap paths — the fresh-deploy path', () => {
     assert.deepEqual(missing, [], 'bootstrap invokes tools that are not installed:\n' + missing.join('\n'));
   });
 });
+
+describe('bootstrap ordering — a gate must run where its question is answerable', () => {
+  // The runtime contract gate asserts the four daemons are active. It sat BEFORE
+  // the step that installs them, so it could only ever fail: every fresh fleet
+  // deploy exited at that line having installed no units at all. Upgrades never
+  // run bootstrap, so it stayed invisible for a month until a hire went looking.
+  const scripts = ['infra/bootstrap/fleet-bootstrap.sh', 'infra/bootstrap/prime-bootstrap.sh'];
+
+  for (const rel of scripts) {
+    const src = readFileSync(join(repoRoot, rel), 'utf8');
+    const lines = src.split('\n');
+    const lineOf = (re) => lines.findIndex((l) => re.test(l));
+
+    it(`${rel}: the runtime gate runs after the daemon units are installed`, () => {
+      const gate = lineOf(/"\$VALIDATE" --runtime/);
+      const install = lineOf(/for svc in agent-ears agent-mouth agent-brain agent-introspect/);
+      assert.ok(gate > 0, 'no runtime validation gate found');
+      assert.ok(install > 0, 'no service install loop found');
+      assert.ok(
+        gate > install,
+        `the gate is at line ${gate + 1} and the units install at line ${install + 1}. ` +
+        'It asserts those services are active, so running first makes it unpassable.',
+      );
+    });
+
+    it(`${rel}: a failing gate stops what it started`, () => {
+      const gate = lineOf(/"\$VALIDATE" --runtime/);
+      const after = lines.slice(gate, gate + 12).join('\n');
+      assert.match(
+        after, /systemctl stop/,
+        'the gate now runs after services start, so failing it must stop them — ' +
+        'otherwise a VM that fails its contracts is left serving',
+      );
+    });
+  }
+
+  it('the gate still runs before the VM reports itself online', () => {
+    const src = readFileSync(join(repoRoot, 'infra/bootstrap/fleet-bootstrap.sh'), 'utf8');
+    const lines = src.split('\n');
+    const gate = lines.findIndex((l) => /"\$VALIDATE" --runtime/.test(l));
+    const online = lines.findIndex((l) => /\\"status\\":\\"online\\"|"status":"online"/.test(l));
+    assert.ok(online > 0, 'no online report found');
+    assert.ok(gate < online, 'C-19: a VM whose contracts do not hold must not report itself online');
+  });
+});

@@ -400,20 +400,12 @@ info "Final permissions sweep..."
 find "${CORE_DIR}" -type d -exec chmod 755 {} \; 2>/dev/null || true
 find "${CORE_DIR}/bin" -type f -exec chmod 755 {} \; 2>/dev/null || true
 
-# ---- 12f) Contract validation gate (C-19: fail fast, before anything serves) ----
-# The install-time check was deferred because the runtime was not assembled yet.
-# It is assembled now, so this is the hard gate: a VM whose contracts do not hold
-# must not start daemons.
+# ---- 12f) The validator must exist before we rely on it (C-19) ----
+# The gate itself runs after the services are up — see the same restructuring in
+# fleet-bootstrap.sh. Placed here it asserted four daemons were active while the
+# step that installs them was still ahead, so it could only ever fail.
 VALIDATE="${CORE_DIR}/bin/validate-contracts"
-if [[ -x "$VALIDATE" ]]; then
-  info "Validating contracts..."
-  if ! CORE_ROOT="${CORE_ROOT}" "$VALIDATE" --runtime 2>&1; then
-    write_deploy_step "contracts_validated" "Contract validation failed" "error"
-    echo "[ERROR] Contract validation failed — refusing to start services (C-19)." >&2
-    exit 1
-  fi
-  write_deploy_step "contracts_validated" "Contracts validated" "done"
-else
+if [[ ! -x "$VALIDATE" ]]; then
   echo "[ERROR] validate-contracts missing at ${VALIDATE} — cannot verify this install (C-19)." >&2
   exit 1
 fi
@@ -439,6 +431,19 @@ systemctl enable agent-ears agent-mouth agent-brain agent-introspect 2>/dev/null
 systemctl start agent-ears agent-mouth agent-brain agent-introspect
 
 write_deploy_step "services" "Systemd services installed" "done" "ears + mouth + brain + introspect"
+
+# ---- 13b) Contract validation gate (C-19) ----
+# Here rather than before step 13, because "daemons active" is only answerable
+# once they have been started. On failure the services are stopped again, so a
+# VM that fails its contracts is left inert instead of half-serving.
+info "Validating contracts..."
+if ! CORE_ROOT="${CORE_ROOT}" "$VALIDATE" --runtime 2>&1; then
+  write_deploy_step "contracts_validated" "Contract validation failed" "error"
+  echo "[ERROR] Contract validation failed — stopping services (C-19)." >&2
+  systemctl stop agent-brain agent-introspect agent-ears agent-mouth 2>/dev/null || true
+  exit 1
+fi
+write_deploy_step "contracts_validated" "Contracts validated" "done"
 
 # ---- 14) Install command-runner as systemd service ----
 info "Installing command-runner systemd service..."
