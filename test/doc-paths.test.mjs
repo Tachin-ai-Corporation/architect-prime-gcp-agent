@@ -33,7 +33,7 @@ function livingDocs() {
   const add = (rel) => { if (existsSync(join(repoRoot, rel))) out.push(rel); };
 
   for (const f of ['docs/PRODUCT_CANON.md', 'docs/BRAIN_CANON.md', 'docs/MODULE_CHARTER.md',
-                   'docs/CULTURE_OF_WORK.md', 'docs/BOOTSTRAP.md', 'CLAUDE.md',
+                   'docs/CULTURE_OF_WORK.md', 'docs/BOOTSTRAP.md', 'docs/IMPROVEMENT_POLICY.md', 'CLAUDE.md',
                    'corekit/README.md']) add(f);
 
   for (const sub of ['guides', 'primitives', 'services']) {
