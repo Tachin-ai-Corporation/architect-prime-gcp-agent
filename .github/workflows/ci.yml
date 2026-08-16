@@ -16,10 +16,14 @@ jobs:
         with:
           node-version: '20'
 
+      # Both roots. This walked only corekit/ and would have gone on passing
+      # while checking almost nothing after the runtime moved to platform/ —
+      # a hardcoded scan root does not report reduced coverage, it reports success.
       - name: Check .mjs syntax
         run: |
           echo "Checking .mjs files for syntax errors..."
-          find corekit -name "*.mjs" -print0 | xargs -0 -I {} node --check {}
+          find platform corekit -name "*.mjs" -not -path "*/node_modules/*" -print0 \
+            | xargs -0 -I {} node --check {}
           echo "All .mjs files pass syntax check."
 
       - name: Check shell scripts parse
@@ -28,7 +32,8 @@ jobs:
           FAILED=0
           for f in infra/install.sh \
                    $(find infra/bootstrap infra/deploy -name "*.sh" 2>/dev/null) \
-                   corekit/system/* corekit/fleet/*; do
+                   corekit/system/* corekit/fleet/* corekit/chat/* corekit/memory/* \
+                   platform/runtime/start-* platform/runtime/*-health-check; do
             [ -f "$f" ] || continue
             head -1 "$f" | grep -q '^#!.*\(bash\|sh\)' || continue
             if bash -n "$f"; then echo "  OK  $f"; else echo "  FAIL $f"; FAILED=1; fi
@@ -93,6 +98,11 @@ jobs:
       # will not restart.
       - name: Installed tree resolves
         run: node --test test/module-resolution.test.mjs
+
+      # What a VM executes is the stored blob. A launcher stored with CRLF has a
+      # shebang ending in CR and Linux calls the interpreter missing.
+      - name: Shipped files are stored with LF
+        run: node --test test/line-endings.test.mjs
 
   codeowners:
     name: CODEOWNERS Resolves

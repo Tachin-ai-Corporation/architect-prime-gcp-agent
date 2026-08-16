@@ -1,9 +1,43 @@
-# Force LF line endings for all shell scripts and config
-*.sh text eol=lf
-*.mjs text eol=lf
-corekit/*/* text eol=lf
-skills/*/* text eol=lf
+# Line endings for everything that runs on a Linux VM.
+#
+# install.sh curls each file from GitHub raw, so what a VM executes is the
+# stored blob. A shell script stored with CRLF has a shebang ending in \r, and
+# Linux reports "bad interpreter: No such file or directory" — naming an
+# interpreter that plainly exists, which is among the least helpful errors it
+# is possible to ship.
+#
+# The path rules used to be depth-shaped: `corekit/*/*` matched exactly two
+# levels. The platform/ move put the daemon launchers at platform/runtime/ and
+# every one of them silently fell out of coverage. Depth is not a category, and
+# these rules now name the trees.
+*.sh    text eol=lf
+*.mjs   text eol=lf
+*.json  text eol=lf
+
+platform/**     text eol=lf
+corekit/**      text eol=lf
+skills/**       text eol=lf
+infra/**        text eol=lf
+bin/**          text eol=lf
+
+# Organ firmware and role bundles ship as content, not code, and are hashed.
+# A CRLF SOUL.md is a different content digest from the same SOUL.md, so an
+# agent would resync on every apply and never converge.
+brain/**        text eol=lf
+specialties/**  text eol=lf
+operator/**     text eol=lf
+
+# Some guides ship to VMs as skill reference material.
+docs/**  text eol=lf
+*.md     text eol=lf
+
 infra/manifests/*.txt text eol=lf
-infra/deploy/* text eol=lf
-bootstrap/*.sh text eol=lf
 install.sh text eol=lf
+
+# Binary — never touch these, and never let a text rule above claim them.
+*.png binary
+*.ico binary
+*.jpg binary
+*.gif binary
+*.woff  binary
+*.woff2 binary
