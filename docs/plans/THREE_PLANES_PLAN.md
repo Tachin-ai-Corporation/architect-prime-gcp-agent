@@ -525,6 +525,29 @@ asserts one overlay and an unchanged tree digest. It also keeps the *bug itself*
 as a live case: composing from the render accumulates one copy per apply, so if
 anyone reinstates the fallback the difference is visible in the same file.
 
+### Outstanding items cleared before CLEANUP (2026-08-15)
+
+| item | commit | note |
+|---|---|---|
+| **Eval runner** (P5's named gap) | `0653fca` | `fleet-config evaluate` + deterministic structural graders + starter suite. The `occurs` assertion is what would have caught the soul doubling — `contains` passed throughout. |
+| **`fleet-config compile` firmware** | `0653fca` | Two survivors of the idempotence fix: it read the RENDER, and used `workspace-cortex/` for cortex (never exists on a VM → compiled from a `# cortex` stub, digest pinned over firmware no agent runs). |
+| **Transition guard canaryable** | `80097d5` | `AGENT_TRANSITION_GUARD` env override. The contract said "canary it" and provided no way to move one agent. Default stays `observe`. |
+| **Sync timer at bootstrap** | `80097d5` | Installed by manifest, enabled by nothing — a fresh agent never reconciled. |
+| **Session key in build args** | `3190860` | `NEXTAUTH_SECRET` travelled as a Cloud Build argument, persisted in build history. Removed; `--update-env-vars` merges, so it was never needed. |
+
+**Evidence recorded, not acted on:** millie shows **0** `illegal_transition` across 4,062 brain log
+lines. Real, but narrow — her proof missions were single-turn questions, and the paths worth
+worrying about are delegation and checkpoint flows on archie and stan. Flipping the fleet on that
+sample is the exact mistake the contract comment warns against.
+
+**Operator actions outstanding:** rotate `NEXTAUTH_SECRET` (old build history still contains it);
+backfill `parent_release` on `fr-6a524ab97fd1`; create the CODEOWNERS team.
+
+The `parent_release` backfill is deliberately not done by hand: a release is immutable, the registry
+offers no "set parent" operation, and reaching into Firestore to edit one is precisely the
+bypass-the-lifecycle pattern this architecture exists to remove. The code is fixed, so every
+subsequent release records its target correctly.
+
 ### Carried forward (not done, not implied)
 
 - Agent profiles / deep truths still live in the manifest-managed `workspace/SOUL.md` tail.
