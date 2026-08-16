@@ -96,9 +96,19 @@ None block the rollout. All were found by direct audit.
 | candicejr, millie | correct | correct |
 
 The control plane is currently reporting a ten-day-old ref as live for five agents. Nothing was
-maintaining `coreRef` until the write-back added in `ab6a378`; it fires on upgrade, so **every agent
-self-heals the moment it is rolled** and the two already rolled are correct. Until then, `STATE.json`
+maintaining `coreRef` until the write-back added in `ab6a378`. Until an agent is rolled, `STATE.json`
 on the VM is the only trustworthy source — this document was built that way.
+
+> **Correction (proven on bobby).** An earlier draft of this document said every agent self-heals
+> the moment it is rolled. **It does not heal on the first roll.** `upgrade-corekit` execs the
+> version *currently installed*, so an agent upgrading away from a pre-write-back ref runs the OLD
+> tool, which does not report — bobby went to `28d11f8` on disk while the registry stayed at
+> `13be751`. Rolling it BACK reported correctly (that run used the new tool, installed by the first),
+> which is what made the asymmetry visible.
+>
+> **So every agent in this rollout is upgraded TWICE at the same ref.** The second run is a no-op
+> for content (C-18) and executes the newly installed tool, which reports. Verified on bobby:
+> `Reported coreRef 28d11f82f43f to primes/chuck/fleet/bobby`.
 
 **Three sources disagree about the same fact**, which is worse than one being stale:
 
@@ -198,10 +208,33 @@ it (§3, S-1) is younger than the fleet it will be used on.
 Ascending blast radius. bobby (engineer) is the least entangled; archie and stan carry the operator
 job layer; chuck is the prime that owns the whole fleet and goes last.
 
-### Rollback
+### Rollback — exercised, not assumed
 
 `upgrade-corekit --apply 13be751b441c` restores the previous manifest by the same mechanism that
-installs a new one — §4.5 prunes what the current manifest owns and the old one does not, which
-reverses the move. **This is exercised on bobby before the other five are touched**, because a
-reversal that has never been run is not a rollback plan, and skipping the throwaway-agent proof means
-the fleet has one fewer safety net than it was designed to have.
+installs a new one: §4.5 prunes what the current manifest owns and the new one does not, and that
+loop reads every dest key in `STATE.json` with no directory scoping, so it reverses the move as
+readily as it made it.
+
+**Run on bobby, in full: forward → back → forward.** All three states verified.
+
+| state | ref | gate |
+|---|---|---|
+| forward | `28d11f8` | PASS 12/12 |
+| rolled back | `13be751` | **FAIL 6/12** — every layout check failed, every health check passed |
+| forward again | `28d11f8` | PASS 12/12 |
+
+The middle row is the one worth keeping. **A fully rolled-back agent is perfectly healthy**: 5/5
+services, contracts valid, no module errors, brain started, no restarts, 15 skills. Health cannot
+tell you which version is running, which is the entire reason the gate checks layout at all.
+
+### The gate's own vacuous checks, found by rolling back
+
+The rollback exposed that three of the four "pre-move trees removed" checks could never fail. At the
+old ref `corekit/daemon/*` installed to `bin/*.mjs` and `brain/*` to `agents/`/`workspace-*`, so
+those DIRECTORIES have never existed on any VM, before or after the move. Only `corekit/lib` is both
+a repo path and a VM path.
+
+The first leftover-check reported all four absent on both canaries and read as strong evidence. It
+was one check and three pieces of noise. Replaced by `corekit/lib`, the symlink, **and a check that
+can fail**: the four `bin/start-agent-*` launchers must exec `platform/runtime`, and no stale
+`bin/agent-brain.mjs` may remain. On the rolled-back agent that check reported `0/4`.
