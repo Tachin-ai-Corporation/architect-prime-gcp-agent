@@ -443,6 +443,53 @@ into. Type-checking and building are not evidence that a screen still renders.
 
 ---
 
+
+### CLEANUP — the catalog/ move, scoped but not started
+
+Measured rather than estimated, and deliberately left for its own cycle. Two things make it
+unlike the `platform/` move, which went in a single session.
+
+**It is 494 manifest lines and it changes the VM layout.** Skills install to `skills/<name>/` and
+specialties to `corekit/specialties/`; `skill-setup` scans `${CORE_DIR}/skills`, install.sh sweeps
+both, and the brain's skill index reads from them. Moving the repo side only would put repo path
+and VM path back out of step for 494 lines, a week after that was fixed. Moving both needs a canary
+upgrade AND a fresh deploy, exactly as `platform/` did.
+
+One genuine relief: skills and specialties contain **no relative imports**. The repo==VM rule exists
+so an import resolves the same in both trees, and that hazard does not apply here — so the choice is
+about legibility and consistency, not correctness.
+
+**`brain/` is coupled to the organ soft-lock.** All 40 of its manifest lines already differ in src
+and dest, so the move is src-only and the install lock would not move — the safe kind. But the C-28
+soft-lock reads those paths from three places that must change in lockstep:
+
+    corekit/system/update-organ-lock     5 references, incl. the OUT path
+    corekit/system/validate-contracts   21 references, three separate path lists
+    brain/ORGAN_LOCK.json               59 stored paths, all prefixed brain/
+
+A subtle miss there does not fail loudly. It leaves the lock scanning a tree that no longer holds
+organs, reporting green over an unguarded C-28 — the same shape as the hardcoded scan roots that
+called live contracts dead after the `platform/` move, and the `.gitattributes` rules that stopped
+matching the launchers.
+
+**Order to do it in, and the proof each step needs:**
+
+1. `brain/` → `platform/organ-firmware/`. Regenerate ORGAN_LOCK.json, update both tools, then
+   NEGATIVE-TEST: edit an organ SOUL and confirm validate-contracts still refuses without the
+   `organ-change: intended` trailer. Install lock must be byte-identical — that is the check that
+   this step changed nothing a VM sees.
+2. `skills/`, `specialties/`, `corekit/config/{processes,responsibilities*,eval-suites}` →
+   `catalog/`. Dest columns move with them. Canary upgrade on candicejr + millie, then a fresh
+   deploy, because `skill-setup` and the install.sh sweeps only run there.
+3. `brain/agents/main/*` is runtime seed state (auth-profiles, sessions), not firmware. It should
+   not land in organ-firmware just because it currently sits under `brain/`.
+
+**What is already true and should stay true:** the install-surface lock proves step 1 is invisible
+to VMs; `test/line-endings.test.mjs` will catch any path leaving its eol rule; `test/doc-paths.test.mjs`
+will catch living docs left pointing at the old tree.
+
+---
+
 ## Progress log
 
 | Phase | Commit | Proven on the canary |
