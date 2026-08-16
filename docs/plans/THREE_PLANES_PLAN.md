@@ -382,6 +382,46 @@ canon/README regeneration; lint gate.
 
 ---
 
+
+### CLEANUP — the fresh-deploy proof, and a month-old break it found
+
+Hired a throwaway agent (dud Workspace address, by operator choice), verified, fired. The VM is
+deleted and the fleet is back to its original nine.
+
+**The `platform/` tree landed perfectly on a bare VM** — all nine packages, no legacy directories,
+no symlink. Then bootstrap exited 1 having installed none of the four daemon units.
+
+**P0 caused it.** `be099b5` added the C-19 gate at step 12f: "a VM whose contracts do not hold must
+not start daemons". The runtime check it calls asserts the four daemons are ACTIVE. Step 13 — the
+next one — is what installs them. Every fresh fleet deploy has failed at that line since
+2026-07-15, invisible because upgrades do not run bootstrap and nobody hired an agent in between.
+**A gate placed where its question cannot yet be answered tests the ordering, not the system.**
+
+Worse, `test/immutable-activation.test.mjs` *required* the broken order and stayed green throughout.
+It compared the position of two strings in a file and never asked whether that order could work.
+
+Three fixes:
+
+1. Gate moved to 13b — after services start, before the online report, stopping them on failure.
+   C-19 unchanged: a VM that fails its contracts is now inert rather than half-serving.
+2. `agent-ears`/`agent-mouth` reach Chat through DWD and cannot start before a Workspace user
+   exists — and hiring deliberately precedes that. Requiring them made a correct deploy
+   indistinguishable from a broken one. They are required only once an identity is configured;
+   `agent-brain`/`agent-introspect` stay unconditional.
+3. `systemctl is-active` is true between a crash and the next restart, so the gate called ears
+   "active" on its 106th restart. `NRestarts` is now checked too.
+
+**Final fresh-deploy state:** nine packages, three legacy paths absent, 6 units installed, all
+contracts satisfied, brain/mouth/introspect at 0 restarts, 0 module errors, sync timer enabled.
+`agent-ears` failed only at `DWD token exchange failed: Invalid email or User ID` — the dud
+identity, reached after every `platform/` module had loaded. The gap named in advance, arriving
+exactly as predicted.
+
+**Constraint for future runs:** `fleet-deploy` requires `--agent-email` for an EXISTING Workspace
+user. The platform never creates accounts; `fleet-hire` prints the admin console steps instead.
+
+---
+
 ## Progress log
 
 | Phase | Commit | Proven on the canary |
