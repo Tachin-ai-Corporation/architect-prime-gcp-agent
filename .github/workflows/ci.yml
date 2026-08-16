@@ -88,6 +88,12 @@ jobs:
       - name: Installed surface matches the lock
         run: node --test test/install-surface.test.mjs
 
+      # Parsing a file does not resolve its imports. Without this, a specifier
+      # pointing at nothing clears the syntax check and is found by a VM that
+      # will not restart.
+      - name: Installed tree resolves
+        run: node --test test/module-resolution.test.mjs
+
   codeowners:
     name: CODEOWNERS Resolves
     runs-on: ubuntu-latest
