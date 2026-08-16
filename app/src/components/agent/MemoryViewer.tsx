@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useEffect } from "react";
 import { useIntrospect } from "@/hooks/useIntrospect";
 import { MarkdownMessage } from "@/components/MarkdownMessage";
 import styles from "./MemoryViewer.module.css";
@@ -24,8 +24,14 @@ interface MemoryViewerProps {
    ================================================================ */
 
 export function MemoryViewer({ primeId, agentName }: MemoryViewerProps) {
+  // `lastRefreshed` doubles as "have we ever loaded".
+  //
+  // A `didInitRef` used to carry that second meaning, set in the same effect on
+  // the same condition — so it was never anything other than
+  // `lastRefreshed !== null`, and reading it during render made the render
+  // depend on a value React does not track. Two names for one fact, one of them
+  // invisible to the renderer.
   const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null);
-  const didInitRef = useRef(false);
 
   const { data, loading, error, refresh } = useIntrospect<WorkspaceData>({
     primeId,
@@ -37,7 +43,6 @@ export function MemoryViewer({ primeId, agentName }: MemoryViewerProps) {
   useEffect(() => {
     if (data && !loading) {
       setLastRefreshed(new Date());
-      didInitRef.current = true;
     }
   }, [data, loading]);
 
@@ -53,7 +58,7 @@ export function MemoryViewer({ primeId, agentName }: MemoryViewerProps) {
   /* ---- Render ---- */
   return (
     <AsyncState
-      loading={loading && !didInitRef.current}
+      loading={loading && !lastRefreshed}
       error={error}
       onRetry={refresh}
       loadingLabel="Loading workspace…"

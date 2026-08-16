@@ -1,6 +1,22 @@
 "use client";
 
 import { useRouter } from "next/navigation";
+
+/**
+ * A stable pseudo-random value in [0,1) derived from a string.
+ *
+ * Used for animation jitter that must not change between renders. FNV-1a: small,
+ * dependency-free, and spreads short similar keys (agent ids differing by one
+ * character) well enough that adjacent lines do not pulse in lockstep.
+ */
+function jitter(key: string): number {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < key.length; i++) {
+    h ^= key.charCodeAt(i);
+    h = Math.imul(h, 0x01000193);
+  }
+  return ((h >>> 0) % 1000) / 1000;
+}
 import { useState, useEffect, useLayoutEffect, useCallback, useRef } from "react";
 import styles from "./FleetVisualization.module.css";
 import type { FleetAgent, DeployStep } from "@/lib/types";
@@ -116,14 +132,23 @@ export function FleetVisualization({
           </defs>
           {lines.map((line) => {
             const pathD = `M ${line.x1} ${line.y1} Q ${(line.x1 + line.x2) / 2} ${line.y1 + 30} ${line.x2} ${line.y2}`;
+            // Jitter derived from the line id rather than Math.random().
+            //
+            // Random during render is impure: React may render a component more
+            // than once for the same state, and each pass produced different
+            // animation timings — so the dots re-staggered on every unrelated
+            // re-render instead of pulsing steadily. Deriving from the id gives
+            // each line its own stable offset and keeps render a pure function
+            // of props, which is what the animation actually wanted.
+            const j = jitter(line.id);
             return (
               <g key={line.id}>
                 <path d={pathD} stroke="url(#lineGrad)" strokeWidth="1.5" fill="none" opacity="0.7" />
                 <circle r="2.5" className={styles.pulseDot}>
-                  <animateMotion dur={`${2 + Math.random() * 1.5}s`} repeatCount="indefinite" path={pathD} />
+                  <animateMotion dur={`${2 + j * 1.5}s`} repeatCount="indefinite" path={pathD} />
                 </circle>
                 <circle r="1.5" className={styles.pulseDot} opacity="0.4">
-                  <animateMotion dur={`${2.5 + Math.random() * 1.5}s`} repeatCount="indefinite" path={pathD} begin={`${1 + Math.random()}s`} />
+                  <animateMotion dur={`${2.5 + j * 1.5}s`} repeatCount="indefinite" path={pathD} begin={`${1 + jitter(`${line.id}:begin`)}s`} />
                 </circle>
               </g>
             );
