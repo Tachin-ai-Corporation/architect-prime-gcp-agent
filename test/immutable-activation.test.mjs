@@ -74,21 +74,46 @@ test('both bootstrap scripts resolve their channel to a commit or abort', () => 
   }
 });
 
-test('both bootstrap scripts gate on contract validation before starting services', () => {
+test('both bootstrap scripts gate on contract validation before reporting online', () => {
+  // This test used to require the gate BEFORE any `systemctl start`, which is
+  // what C-19 sounded like and what the scripts did. It was also unsatisfiable:
+  // the runtime check asserts the four daemons are active, so a gate that runs
+  // before they start can only fail. Every fresh deploy died there for a month
+  // while this test stayed green — it was asserting the ordering that caused it.
+  //
+  // What C-19 actually protects is that a VM whose contracts do not hold must
+  // not present itself as a working agent. So the gate runs after the services
+  // start, stops them when it fails, and always precedes the online report.
   for (const rel of ['infra/bootstrap/fleet-bootstrap.sh', 'infra/bootstrap/prime-bootstrap.sh']) {
     const src = read(rel);
     assert.match(src, /INSTALL_VALIDATE="defer"/, `${rel} defers install-time validation`);
 
-    const gateAt = src.indexOf('Contract validation gate');
-    const startAt = src.indexOf('systemctl start');
-    assert.ok(gateAt > -1, `${rel} must have a validation gate`);
-    assert.ok(startAt > gateAt, `${rel} must validate before starting any service`);
+    const gateAt = src.indexOf('"$VALIDATE" --runtime');
+    const installAt = src.indexOf('for svc in agent-ears agent-mouth agent-brain agent-introspect');
+    assert.ok(gateAt > -1, `${rel} must have a runtime validation gate`);
+    assert.ok(installAt > -1, `${rel} must install the daemon units`);
+    assert.ok(
+      gateAt > installAt,
+      `${rel}: the gate asserts those daemons are active, so it must run after they are installed`
+    );
+
+    const afterGate = src.slice(gateAt, gateAt + 600);
     assert.match(
-      src,
-      /Contract validation failed — refusing to start services \(C-19\)/,
-      `${rel} must abort on a failed validation`
+      afterGate, /systemctl stop/,
+      `${rel} must stop the services it started when validation fails`
+    );
+    assert.match(
+      afterGate, /C-19/,
+      `${rel} must name the contract it is enforcing`
     );
   }
+
+  // The fleet script is the one that reports online; Prime's status path differs.
+  const fleet = read('infra/bootstrap/fleet-bootstrap.sh');
+  assert.ok(
+    fleet.indexOf('"$VALIDATE" --runtime') < fleet.indexOf('\\"status\\":\\"online\\"'),
+    'a VM whose contracts do not hold must not report itself online'
+  );
 });
 
 test('upgrade-corekit aborts rather than falling back to a branch name', () => {
