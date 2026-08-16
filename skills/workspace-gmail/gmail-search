@@ -10,6 +10,12 @@ CORE_DIR="${CORE_DIR:-/opt/corekit}"
 WS_TOKEN="${CORE_DIR}/bin/ws-token"
 GMAIL_API="https://gmail.googleapis.com/gmail/v1/users/me"
 die() { echo "[gmail-search] [ERROR] $*" >&2; exit 1; }
+# Per-run scratch dir. A fixed /tmp/<name>.json is owned by whoever runs the
+# tool first: every later run by a different user fails `curl -o` with exit 23,
+# and `set -e` kills the script before die() can say so — a silent, permanent
+# break with no diagnostic. It also makes two concurrent runs read each
+# other's response. The docs/ tools already did this; these were left behind.
+__DT="$(mktemp -d)"; trap 'rm -rf "$__DT"' EXIT
 QUERY="" MAX=10
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -20,7 +26,7 @@ done
 [[ -n "$QUERY" ]] || die "No search query. Usage: gmail-search <query>"
 TOKEN="$("$WS_TOKEN" --scope gmail)" || die "Auth failed"
 ENCODED_QUERY="$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$QUERY")"
-HTTP_CODE=$(curl -s -o /tmp/gmail-response.json -w '%{http_code}' \
+HTTP_CODE=$(curl -s -o ${__DT}/gmail-response.json -w '%{http_code}' \
   -H "Authorization: Bearer ${TOKEN}" \
   "${GMAIL_API}/threads?q=${ENCODED_QUERY}&maxResults=${MAX}")
 if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "401" ]]; then
@@ -31,7 +37,7 @@ fi
 # Extract thread IDs and fetch summaries
 python3 -c "
 import json, sys, subprocess
-data = json.load(open('/tmp/gmail-response.json'))
+data = json.load(open('${__DT}/gmail-response.json'))
 threads = data.get('threads', [])
 if not threads:
     print(json.dumps({'results': [], 'query': sys.argv[1], 'count': 0}))

@@ -7,6 +7,12 @@ CORE_DIR="${CORE_DIR:-/opt/corekit}"
 WS_TOKEN="${CORE_DIR}/bin/ws-token"
 CAL_API="https://www.googleapis.com/calendar/v3"
 die() { echo "[calendar-events] [ERROR] $*" >&2; exit 1; }
+# Per-run scratch dir. A fixed /tmp/<name>.json is owned by whoever runs the
+# tool first: every later run by a different user fails `curl -o` with exit 23,
+# and `set -e` kills the script before die() can say so — a silent, permanent
+# break with no diagnostic. It also makes two concurrent runs read each
+# other's response. The docs/ tools already did this; these were left behind.
+__DT="$(mktemp -d)"; trap 'rm -rf "$__DT"' EXIT
 CAL_ID="primary" FROM="" TO=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -17,7 +23,7 @@ done
 TOKEN="$("$WS_TOKEN" --scope calendar)" || die "Auth failed"
 ENC_FROM="$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$FROM")"
 ENC_TO="$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1]))" "$TO")"
-HTTP_CODE=$(curl -s -o /tmp/cal-response.json -w '%{http_code}' \
+HTTP_CODE=$(curl -s -o ${__DT}/cal-response.json -w '%{http_code}' \
   -H "Authorization: Bearer ${TOKEN}" \
   "${CAL_API}/calendars/${CAL_ID}/events?timeMin=${ENC_FROM}&timeMax=${ENC_TO}&singleEvents=true&orderBy=startTime&maxResults=50")
 if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "401" ]]; then
@@ -27,7 +33,7 @@ fi
 [[ "$HTTP_CODE" == "200" ]] || die "Calendar API returned HTTP ${HTTP_CODE}"
 python3 -c "
 import json
-data = json.load(open('/tmp/cal-response.json'))
+data = json.load(open('${__DT}/cal-response.json'))
 events = [{'id':e.get('id',''),'summary':e.get('summary','(no title)'),'start':e.get('start',{}).get('dateTime',e.get('start',{}).get('date','')),'end':e.get('end',{}).get('dateTime',e.get('end',{}).get('date','')),'location':e.get('location','')} for e in data.get('items',[])]
 print(json.dumps({'events':events,'count':len(events)}, indent=2))
 "

@@ -18,6 +18,12 @@ WS_TOKEN="${CORE_DIR}/bin/ws-token"
 DRIVE_API="https://www.googleapis.com/drive/v3"
 UPLOAD_API="https://www.googleapis.com/upload/drive/v3"
 die() { echo "[work-publish] [ERROR] $*" >&2; exit 1; }
+# Per-run scratch dir. A fixed /tmp/<name>.json is owned by whoever runs the
+# tool first: every later run by a different user fails `curl -o` with exit 23,
+# and `set -e` kills the script before die() can say so — a silent, permanent
+# break with no diagnostic. It also makes two concurrent runs read each
+# other's response. The docs/ tools already did this; these were left behind.
+__DT="$(mktemp -d)"; trap 'rm -rf "$__DT"' EXIT
 log() { echo "[work-publish] $*" >&2; }
 
 # ---- Args ----
@@ -175,7 +181,7 @@ except Exception: print("")' 2>/dev/null || echo '')"
 
 if [[ -n "$EXISTING_ID" ]]; then
   log "Existing '${FILE_NAME}' found in target folder (${EXISTING_ID}) — updating in place (idempotent)"
-  HTTP_CODE=$(curl -s -o /tmp/wp-response.json -w '%{http_code}' \
+  HTTP_CODE=$(curl -s -o ${__DT}/wp-response.json -w '%{http_code}' \
     -X PATCH -H "Authorization: Bearer ${TOKEN}" \
     -H "Content-Type: ${MIME}" \
     --data-binary "@${FILE}" \
@@ -183,7 +189,7 @@ if [[ -n "$EXISTING_ID" ]]; then
   PUBLISH_MODE="updated"
 else
   META="{\"name\":\"${FILE_NAME}\",\"parents\":[\"${TARGET_PARENT}\"]}"
-  HTTP_CODE=$(curl -s -o /tmp/wp-response.json -w '%{http_code}' \
+  HTTP_CODE=$(curl -s -o ${__DT}/wp-response.json -w '%{http_code}' \
     -X POST -H "Authorization: Bearer ${TOKEN}" \
     -F "metadata=${META};type=application/json" \
     -F "file=@${FILE};type=${MIME}" \
@@ -201,7 +207,7 @@ fi
 
 python3 -c "
 import json
-f = json.load(open('/tmp/wp-response.json'))
+f = json.load(open('${__DT}/wp-response.json'))
 print(json.dumps({
   'status': 'published',
   'mode': '${PUBLISH_MODE}',

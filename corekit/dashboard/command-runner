@@ -24,6 +24,12 @@
 #   CORE_DIR        — CoreKit installation directory (default: /opt/corekit)
 # ============================================================
 set -euo pipefail
+# Per-run scratch dir. A fixed /tmp/<name>.json is owned by whoever runs the
+# tool first: every later run by a different user fails `curl -o` with exit 23,
+# and `set -e` kills the script before die() can say so — a silent, permanent
+# break with no diagnostic. It also makes two concurrent runs read each
+# other's response. The docs/ tools already did this; these were left behind.
+__DT="$(mktemp -d)"; trap 'rm -rf "$__DT"' EXIT
 
 # ---- CONFIG ----
 CORE_DIR="${CORE_DIR:-/opt/corekit}"
@@ -219,8 +225,8 @@ handle_gateway_restart() {
 
 handle_discover_models() {
   log "Executing: discover-models --probe-only"
-  local result_file="/tmp/discover-models-result.json"
-  local stderr_file="/tmp/discover-models-stderr.log"
+  local result_file="${__DT}/discover-models-result.json"
+  local stderr_file="${__DT}/discover-models-stderr.log"
 
   # Run discovery, capture JSON to file (not bash variable — avoids corruption with large output)
   GCP_PROJECT_ID="$GCP_PROJECT_ID" CORE_DIR="$CORE_DIR" \
@@ -312,7 +318,7 @@ handle_set_model() {
 
   if [[ -n "$assignments" && "$assignments" != "" ]]; then
     # Full assignments mode — write to temp file, use --set-config
-    local config_file="/tmp/model-assignments.json"
+    local config_file="${__DT}/model-assignments.json"
     echo "$assignments" > "$config_file"
     log "Executing: discover-models --set-config ${config_file}"
     GCP_PROJECT_ID="$GCP_PROJECT_ID" CORE_DIR="$CORE_DIR" "${FLEET_BIN}/discover-models" --set-config "$config_file" 2>&1

@@ -118,6 +118,11 @@ jobs:
       - name: Living docs and shipped skills cite files that exist
         run: node --test test/doc-paths.test.mjs
 
+      # A fixed /tmp filename is owned by whoever runs the tool first; every later
+      # run by another user fails curl with exit 23 and set -e swallows the message.
+      - name: Shell tools use per-run temp files
+        run: node --test test/tool-hygiene.test.mjs
+
   codeowners:
     name: CODEOWNERS Resolves
     runs-on: ubuntu-latest

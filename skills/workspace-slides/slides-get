@@ -7,13 +7,19 @@ CORE_DIR="${CORE_DIR:-/opt/corekit}"
 WS_TOKEN="${CORE_DIR}/bin/ws-token"
 SLIDES_API="https://slides.googleapis.com/v1/presentations"
 die() { echo "[slides-get] [ERROR] $*" >&2; exit 1; }
+# Per-run scratch dir. A fixed /tmp/<name>.json is owned by whoever runs the
+# tool first: every later run by a different user fails `curl -o` with exit 23,
+# and `set -e` kills the script before die() can say so — a silent, permanent
+# break with no diagnostic. It also makes two concurrent runs read each
+# other's response. The docs/ tools already did this; these were left behind.
+__DT="$(mktemp -d)"; trap 'rm -rf "$__DT"' EXIT
 PRES_ID="" SLIDE_INDEX=""
 while [[ $# -gt 0 ]]; do
   case "$1" in --slide) SLIDE_INDEX="$2"; shift 2 ;; -*) die "Unknown: $1" ;; *) PRES_ID="$1"; shift ;; esac
 done
 [[ -n "$PRES_ID" ]] || die "Usage: slides-get <presentation_id> [--slide INDEX]"
 TOKEN="$("$WS_TOKEN" --scope slides)" || die "Auth failed"
-HTTP_CODE=$(curl -s -o /tmp/slides-response.json -w '%{http_code}' \
+HTTP_CODE=$(curl -s -o ${__DT}/slides-response.json -w '%{http_code}' \
   -H "Authorization: Bearer ${TOKEN}" "${SLIDES_API}/${PRES_ID}")
 if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "401" ]]; then
   echo "{\"status\":\"access_denied\",\"presentationId\":\"${PRES_ID}\",\"message\":\"Presentation access denied. Share with ${AGENT_USER_EMAIL:-unknown}\"}"
@@ -22,7 +28,7 @@ fi
 [[ "$HTTP_CODE" == "200" ]] || die "Slides API returned HTTP ${HTTP_CODE}"
 python3 -c "
 import json, sys
-pres = json.load(open('/tmp/slides-response.json'))
+pres = json.load(open('${__DT}/slides-response.json'))
 slides = pres.get('slides', [])
 slide_index = ${SLIDE_INDEX:--1}
 result = {

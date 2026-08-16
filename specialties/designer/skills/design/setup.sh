@@ -12,6 +12,7 @@ fi
 
 log "installing google-chrome-stable ..."
 tmp="$(mktemp -d)"
+trap 'rm -rf "$tmp"' EXIT
 url="https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb"
 if command -v wget >/dev/null 2>&1; then
   wget -q -O "$tmp/chrome.deb" "$url" || log "WARN: chrome download failed"

@@ -7,6 +7,12 @@ CORE_DIR="${CORE_DIR:-/opt/corekit}"
 WS_TOKEN="${CORE_DIR}/bin/ws-token"
 SHEETS_API="https://sheets.googleapis.com/v4/spreadsheets"
 die() { echo "[sheets-get] [ERROR] $*" >&2; exit 1; }
+# Per-run scratch dir. A fixed /tmp/<name>.json is owned by whoever runs the
+# tool first: every later run by a different user fails `curl -o` with exit 23,
+# and `set -e` kills the script before die() can say so — a silent, permanent
+# break with no diagnostic. It also makes two concurrent runs read each
+# other's response. The docs/ tools already did this; these were left behind.
+__DT="$(mktemp -d)"; trap 'rm -rf "$__DT"' EXIT
 SHEET_ID="" RANGE="" TAB=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -26,7 +32,7 @@ TOKEN="$("$WS_TOKEN" --scope sheets)" || die "Auth failed"
 # safe='' so a slash in a tab name (e.g. 'Tracker w/ Pri') is encoded, not left
 # to split the URL path into a 400.
 ENC_RANGE=$(python3 -c "import urllib.parse,sys; print(urllib.parse.quote(sys.argv[1], safe=''))" "$RANGE")
-HTTP_CODE=$(curl -s -o /tmp/sheets-response.json -w '%{http_code}' \
+HTTP_CODE=$(curl -s -o ${__DT}/sheets-response.json -w '%{http_code}' \
   -H "Authorization: Bearer ${TOKEN}" \
   "${SHEETS_API}/${SHEET_ID}/values/${ENC_RANGE}")
 if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "401" ]]; then
@@ -36,7 +42,7 @@ fi
 [[ "$HTTP_CODE" == "200" ]] || die "Sheets API returned HTTP ${HTTP_CODE}"
 python3 -c "
 import json
-data = json.load(open('/tmp/sheets-response.json'))
+data = json.load(open('${__DT}/sheets-response.json'))
 vals = data.get('values',[])
 print(json.dumps({'range':data.get('range',''),'rows':len(vals),'values':vals}, indent=2))
 "

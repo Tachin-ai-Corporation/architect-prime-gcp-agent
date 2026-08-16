@@ -7,9 +7,15 @@ CORE_DIR="${CORE_DIR:-/opt/corekit}"
 WS_TOKEN="${CORE_DIR}/bin/ws-token"
 GMAIL_API="https://gmail.googleapis.com/gmail/v1/users/me"
 die() { echo "[gmail-get] [ERROR] $*" >&2; exit 1; }
+# Per-run scratch dir. A fixed /tmp/<name>.json is owned by whoever runs the
+# tool first: every later run by a different user fails `curl -o` with exit 23,
+# and `set -e` kills the script before die() can say so — a silent, permanent
+# break with no diagnostic. It also makes two concurrent runs read each
+# other's response. The docs/ tools already did this; these were left behind.
+__DT="$(mktemp -d)"; trap 'rm -rf "$__DT"' EXIT
 MSG_ID="${1:-}"; [[ -n "$MSG_ID" ]] || die "Usage: gmail-get <message_id>"
 TOKEN="$("$WS_TOKEN" --scope gmail)" || die "Auth failed"
-HTTP_CODE=$(curl -s -o /tmp/gmail-response.json -w '%{http_code}' \
+HTTP_CODE=$(curl -s -o ${__DT}/gmail-response.json -w '%{http_code}' \
   -H "Authorization: Bearer ${TOKEN}" \
   "${GMAIL_API}/messages/${MSG_ID}?format=full")
 if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "401" ]]; then
@@ -19,7 +25,7 @@ fi
 [[ "$HTTP_CODE" == "200" ]] || die "Gmail API returned HTTP ${HTTP_CODE}"
 python3 -c "
 import json, sys, base64
-msg = json.load(open('/tmp/gmail-response.json'))
+msg = json.load(open('${__DT}/gmail-response.json'))
 headers = {}
 for h in msg.get('payload',{}).get('headers',[]):
     headers[h['name'].lower()] = h['value']

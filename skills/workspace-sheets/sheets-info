@@ -9,6 +9,12 @@ CORE_DIR="${CORE_DIR:-/opt/corekit}"
 WS_TOKEN="${CORE_DIR}/bin/ws-token"
 SHEETS_API="https://sheets.googleapis.com/v4/spreadsheets"
 die() { echo "[sheets-info] [ERROR] $*" >&2; exit 1; }
+# Per-run scratch dir. A fixed /tmp/<name>.json is owned by whoever runs the
+# tool first: every later run by a different user fails `curl -o` with exit 23,
+# and `set -e` kills the script before die() can say so — a silent, permanent
+# break with no diagnostic. It also makes two concurrent runs read each
+# other's response. The docs/ tools already did this; these were left behind.
+__DT="$(mktemp -d)"; trap 'rm -rf "$__DT"' EXIT
 SHEET_ID=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -18,14 +24,14 @@ while [[ $# -gt 0 ]]; do
 done
 [[ -n "$SHEET_ID" ]] || die "Need --sheet"
 TOKEN="$("$WS_TOKEN" --scope sheets)" || die "Auth failed"
-HTTP_CODE=$(curl -s -o /tmp/sheets-response.json -w '%{http_code}' \
+HTTP_CODE=$(curl -s -o ${__DT}/sheets-response.json -w '%{http_code}' \
   -H "Authorization: Bearer ${TOKEN}" \
   "${SHEETS_API}/${SHEET_ID}?fields=properties.title,sheets(properties(title,sheetId,index,gridProperties))")
 if [[ "$HTTP_CODE" == "403" || "$HTTP_CODE" == "401" ]]; then
   echo "{\"status\":\"access_denied\",\"sheet\":\"${SHEET_ID}\",\"message\":\"Sheets access denied. Share the spreadsheet with ${AGENT_USER_EMAIL:-the agent Workspace email}.\"}"
   exit 0
 fi
-[[ "$HTTP_CODE" == "200" ]] || die "Sheets API returned HTTP ${HTTP_CODE} (body in /tmp/sheets-response.json)"
+[[ "$HTTP_CODE" == "200" ]] || die "Sheets API returned HTTP ${HTTP_CODE} (body in ${__DT}/sheets-response.json)"
 python3 -c "
 import json
 def colname(n):
@@ -33,7 +39,7 @@ def colname(n):
     while n>0:
         n,r=divmod(n-1,26); s=chr(65+r)+s
     return s or 'A'
-d=json.load(open('/tmp/sheets-response.json'))
+d=json.load(open('${__DT}/sheets-response.json'))
 tabs=[]
 for s in d.get('sheets',[]):
     p=s['properties']; gp=p.get('gridProperties',{})
