@@ -82,6 +82,12 @@ jobs:
       - name: Check manifest paths
         run: node --test test/manifest-integrity.test.mjs
 
+      # The dest column is what a VM receives. Repo files can move freely; this
+      # says so with arithmetic rather than confidence, and fails the moment a
+      # reorganisation changes installed content instead of just its address.
+      - name: Installed surface matches the lock
+        run: node --test test/install-surface.test.mjs
+
   codeowners:
     name: CODEOWNERS Resolves
     runs-on: ubuntu-latest
