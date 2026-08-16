@@ -9,7 +9,7 @@ Scripts live under `corekit/` grouped by domain:
 - `corekit/brain/` — web-search, agent-status, assemble-persona, brain-telemetry-read, brain-telemetry-write, responsibility-manage, project-manage, task-log-read, task-log-write
 - `corekit/fleet/` — fleet-deploy, fleet-teardown, fleet-hire, fleet-fire, fleet-verify, fleet-upgrade, fleet-monitor, fleet-status, fleet-health-check
 - `corekit/chat/` — chat-send, chat-read, dwd-token
-- `corekit/daemon/` — agent-ears.mjs, agent-mouth.mjs, agent-brain.mjs, agent-brain.service, start-agent-ears, start-agent-mouth, ears-health-check, mouth-health-check
+- `platform/runtime/` — agent-ears.mjs, agent-mouth.mjs, agent-brain.mjs, agent-brain.service, start-agent-ears, start-agent-mouth, ears-health-check, mouth-health-check
 - `corekit/memory/` — core-memory-read, core-memory-write, core-memory-retire, update-deep-truths
 - `corekit/dashboard/` — command-runner
 - `corekit/system/` — upgrade-corekit, validate-contracts, web-search

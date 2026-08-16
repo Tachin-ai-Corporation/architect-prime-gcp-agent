@@ -20,11 +20,11 @@ Defined in `corekit/config/agent-types.json`:
 
 ## Workspace Locations
 - **Specialty workspaces**: `specialties/<type>/workspace/` — type-specific SOUL.md, IDENTITY.md, MEMORY.md
-- **Fleet base template**: `brain/fleet/_base/` — generic fallback using `{{AGENT_NAME}}`, `{{SPECIALTY}}` template vars
-- **Fleet brain sub-agents**: `brain/fleet/_brain/{cortex,prefrontal,motor,cerebellum,temporal-research,temporal-memory}/`
+- **Fleet base template**: `platform/organ-firmware/fleet/_base/` — generic fallback using `{{AGENT_NAME}}`, `{{SPECIALTY}}` template vars
+- **Fleet brain sub-agents**: `platform/organ-firmware/fleet/_brain/{cortex,prefrontal,motor,cerebellum,temporal-research,temporal-memory}/`
 
 ## Creating a New Specialty
 1. Create directory: `specialties/<type>/workspace/`
 2. Add workspace files: SOUL.md, IDENTITY.md, MEMORY.md
 3. Register the specialty in `corekit/config/agent-types.json`
-4. Specialty workspace files override `brain/fleet/_base/` defaults at install time
+4. Specialty workspace files override `platform/organ-firmware/fleet/_base/` defaults at install time

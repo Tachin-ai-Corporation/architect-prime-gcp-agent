@@ -110,8 +110,12 @@ jobs:
         run: node --test test/bootstrap-paths.test.mjs
 
       # A living document that names a path it cannot produce teaches the wrong
-      # shape. Historical records (docs/plans, the changelog) are out of scope.
-      - name: Living docs cite files that exist
+      # shape. This covers the SHIPPED content too — skills, specialty bundles,
+      # organ firmware — where a dead path is not a misled reader but an agent
+      # instructed at runtime to open a file that is not there. Historical
+      # records (docs/plans, the changelog, .agents/rules/project-context.md)
+      # are out of scope by design.
+      - name: Living docs and shipped skills cite files that exist
         run: node --test test/doc-paths.test.mjs
 
   codeowners:

@@ -29,4 +29,4 @@ R (Responsibility) → M (Mission) → C (Checkpoint) → T (Task)
 - **Scheduled missions**: Created from R-type responsibility cron triggers
 - **Simple vs complex**: Simple missions may short-circuit directly; complex ones get checkpoint plans
 
-Reference: `docs/architecture/RESPONSIBILITIES_CHECKPOINTS_MISSIONS.md` (Section 3)
+Reference: `docs/CULTURE_OF_WORK.md` (Section 3)

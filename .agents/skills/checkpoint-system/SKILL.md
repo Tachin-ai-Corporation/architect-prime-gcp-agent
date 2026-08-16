@@ -27,4 +27,4 @@ R (Responsibility) → M (Mission) → C (Checkpoint) → T (Task)
 - **Sequential processing**: Checkpoints execute in order — a checkpoint must complete before the next begins
 - **Task decomposition**: Each checkpoint can contain multiple atomic tasks (T-type envelopes)
 
-Reference: `docs/architecture/RESPONSIBILITIES_CHECKPOINTS_MISSIONS.md` (Section 2)
+Reference: `docs/CULTURE_OF_WORK.md` (Section 2)

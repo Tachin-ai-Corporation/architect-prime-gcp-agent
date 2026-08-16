@@ -10,15 +10,15 @@ description: Use when creating/editing any agent workspace file — SOUL.md, IDE
 - **MEMORY.md** = curated working memory, updated during turns (< 5KB)
 
 ## Workspace locations
-- **Prime brain** (6 agents): `brain/prime/{cortex,temporal-research,temporal-memory,prefrontal,motor,cerebellum}/`
-- **Fleet generic template**: `brain/fleet/_base/` (uses `{{AGENT_NAME}}`, `{{SPECIALTY}}` template vars)
-- **Fleet brain sub-agents**: `brain/fleet/_brain/{prefrontal,motor,cerebellum,temporal-research,temporal-memory,cortex}/`
+- **Prime brain** (6 agents): `platform/organ-firmware/prime/{cortex,temporal-research,temporal-memory,prefrontal,motor,cerebellum}/`
+- **Fleet generic template**: `platform/organ-firmware/fleet/_base/` (uses `{{AGENT_NAME}}`, `{{SPECIALTY}}` template vars)
+- **Fleet brain sub-agents**: `platform/organ-firmware/fleet/_brain/{prefrontal,motor,cerebellum,temporal-research,temporal-memory,cortex}/`
 - **Specialty workspaces**: `specialties/<type>/workspace/` (assistant, data, devops, engineer, finance, pm, qa, security)
 
 ## Writing rules
 - Bullet points, clear headers, actionable
 - Direct and decisive — avoid excessive confirmation loops
-- Prime brain files use HARDCODED identity (not template vars) — see brain/prime/cortex/SOUL.md
+- Prime brain files use HARDCODED identity (not template vars) — see platform/organ-firmware/prime/cortex/SOUL.md
 - Fleet brain files use `{{AGENT_NAME}}` and `{{SPECIALTY}}` template variables (substituted at install time)
 - For fleet specialty workspace: include specialty-aware identity and capabilities
 

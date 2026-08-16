@@ -26,4 +26,4 @@ Responsibilities sit at the top of the R→M→C→T envelope hierarchy:
 4. Cortex processes the mission through the standard decide loop
 5. Work flows through the C→T hierarchy as Prefrontal plans and Motor executes
 
-Reference: `docs/architecture/RESPONSIBILITIES_CHECKPOINTS_MISSIONS.md` (Section 1)
+Reference: `docs/CULTURE_OF_WORK.md` (Section 1)

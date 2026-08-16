@@ -97,7 +97,7 @@ without reading any other file.
 
 **Real example from the codebase:**
 ```
-// corekit/lib/dwd-auth.mjs — Domain-Wide Delegation OAuth2 token cache
+// platform/security/dwd-auth.mjs — Domain-Wide Delegation OAuth2 token cache
 // Extracted from agent-ears.mjs / agent-mouth.mjs Phase 4
 // Used by ears (Gmail/GChat polling) and mouth (GChat delivery)
 //

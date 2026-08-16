@@ -9,7 +9,7 @@ Real patterns from the Architect Prime codebase showing correct ordering.
 This file is a model of what tightened code looks like:
 
 ```javascript
-// corekit/lib/gce-auth.mjs — GCE metadata OAuth2 token cache
+// platform/security/gce-auth.mjs — GCE metadata OAuth2 token cache
 // Extracted from agent-brain.mjs Phase 0A
 // Used by all daemons and lib modules that talk to GCP services.
 
@@ -59,7 +59,7 @@ Correct order (callee before caller):
 
 ```javascript
 // 1. MODULE HEADER
-// corekit/lib/json-repair.mjs — JSON parsing and repair utilities
+// platform/providers/json-repair.mjs — JSON parsing and repair utilities
 // Extracted from agent-brain.mjs Phase 0C
 // Pure functions with zero dependencies. Used to parse and repair
 // truncated/malformed JSON from LLM responses.
@@ -94,7 +94,7 @@ seeing them called inside `parseJsonResponse`. Comprehension follows naturally.
 ## vertex-text.mjs — Section dividers for larger files
 
 ```javascript
-// corekit/lib/vertex-text.mjs — Vertex AI text utility layer
+// platform/providers/vertex-text.mjs — Vertex AI text utility layer
 // Extracted from agent-brain.mjs Phase 0D
 // Provides LLM-powered text summarization, title generation, and schema
 // enforcement via direct Vertex AI calls (no gateway, no agent routing).

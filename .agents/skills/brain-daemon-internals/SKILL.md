@@ -5,7 +5,7 @@ description: "Internal architecture of agent-brain.mjs — the Brain v3 orchestr
 # Brain Daemon Internals
 
 ## File Location
-`corekit/daemon/agent-brain.mjs` (~4400 lines)
+`platform/runtime/agent-brain.mjs` (~4400 lines)
 
 ## Processing Pipeline
 

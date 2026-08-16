@@ -52,7 +52,7 @@ project **suggests** the playbooks relevant to it: their narratives are recalled
 plan as priors when the work matches — never executed as step-processes.
 
 Enforcement: every writer of `context` passes it through the single validator
-`corekit/lib/project-context.mjs` (`validateContextEntry` / `filterProjectContext`), which
+`platform/control-plane/project-context.mjs` (`validateContextEntry` / `filterProjectContext`), which
 rejects off-layer keys, non-resource values, and caps the map size. See
 [MODULE_CHARTER](../MODULE_CHARTER.md) and PRODUCT_CANON **C-28**.
 

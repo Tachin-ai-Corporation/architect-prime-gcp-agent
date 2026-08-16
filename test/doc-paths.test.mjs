@@ -15,6 +15,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync, readdirSync, statSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
@@ -35,13 +36,42 @@ function livingDocs() {
                    'docs/CULTURE_OF_WORK.md', 'docs/BOOTSTRAP.md', 'CLAUDE.md',
                    'corekit/README.md']) add(f);
 
-  const guides = join(repoRoot, 'docs', 'guides');
-  if (existsSync(guides)) {
-    for (const f of readdirSync(guides)) {
-      if (f.endsWith('.md')) out.push(`docs/guides/${f}`);
+  for (const sub of ['guides', 'primitives', 'services']) {
+    const dir = join(repoRoot, 'docs', sub);
+    if (!existsSync(dir)) continue;
+    for (const f of readdirSync(dir)) {
+      if (f.endsWith('.md')) out.push(`docs/${sub}/${f}`);
     }
   }
+
+  // Everything that INSTALLS onto a VM as instructions: skill packages, the
+  // per-specialty bundles, and the organ firmware. These outrank the canon in
+  // stakes and were the one class with no coverage at all.
+  //
+  // A skill is read by the motor organ at the moment it needs command syntax. A
+  // dead path in a canon document misleads a human, who will notice; a dead path
+  // in a SKILL.md is an instruction to an agent to open a file that is not
+  // there, and what it does next is anyone's guess. Prose can be wrong for a
+  // month before someone reads it — a skill is wrong the first time it runs.
+  out.push(...trackedMarkdown('skills', 'specialties', 'platform/organ-firmware'));
+
+  // The repo-maintainer tooling. Not product, but it is loaded into context on
+  // every session, so a stale path here sends the maintainer to a directory that
+  // moved and costs a search before anyone notices the document is wrong. It had
+  // sixty-odd dead paths after the platform/ move.
+  //
+  // `.agents/rules/project-context.md` is excluded: it is a dated changelog with
+  // an explicit line in it saying references below are historical. Rewriting
+  // those would falsify the record, which is the same reason docs/plans/ is out.
+  out.push(...trackedMarkdown('.agents').filter((p) => p !== '.agents/rules/project-context.md'));
   return out;
+}
+
+/** Tracked `.md` under the given trees, via git so untracked scratch is ignored. */
+function trackedMarkdown(...trees) {
+  const args = ['ls-files', '-z', ...trees.map((t) => `${t}/**/*.md`)];
+  const out = execFileSync('git', args, { cwd: repoRoot, encoding: 'utf8' });
+  return out.split('\0').map((s) => s.trim()).filter(Boolean);
 }
 
 /**
@@ -65,7 +95,19 @@ export function citedPaths(markdown) {
   return out;
 }
 
-/** Prefixes that are real repo trees — a cited path under one should resolve. */
+/**
+ * Prefixes that are real repo trees — a cited path under one should resolve.
+ *
+ * `brain/` stays on the list after the organ-firmware move precisely BECAUSE it
+ * no longer exists: a document that still cites it is making a claim about a
+ * tree that was renamed, which is the failure this check is for. Drop the prefix
+ * and every stale `brain/...` reference becomes invisible instead of wrong.
+ *
+ * A skill often cites a file in the PROJECT's shared workspace rather than in
+ * this repo ("read `content/BRIEF.md` from the shared workspace"). Those are not
+ * repo claims and must not be checked, which is why this is a prefix list and
+ * not "anything with a slash".
+ */
 const REPO_TREES = ['platform/', 'corekit/', 'infra/', 'skills/', 'specialties/',
                     'brain/', 'docs/', 'app/', 'test/', 'tests/', 'operator/'];
 
@@ -74,6 +116,16 @@ describe('doc paths — living documents cite files that exist', () => {
 
   it('finds the living document set', () => {
     assert.ok(docs.length >= 8, `only ${docs.length} living docs found — the scan is broken`);
+  });
+
+  it('covers the content that ships to VMs, not just the canon a human reads', () => {
+    const has = (pred, what) => assert.ok(docs.some(pred), `no ${what} in the living set`);
+    has((d) => d.startsWith('skills/'), 'skill package');
+    has((d) => d.startsWith('specialties/'), 'specialty bundle doc');
+    has((d) => d.startsWith('platform/organ-firmware/'), 'organ firmware file');
+    has((d) => d.startsWith('docs/primitives/'), 'primitive definition');
+    // Sized so that losing a whole tree fails here rather than passing quietly.
+    assert.ok(docs.length >= 100, `only ${docs.length} documents in scope — a tree dropped out`);
   });
 
   it('extracts backticked repo paths and ignores prose, globs and URLs', () => {
