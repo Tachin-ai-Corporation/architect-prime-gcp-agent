@@ -523,6 +523,51 @@ for (const [k,v] of Object.entries(ws)) { if (k !== '_comment') console.log(v); 
     systemctl enable agent-ears agent-mouth agent-brain agent-introspect 2>/dev/null || true
     systemctl restart agent-ears agent-mouth agent-brain agent-introspect
     echo "  Started: agent-ears + agent-mouth + agent-brain + agent-introspect"
+
+    # ---- Report the ref we actually installed (C-32) ----
+    #
+    # The machine that did the install is the only one that knows what it now
+    # runs. Nothing else wrote this for a Prime: the doc was created with
+    # coreRef "main", the deploy route resolved a SHA into VM *metadata* only,
+    # and no upgrade path — dashboard button or SSH — ever updated it again. So
+    # the dashboard answered "what is this fleet running" from a value that was
+    # true once, at creation, and drifted silently ever after. The routes that
+    # read it (contracts, brain-config, agent-types) then served content from a
+    # commit the VM had long since moved past, labelled `pinned` with no caveat,
+    # which is worse than admitting it does not know.
+    #
+    # fleet-upgrade already does this for AGENTS; the asymmetry was the bug.
+    # Doing it here covers both, and covers every trigger, because it is keyed to
+    # the install rather than to whoever asked for it.
+    #
+    # Best-effort by design: a failed report must not fail a good upgrade. The
+    # value is re-reported on the next one.
+    REPORT_ID="$(json_value "primeId" "${CORE_ROOT}/corekit/prime-config.json" 2>/dev/null || true)"
+    [[ -z "$REPORT_ID" ]] && REPORT_ID="$(json_value "primeId" "${CORE_ROOT}/corekit/chat-config.json" 2>/dev/null || true)"
+    REPORT_PROJECT="${GCP_PROJECT_ID:-}"
+    [[ -z "$REPORT_PROJECT" ]] && REPORT_PROJECT="$(curl -sf -H 'Metadata-Flavor: Google' \
+      'http://metadata.google.internal/computeMetadata/v1/project/project-id' 2>/dev/null || true)"
+    if [[ -n "$REPORT_ID" && -n "$REPORT_PROJECT" ]]; then
+      if [[ "$EXISTING_ROLE" == "fleet" ]]; then
+        REPORT_AGENT="$(json_value "agentId" "${CORE_ROOT}/corekit/chat-config.json" 2>/dev/null || true)"
+        REPORT_DOC="primes/${REPORT_ID}/fleet/${REPORT_AGENT}"
+        [[ -z "$REPORT_AGENT" ]] && REPORT_DOC=""
+      else
+        REPORT_DOC="primes/${REPORT_ID}"
+      fi
+      REPORT_TOKEN="$(curl -sf -H 'Metadata-Flavor: Google' \
+        'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' \
+        | python3 -c 'import sys,json; print(json.load(sys.stdin).get("access_token",""))' 2>/dev/null || true)"
+      if [[ -n "$REPORT_DOC" && -n "$REPORT_TOKEN" ]]; then
+        curl -sf -X PATCH \
+          -H "Authorization: Bearer ${REPORT_TOKEN}" -H 'Content-Type: application/json' \
+          -d "{\"fields\":{\"coreRef\":{\"stringValue\":\"${RESOLVED_REF}\"},\"updatedAt\":{\"stringValue\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\"}}}" \
+          "https://firestore.googleapis.com/v1/projects/${REPORT_PROJECT}/databases/(default)/documents/${REPORT_DOC}?updateMask.fieldPaths=coreRef&updateMask.fieldPaths=updatedAt" \
+          >/dev/null 2>&1 \
+          && echo "  Reported coreRef ${RESOLVED_REF:0:12} to ${REPORT_DOC}" \
+          || echo "  (coreRef report failed — upgrade stands; it re-reports next time)"
+      fi
+    fi
     ;;
   --status)
     if [[ ! -f "$STATE_FILE" ]]; then
