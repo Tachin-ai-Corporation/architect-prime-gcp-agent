@@ -29,17 +29,24 @@ export function HireModal({ primeId, agentEmailDomain, open, onClose, onHired }:
   const [hireType, setHireType] = useState("");
   const [hiring, setHiring] = useState(false);
 
-  /* ---- Load agent types on first open ---- */
+  /* ---- Load agent types on open, per Prime ---- */
+  //
+  // Keyed on primeId, not just `open`. The list is now what THIS Prime can
+  // install at its deployed ref, so a list fetched for one Prime is wrong for
+  // the next — and the old `agentTypes.length > 0` guard would have kept
+  // showing it. `loadedFor` caches per Prime instead of globally.
+  const [loadedFor, setLoadedFor] = useState<string | null>(null);
   useEffect(() => {
-    if (!open || agentTypes.length > 0) return;
-    (async () => {
-      const res = await api<{ types: AgentType[] }>("/api/agent-types");
+    if (!open || !primeId || loadedFor === primeId) return;
+    void (async () => {
+      const res = await api<{ types: AgentType[] }>(`/api/agent-types?primeId=${encodeURIComponent(primeId)}`);
       if (res?.types) {
         setAgentTypes(res.types);
+        setLoadedFor(primeId);
         if (res.types.length > 0) setHireType(res.types[0].id);
       }
     })();
-  }, [open, agentTypes.length]);
+  }, [open, primeId, loadedFor]);
 
   const generatedEmail = hireName && hireType
     ? `${hireType}-agent-${hireName}@${agentEmailDomain || 'example.com'}`

@@ -43,7 +43,7 @@ export function FleetPanel({ primeId }: FleetPanelProps) {
   const openHireModal = async () => {
     setShowHire(true);
     if (agentTypes.length === 0) {
-      const res = await api<{ types: AgentType[] }>("/api/agent-types");
+      const res = await api<{ types: AgentType[] }>(`/api/agent-types?primeId=${encodeURIComponent(primeId)}`);
       if (res?.types) {
         setAgentTypes(res.types);
         if (res.types.length > 0) setHireType(res.types[0].id);

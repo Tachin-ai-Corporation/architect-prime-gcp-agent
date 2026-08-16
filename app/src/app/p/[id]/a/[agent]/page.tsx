@@ -46,7 +46,7 @@ export default function AgentDeepDivePage({
 
   /* ---- Fetch agent types for theming ---- */
   useEffect(() => {
-    fetch("/api/agent-types")
+    fetch(`/api/agent-types?primeId=${encodeURIComponent(id)}`)
       .then((r) => r.json())
       .then((data) => {
         const map: Record<string, { glyph: string; accent: string; name: string }> = {};
@@ -60,7 +60,7 @@ export default function AgentDeepDivePage({
         setThemeMap(map);
       })
       .catch(() => {});
-  }, []);
+  }, [id]);
 
   /* ---- Resolve agent metadata from PrimeContext ---- */
   const fleet = sidebarFleet[id] || [];
