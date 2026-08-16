@@ -143,8 +143,18 @@ The full normative set lives in [`docs/PRODUCT_CANON.md`](docs/PRODUCT_CANON.md)
 .
 ├── app/            # Dashboard control plane (Cloud Run, Next.js)
 ├── infra/          # contracts.json, install.sh, bootstraps, manifests
-├── corekit/        # VM runtime — daemons, libs, brain tools, fleet/chat/memory/system scripts, config
-├── brain/          # Agent identity workspaces — SOUL.md, IDENTITY.md per role
+├── platform/       # The VM runtime, one package per concern:
+│   ├── contracts/       #   schemas, digests, ids, state machines
+│   ├── security/        #   workload identity, DWD auth
+│   ├── persistence/     #   firestore, git-store, artifacts
+│   ├── providers/       #   channel, notifications, vertex, json-repair
+│   ├── context/         #   memory, compaction, prompt budgets
+│   ├── control-plane/   #   projects, deploy targets
+│   ├── work/            #   envelopes, delegation, checkpoints, scheduler
+│   ├── deployment/      #   registry, compiler, content-sync, rollout
+│   ├── runtime/         #   the daemons + their action handlers
+│   └── organ-firmware/  #   SOUL.md + IDENTITY.md per organ (C-28 soft-locked)
+├── corekit/        # Gateway module, system tools, fleet tools, config
 ├── specialties/    # Per-agent-type bundles — workspace, brain appends, skills, responsibilities
 ├── skills/         # Versioned skill packages — the system's codified know-how
 ├── docs/           # Culture of Work, primitive references, authoring guides, plans
@@ -153,7 +163,11 @@ The full normative set lives in [`docs/PRODUCT_CANON.md`](docs/PRODUCT_CANON.md)
 └── README.md
 ```
 
-Seven modules, one home for everything. The platform default surface (`base.txt` and role/job manifests) is operator-neutral — a fresh fork ships generic placeholders and zero shared infrastructure. Operator-specific content (sites, processes, design docs) lives in `operator/`, loaded only via an explicit job manifest layer. The dashboard never contains runtime logic; the runtime never reaches into the dashboard.
+Eight modules, one home for everything.
+
+**Repo path == VM path.** A manifest line is `<src> <dest>`, and for every module the two columns are the same string: `platform/work/delegation.mjs` is that path in a checkout and on a VM, so an import resolves identically in both. Nothing resolves through a symlink. The package order is load-bearing — `security` ← `persistence`/`providers` ← `context`/`control-plane` ← `work` — and an import against that direction means two concerns share one name.
+
+The platform default surface (`base.txt` and role/job manifests) is operator-neutral — a fresh fork ships generic placeholders and zero shared infrastructure. Operator-specific content (sites, processes, design docs) lives in `operator/`, loaded only via an explicit job manifest layer. The dashboard never contains runtime logic; the runtime never reaches into the dashboard.
 
 ---
 

@@ -34,7 +34,7 @@ function livingDocs() {
 
   for (const f of ['docs/PRODUCT_CANON.md', 'docs/BRAIN_CANON.md', 'docs/MODULE_CHARTER.md',
                    'docs/CULTURE_OF_WORK.md', 'docs/BOOTSTRAP.md', 'docs/IMPROVEMENT_POLICY.md', 'CLAUDE.md',
-                   'corekit/README.md']) add(f);
+                   'corekit/README.md', 'MISSION_PLAN.md', 'README.md']) add(f);
 
   for (const sub of ['guides', 'primitives', 'services']) {
     const dir = join(repoRoot, 'docs', sub);
@@ -65,6 +65,23 @@ function livingDocs() {
   // those would falsify the record, which is the same reason docs/plans/ is out.
   out.push(...trackedMarkdown('.agents').filter((p) => p !== '.agents/rules/project-context.md'));
   return out;
+}
+
+/**
+ * The part of a document that is a claim about now.
+ *
+ * README.md is two documents in one file: a description of the current system,
+ * and a `## Version History` table that is a dated record. The table names
+ * `corekit/lib/conversation-context.mjs` because that is where the file was when
+ * the entry was written; rewriting it would falsify the record rather than fix
+ * it — the same reason docs/plans/ is out of scope entirely.
+ *
+ * Split at the heading instead of excluding the file, because the half above the
+ * heading is exactly the half that goes stale: it carried a pre-`platform/`
+ * layout tree and a module count that had been wrong since the move.
+ */
+export function livingPortion(markdown) {
+  return String(markdown).split(/^##\s+Version History\s*$/m)[0];
 }
 
 /** Tracked `.md` under the given trees, via git so untracked scratch is ignored. */
@@ -128,6 +145,14 @@ describe('doc paths — living documents cite files that exist', () => {
     assert.ok(docs.length >= 100, `only ${docs.length} documents in scope — a tree dropped out`);
   });
 
+  it('splits a document at its version history and keeps only the living half', () => {
+    const doc = 'Layout is `platform/work/`.\n\n## Version History\n\n| v1 | moved `corekit/lib/x.mjs` |\n';
+    assert.match(livingPortion(doc), /platform\/work\//);
+    assert.doesNotMatch(livingPortion(doc), /corekit\/lib/, 'the dated record must not be checked');
+    // A document with no such heading is living all the way down.
+    assert.equal(livingPortion('all current `platform/x`'), 'all current `platform/x`');
+  });
+
   it('extracts backticked repo paths and ignores prose, globs and URLs', () => {
     const found = citedPaths([
       'see `platform/work/verdict.mjs` for detail',
@@ -143,7 +168,7 @@ describe('doc paths — living documents cite files that exist', () => {
   it('no living document cites a path that does not exist', () => {
     const dead = [];
     for (const doc of docs) {
-      const text = readFileSync(join(repoRoot, doc), 'utf8');
+      const text = livingPortion(readFileSync(join(repoRoot, doc), 'utf8'));
       for (const p of citedPaths(text)) {
         if (!REPO_TREES.some((t) => p.startsWith(t))) continue;
         const full = join(repoRoot, p);

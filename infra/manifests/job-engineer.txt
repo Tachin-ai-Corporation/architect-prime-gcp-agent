@@ -15,7 +15,11 @@ specialties/engineer/brain/cerebellum/SOUL_APPEND.md corekit/specialties/enginee
 # Specialty skills
 # NOTE: git-ops (GitHub-flavored: gh pr create, conventional commits) is NOT installed for the
 # engineer — the fleet's git flow is the internal git store (workspace-git, base) + C-23 commits.
-# git-ops remains a Prime skill (role-prime.txt) for real GitHub/upstream-PR work.
+#
+# It is not a Prime skill either. This line used to say it was; role-prime.txt removed git-ops
+# and github-pr under C-34, so the note pointed at a capability nobody had. Repository authorship
+# belongs to the Repo Maintainer environment, which is not yet a deployed actor — see
+# skills/UNSHIPPED.md.
 specialties/engineer/skills/coding/SKILL.md corekit/specialties/engineer/skills/coding/SKILL.md
 specialties/engineer/skills/coding/skill.json corekit/specialties/engineer/skills/coding/skill.json
 specialties/engineer/skills/code-review/SKILL.md corekit/specialties/engineer/skills/code-review/SKILL.md

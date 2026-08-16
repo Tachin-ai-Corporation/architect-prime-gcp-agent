@@ -68,15 +68,19 @@ For the full cognitive architecture, see [Brain Canon](docs/BRAIN_CANON.md). For
 .
 ├── app/            # Dashboard control plane (Cloud Run, Next.js)
 ├── infra/          # contracts.json, install.sh, bootstraps, manifests
-├── corekit/        # VM runtime — daemons, libs, tools, config
-├── brain/          # Agent identity workspaces — SOUL.md, IDENTITY.md per role
+├── platform/       # VM runtime — contracts, security, persistence, providers,
+│                   #   context, control-plane, work, deployment, runtime,
+│                   #   and organ-firmware (SOUL.md / IDENTITY.md per organ)
+├── corekit/        # Gateway module, system tools, fleet tools, config
 ├── specialties/    # Per-agent-type bundles — workspace, brain appends, skills
 ├── skills/         # Versioned skill packages — the system's codified know-how
 ├── docs/           # Canons, culture of work, primitives, guides, plans
 └── MISSION_PLAN.md # What the system is and is becoming
 ```
 
-Six modules, one home for everything. See [MISSION_PLAN.md](MISSION_PLAN.md) for the full map.
+Seven modules, one home for everything. Every module installs at the path it
+occupies here, so an import resolves the same in a checkout and on a VM.
+See [MISSION_PLAN.md](MISSION_PLAN.md) for the full map.
 
 ---
 
