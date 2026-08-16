@@ -182,7 +182,7 @@ export function SystemTab() {
               id="settings-github-owner-input"
               className="input"
               style={{ width: 220, fontSize: 13 }}
-              placeholder="e.g. Tachin-ai-Corporation"
+              placeholder="e.g. your-github-org"
               value={owner}
               onChange={(e) => setOwner(e.target.value)}
             />

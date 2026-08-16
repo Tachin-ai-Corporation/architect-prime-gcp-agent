@@ -170,13 +170,13 @@ graph TD
   "name": "Authentication V2",
   "goal": "Migrate from session-based to JWT authentication",
   "description": "Complete overhaul of the auth system...",
-  "owner": "stan@company.com",
+  "owner": "stan@example.com",
   "status": "active",
   "parent_id": "proj-platform",
   "depends_on": [],
   "team": [
-    {"email": "stan@company.com", "role": "lead", "name": "Stan", "type": "agent"},
-    {"email": "alex@company.com", "role": "reviewer", "name": "Alex", "type": "human"}
+    {"email": "stan@example.com", "role": "lead", "name": "Stan", "type": "agent"},
+    {"email": "alex@example.com", "role": "reviewer", "name": "Alex", "type": "human"}
   ],
   "standardProcesses": ["p-plan", "p-review"],
   "context": {

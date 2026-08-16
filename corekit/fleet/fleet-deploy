@@ -40,7 +40,7 @@ Usage: fleet-deploy --name <name> --specialty <desc> --agent-email <email> [opti
   --chat-space   Chat space ID override (default: Prime's space)
   --machine-type VM machine type (default: e2-medium)
   --disk         Boot disk size (default: 50GB)
-  --operator-jobs Comma-separated operator job manifests (e.g. 'tachin-website')
+  --operator-jobs Comma-separated operator job manifests (e.g. 'marketing-site')
   --help         Show this message
 EOF
   exit 1

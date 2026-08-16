@@ -83,7 +83,7 @@ describe('renderWorkspaceExcludes', () => {
 });
 
 describe('renderWorkspaceExcludes — asset-bearing project (keepAssets)', () => {
-  // The tachin-web pathology: a website's own images are the deliverable, but the default
+  // The marketing-site pathology: a website's own images are the deliverable, but the default
   // input-hygiene excludes dropped *.png/*.jpg so the migrated git tree shipped HTML-only.
   const IMAGE_GLOBS = ['*.png', '*.jpg', '*.jpeg', '*.gif', '*.webp'];
 
@@ -147,10 +147,10 @@ describe('motorWorkspaceSweepPlan', () => {
       dirent('config.json'), dirent('progress.json'), dirent('sessions.json'),
       dirent('CLASSIFIED_MEMORY.md'), dirent('custom-skills'),
       dirent('index.html'), dirent('node_modules'), dirent('.git'), dirent('report.md'),
-      dirent('tachin-website-repo'), dirent('hosting_public'),
+      dirent('marketing-site-repo'), dirent('hosting_public'),
     ];
     const removed = motorWorkspaceSweepPlan(entries).sort();
-    assert.deepEqual(removed, ['.git', 'hosting_public', 'index.html', 'node_modules', 'report.md', 'tachin-website-repo'].sort());
+    assert.deepEqual(removed, ['.git', 'hosting_public', 'index.html', 'node_modules', 'report.md', 'marketing-site-repo'].sort());
     // none of the keep-set was scheduled for deletion
     for (const keep of ['SOUL.md','SOUL.base.md','IDENTITY.md','MEMORY.md','TASK.json','config.json','progress.json','sessions.json','CLASSIFIED_MEMORY.md','custom-skills']) {
       assert.ok(!removed.includes(keep), `must keep ${keep}`);

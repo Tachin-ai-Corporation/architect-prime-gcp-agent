@@ -2,7 +2,7 @@
 //
 // A mission scoped to a project must deploy THAT project's content to THAT project's
 // site — not guess. In a live delivery a devops agent confused the GCP/Firebase project
-// id (`tachin-website`) with the Hosting site id (`1health-website`) and a bare deploy
+// id (`marketing-site`) with the Hosting site id (`acme-www`) and a bare deploy
 // hit the project's default site, then shipped a placeholder because the source was
 // never placed in the deploy dir. The fix is a first-class, unambiguous deploy target on
 // the project doc that renders to the deploying agent and is read as authoritative.
@@ -127,7 +127,7 @@ export function renderDeployBlock(d) {
 
 /**
  * One-line target for a delegated instruction / telemetry, e.g.
- * "site=1health-website project=tachin-website source=drive:1OJ9…". '' when absent.
+ * "site=acme-www project=marketing-site source=drive:1OJ9…". '' when absent.
  * @param {object} d
  * @returns {string}
  */

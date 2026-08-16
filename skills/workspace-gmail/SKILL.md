@@ -14,8 +14,8 @@ Agents do **not** send email — the mouth is the sole outbound egress (C-27). I
   Output: Complete email message payload.
 
 ## Query Syntax (gmail-search)
-- `from:user@domain.com` — Emails sent by a specific sender.
-- `to:user@domain.com` — Emails sent to a specific recipient.
+- `from:user@example.com` — Emails sent by a specific sender.
+- `to:user@example.com` — Emails sent to a specific recipient.
 - `subject:text` — Search subject line text.
 - `newer_than:7d` / `older_than:1m` / `after:2026/04/01` — Date filtering.
 - `is:unread` / `is:starred` — Read/unread or star state.

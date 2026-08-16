@@ -33,7 +33,7 @@ const DEPLOY_RETRY = `Deployed the site to the staging preview channel and captu
 ---
 [TOOL EXECUTION LOG]
 [TOOL] runCommand({"command":"firebase hosting:channel:deploy staging --cwd=/x"}) → Error: command failed: unknown option --cwd
-[TOOL] runCommand({"command":"cd /x && firebase hosting:channel:deploy staging"}) → Channel URL: https://tachin-web--staging-abc123.web.app [expires 7d]
+[TOOL] runCommand({"command":"cd /x && firebase hosting:channel:deploy staging"}) → Channel URL: https://marketing-site--staging-abc123.web.app [expires 7d]
 [END TOOL LOG]`;
 
 // Same discovery, but the failed command is the TERMINAL tool call — no later success — so the

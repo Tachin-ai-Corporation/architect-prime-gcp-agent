@@ -142,11 +142,11 @@ describe('composeDelegationResultMarker', () => {
 describe('parseDelegationMarker', () => {
   it('parses valid marker', () => {
     const result = parseDelegationMarker(
-      '@eng [DELEGATION ref:w-123-abc from:arch@domain.com proj:proj-self-improvement]\nImplement manifest-dedup refactor.',
+      '@eng [DELEGATION ref:w-123-abc from:arch@example.com proj:proj-self-improvement]\nImplement manifest-dedup refactor.',
     );
     assert.deepEqual(result, {
       ref: 'w-123-abc',
-      from: 'arch@domain.com',
+      from: 'arch@example.com',
       project: 'proj-self-improvement',
       drive: null,
       criteria: null,
@@ -214,9 +214,9 @@ describe('parseDelegationResultMarker', () => {
 describe('round-trip compose → parse', () => {
   it('delegation round-trip', () => {
     const opts = {
-      targetEmail: 'eng@domain.com',
+      targetEmail: 'eng@example.com',
       ref: 'w-trip-001',
-      from: 'arch@domain.com',
+      from: 'arch@example.com',
       project: 'proj-roundtrip',
       body: 'Build the widget',
     };
@@ -231,7 +231,7 @@ describe('round-trip compose → parse', () => {
 
   it('result round-trip', () => {
     const opts = {
-      targetEmail: 'arch@domain.com',
+      targetEmail: 'arch@example.com',
       ref: 'w-trip-002',
       status: 'complete',
       missionId: 'w-mission-99',
@@ -284,7 +284,7 @@ describe('bumpRedelegation', () => {
 describe('composeRedelegationEscalation', () => {
   it('names the stuck checkpoint, the delegate, and the reason — an honest ask, not a false green', () => {
     const msg = composeRedelegationEscalation({
-      goal: 'Deploy the 1health site to staging and report the URL',
+      goal: 'Deploy the acme site to staging and report the URL',
       checkpointOutcome: 'Delegate to the designer (Dot) for review of the HTML draft',
       agentLabel: 'designer-agent-dot@example.com',
       reason: '[FAILED] the input branch was empty',
@@ -293,7 +293,7 @@ describe('composeRedelegationEscalation', () => {
     assert.match(msg, /Stuck on:.*review of the HTML draft/);
     assert.match(msg, /designer-agent-dot@example\.com/);
     assert.match(msg, /input branch was empty/);
-    assert.match(msg, /1health site to staging/);
+    assert.match(msg, /acme site to staging/);
     assert.match(msg, /loop/i, 'explains why it stopped rather than retrying');
   });
 });

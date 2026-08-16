@@ -1,11 +1,11 @@
 // tests/artifacts-commit-quoting.test.mjs — regression for the commit-message shell-injection
 // bug in artifacts.mjs commitAndSync (observed live on stan, 2026-08-11):
 //
-//   commitAndSync failed: Command failed: git commit -m "…mission branch of the `1health-we"
+//   commitAndSync failed: Command failed: git commit -m "…mission branch of the `acme-we"
 //   /bin/sh: 1: Syntax error: EOF in backquote substitution
 //
 // The daemon derives the mission-record commit message from the mission goal, so it legitimately
-// carries backticks (e.g. "the `1health-website` repo"), $, ", and newlines. The old code built a
+// carries backticks (e.g. "the `acme-www` repo"), $, ", and newlines. The old code built a
 // shell command string — execSync(`git commit -m ${JSON.stringify(message)}`) — and /bin/sh then
 // re-interpreted the backticks (unterminated → throw; balanced → the backticked span is run as a
 // command and silently dropped). The fix commits shell-free via execFileSync('git', ['commit','-m',
@@ -55,8 +55,8 @@ const fixedCommit = (message) => execFileSync('git', ['commit', '-q', '-m', mess
 const buggyCommit = (message) => execSync(`git commit -q -m ${JSON.stringify(message)}`, { cwd: dir, timeout: 10000 });
 
 describe('commitAndSync message quoting (execFileSync, shell-free)', () => {
-  const REAL = 'v2026.08.11.8.1: Delegation: Deploy the latest changes from the mission branch of the `1health-website` repo';
-  const TRUNCATED = 'v2026.08.11.8.1: Delegation: Deploy the mission branch of the `1health-we'; // unbalanced ` — the incident
+  const REAL = 'v2026.08.11.8.1: Delegation: Deploy the latest changes from the mission branch of the `acme-www` repo';
+  const TRUNCATED = 'v2026.08.11.8.1: Delegation: Deploy the mission branch of the `acme-we'; // unbalanced ` — the incident
   const RICH = 'v1: ship `code` for $HOME, say "hi"\n\nsecond paragraph with 100% coverage';
 
   it('commits a balanced-backtick message VERBATIM (was silently corrupted)', () => {
@@ -78,7 +78,7 @@ describe('commitAndSync message quoting (execFileSync, shell-free)', () => {
     // Unbalanced backtick → /bin/sh reports "EOF in backquote substitution" → throw.
     const t = commitWith(buggyCommit, TRUNCATED);
     assert.ok(t.threw, 'old form should have thrown on the unbalanced backtick');
-    // Balanced backtick → sh runs `1health-website` as a command and drops the span → corrupted body.
+    // Balanced backtick → sh runs `acme-www` as a command and drops the span → corrupted body.
     const b = commitWith(buggyCommit, REAL);
     assert.ok(b.threw || b.body !== REAL, 'old form should throw or corrupt the balanced-backtick message');
   });

@@ -5,13 +5,13 @@ import { shouldMaintainContext, buildMaintenancePrompt, parseMaintenanceResponse
 
 const FLAG_ON = { dispatch: { context_maintenance: true } };
 const FLAG_OFF = { dispatch: { context_maintenance: false } };
-const M = (over = {}) => ({ type: 'M', status: 'complete', project_id: 'tachin-web', title: 'g', output: 'o', ...over });
+const M = (over = {}) => ({ type: 'M', status: 'complete', project_id: 'marketing-site', title: 'g', output: 'o', ...over });
 
 describe('shouldMaintainContext', () => {
   it('runs for a completed mission that touched a project, flag on', () => {
     const r = shouldMaintainContext(M(), FLAG_ON);
     assert.equal(r.run, true);
-    assert.equal(r.projectId, 'tachin-web');
+    assert.equal(r.projectId, 'marketing-site');
   });
   it('does not run when the flag is off', () => {
     assert.equal(shouldMaintainContext(M(), FLAG_OFF).run, false);
@@ -30,7 +30,7 @@ describe('shouldMaintainContext', () => {
 
 describe('buildMaintenancePrompt', () => {
   it('carries the steward disposition, the project, the outcome, and a strict JSON contract', () => {
-    const p = buildMaintenancePrompt(M({ title: 'Add FAQ', output: 'FAQ planned' }), { id: 'tachin-web', name: 'Tachin Web', context: { a: 1 } });
+    const p = buildMaintenancePrompt(M({ title: 'Add FAQ', output: 'FAQ planned' }), { id: 'marketing-site', name: 'Tachin Web', context: { a: 1 } });
     assert.match(p, /temporal-memory organ/);
     assert.match(p, /steward/i);
     assert.match(p, /Tachin Web/);
@@ -69,7 +69,7 @@ describe('parseMaintenanceResponse', () => {
   });
 });
 
-const MP = (over = {}) => ({ type: 'M', status: 'complete', project_id: 'tachin-web', recalled_processes: ['p-audit', 'p-review'], ...over });
+const MP = (over = {}) => ({ type: 'M', status: 'complete', project_id: 'marketing-site', recalled_processes: ['p-audit', 'p-review'], ...over });
 
 describe('shouldMaintainProcesses', () => {
   it('runs for a completed mission that recalled playbooks (flag on); dedups + bounds to 3', () => {

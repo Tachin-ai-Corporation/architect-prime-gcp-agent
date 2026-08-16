@@ -29,13 +29,13 @@ const DOC_BASE = 'projects/tenant/databases/(default)/documents';
 // ── docIdFromName ──────────────────────────────────────────────────────
 
 test('docIdFromName extracts the trailing segment of a REST resource name', () => {
-  assert.equal(docIdFromName(`${DOC_BASE}/projects/tachin-website`), 'tachin-website');
+  assert.equal(docIdFromName(`${DOC_BASE}/projects/marketing-site`), 'marketing-site');
   assert.equal(docIdFromName(`${DOC_BASE}/processes/p-plan`), 'p-plan');
   assert.equal(docIdFromName(`${DOC_BASE}/primes/chuck/fleet/millie`), 'millie');
 });
 
 test('docIdFromName tolerates trailing slashes and bare ids', () => {
-  assert.equal(docIdFromName(`${DOC_BASE}/projects/tachin-website/`), 'tachin-website');
+  assert.equal(docIdFromName(`${DOC_BASE}/projects/marketing-site/`), 'marketing-site');
   assert.equal(docIdFromName('bare-id'), 'bare-id');
 });
 
@@ -50,12 +50,12 @@ test('docIdFromName returns empty string for non-string or empty input', () => {
 
 test('reconcileEntityId recovers a record whose body omits id (the live defect)', () => {
   // Exactly what POST /api/projects used to store.
-  const stored = { name: 'Tachin Website', description: 'Marketing site', status: 'active' };
-  const { entity, id, mismatch } = reconcileEntityId(stored, `${DOC_BASE}/projects/tachin-website`);
+  const stored = { name: 'Acme Marketing Site', description: 'Marketing site', status: 'active' };
+  const { entity, id, mismatch } = reconcileEntityId(stored, `${DOC_BASE}/projects/marketing-site`);
 
-  assert.equal(id, 'tachin-website');
-  assert.equal(entity.id, 'tachin-website');
-  assert.equal(entity.name, 'Tachin Website');
+  assert.equal(id, 'marketing-site');
+  assert.equal(entity.id, 'marketing-site');
+  assert.equal(entity.name, 'Acme Marketing Site');
   assert.equal(mismatch, null);
 });
 

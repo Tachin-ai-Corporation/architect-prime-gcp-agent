@@ -162,7 +162,7 @@ describe('finalizeBlockedBySpine — the false-complete guard (FC-A)', () => {
     assert.equal(finalizeBlockedBySpine([]), null);
   });
 
-  it('blocks when the DELIVERABLE (last) checkpoint is unmet — the 1health false-complete', () => {
+  it('blocks when the DELIVERABLE (last) checkpoint is unmet — the acme false-complete', () => {
     // CP1 done; CP2/3/4 pending (the review→deploy→report-URL delivery never finished)
     let s = buildSpine(PLAN.concat([{ instruction: 'Report the staging URL', accept_criteria: 'URL posted', tasks: [] }]), { now: 'T' });
     s = markCheckpoint(s, 0, 'complete', { now: 'T1' });
@@ -200,7 +200,7 @@ describe('checkpointFailureHalts — FC-D non-terminal milestone convergence', (
     assert.equal(checkpointFailureHalts({ isTerminal: true, taskFailure: false }), true);
   });
 
-  it('PROCEEDS past a NON-terminal milestone-only failure (tasks ok) — the 1health edit-checkpoint case', () => {
+  it('PROCEEDS past a NON-terminal milestone-only failure (tasks ok) — the acme edit-checkpoint case', () => {
     // bobby's delegated edit succeeded, but archie's cerebellum could not see it in archie's
     // workspace → a milestone FAIL that must NOT halt: the deploy (terminal) checkpoint gates.
     assert.equal(checkpointFailureHalts({ isTerminal: false, taskFailure: false }), false);

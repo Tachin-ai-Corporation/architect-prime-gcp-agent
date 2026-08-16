@@ -89,10 +89,39 @@ test('a cloud service account is a machine, not a person', () => {
 test('third-party and operator-owned areas are out of scope', () => {
   assert.equal(inScope('app/package-lock.json'), false, 'npm author metadata is not ours to sanitise');
   assert.equal(inScope('operator/notes.md'), false, 'operator/ is operator-specific by charter');
-  assert.equal(inScope('tests/baton.test.mjs'), false, 'the chosen scope is shipped platform files');
+  assert.equal(inScope('LICENSE'), false, 'the copyright holder is a legal requirement, not a leak');
   assert.equal(inScope('infra/fleet-policy.json'), true);
   assert.equal(inScope('.github/workflows/ci.yml'), true);
   assert.equal(inScope('app/src/lib/coordinates.ts'), true);
+});
+
+test('the scope is a deny-list, so a tree cannot fall out of it by being new', () => {
+  // These five trees were ALL unscanned under the old `infra|corekit|app|.github`
+  // allow-list, and the scan reported OK the whole time. `tests/` was holding a
+  // dozen real agent addresses when the scope was widened and they were found on
+  // the first run. Each assertion here is one of those blind spots, named.
+  for (const p of [
+    'platform/organ-firmware/prime/cortex/SOUL.md',   // the most identity-dense files we ship
+    'skills/delegation/SKILL.md',                     // instructions every VM reads
+    'specialties/devops/skills/firebase/SKILL.md',
+    'docs/primitives/04-PROJECT.md',
+    'tests/baton.test.mjs',
+    'test/boundaries.test.mjs',
+  ]) {
+    assert.equal(inScope(p), true, `${p} must be scanned — it ships or it publishes`);
+  }
+
+  // A tree invented tomorrow is covered on the day it is added, without an edit
+  // here. That is the whole point of inverting the list.
+  assert.equal(inScope('catalog/skills/some-future-skill/SKILL.md'), true);
+});
+
+test('the detector may not exempt its own tree to spare its own fixtures', () => {
+  // test/identity-scan.test.mjs has to contain rejectable addresses to prove
+  // rejection, so it alone is exempt. Exempting `test/` instead would have been
+  // one character of diff and a whole tree of lost coverage.
+  assert.equal(inScope('test/identity-scan.test.mjs'), false, 'the fixture file itself is exempt');
+  assert.equal(inScope('test/delegation.test.mjs'), true, 'its neighbours are not');
 });
 
 test('CODEOWNERS is scanned — the exemption it needed is gone', () => {
@@ -122,7 +151,10 @@ test('an empty scan is a broken scope, not a clean repo', () => {
 });
 
 test('a file list that matches nothing in scope also fails', () => {
-  const r = scanOperatorIdentity(['README.md', 'docs/guide.md'], () => 'clean');
+  // Every path here is out of scope for a DIFFERENT reason — charter-exempt,
+  // wrong extension, third-party — so the vacuity guard is what makes it fail,
+  // not one lucky rule.
+  const r = scanOperatorIdentity(['operator/notes.md', 'app/icon.png', 'app/package-lock.json'], () => 'clean');
   assert.equal(r.ok, false, 'silence must not read as proof');
   assert.equal(r.scanned, 0);
 });

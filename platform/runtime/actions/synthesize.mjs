@@ -546,7 +546,7 @@ async function tryContextExtraction(envelope, synthesisOutput, workSummary, deps
     // holds the 40,000-ft working-area view — durable resource references only, never
     // mission particulars, history, transient state, or process steps. This also
     // self-heals: existing off-layer/empty keys are pruned on the way through (the copy-
-    // forward that once let tachin-website accumulate 430 junk keys now can't persist any).
+    // forward that once let one project accumulate 430 junk keys now can't persist any).
     const updates = parsed.updates;
     const { context: updatedContext, dropped } = filterProjectContext(existingContext);
     if (dropped.length > 0) log('INFO', `[context-extract] Pruned ${dropped.length} off-layer/empty context key(s) from ${envelope.project_id}: ${dropped.map(d => d.key).join(', ')}`);

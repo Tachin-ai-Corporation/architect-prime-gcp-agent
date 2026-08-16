@@ -47,14 +47,32 @@ export const EXEMPT = [
   /(^|\/)package-lock\.json$/,   // third-party author metadata, not ours
   /(^|\/)node_modules\//,
   /^operator\//,                 // charter-exempt: operator-specific by design
+  /^LICENSE$/,                   // the copyright holder is a legal requirement
+  // The detector's own fixtures. A test that proves an address is REJECTED has
+  // to contain a rejectable address, so this one file cannot satisfy the rule it
+  // exists to check. Named exactly — not `test/`, which would take a whole tree
+  // out of scope to spare one file, the move that produced the four-tree blind
+  // spot above.
+  /^test\/identity-scan\.test\.mjs$/,
 ];
 
-const SCANNED = /^(infra|corekit|app|\.github)\//;
 const EXT = /\.(ts|tsx|js|mjs|cjs|sh|json|md|txt|ya?ml)$|CODEOWNERS$/;
 
-/** Should this file be scanned at all? */
+/**
+ * Should this file be scanned at all?
+ *
+ * The scope used to be an ALLOW-list of four trees — `infra|corekit|app|.github`.
+ * That is the shape of check this repo has now been bitten by four separate
+ * times: a hardcoded scan root does not report reduced coverage, it reports
+ * success. Under it, `platform/`, `skills/`, `specialties/`, `docs/` and both
+ * test trees were never scanned at all, and the check said OK the whole time.
+ * `tests/` was carrying a dozen real agent addresses when the scope was widened.
+ *
+ * It is now a DENY-list: everything tracked is scanned unless it is named in
+ * EXEMPT with a reason. A tree added tomorrow is covered on the day it is added,
+ * and the only way to lose coverage is to write down that you are losing it.
+ */
 export function inScope(path) {
-  if (!SCANNED.test(path)) return false;
   if (!EXT.test(path)) return false;
   return !EXEMPT.some((rx) => rx.test(path));
 }

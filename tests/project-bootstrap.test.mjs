@@ -8,10 +8,10 @@ import {
 } from '../platform/control-plane/project-bootstrap.mjs';
 
 const ROSTER = [
-  { email: 'product-architect-agent-archie@tachin.ag', specialty: 'product-architect', status: 'online' },
-  { email: 'engineer-agent-bobby@tachin.ag', specialty: 'engineer', status: 'online' },
-  { email: 'devops-agent-stan@tachin.ag', specialty: 'devops', status: 'online' },
-  { email: 'designer-agent-dot@tachin.ag', specialty: 'designer', status: 'offline' },
+  { email: 'product-architect-agent-archie@example.com', specialty: 'product-architect', status: 'online' },
+  { email: 'engineer-agent-bobby@example.com', specialty: 'engineer', status: 'online' },
+  { email: 'devops-agent-stan@example.com', specialty: 'devops', status: 'online' },
+  { email: 'designer-agent-dot@example.com', specialty: 'designer', status: 'offline' },
 ];
 
 describe('teammatesMissingResponsibilities', () => {
@@ -58,20 +58,20 @@ describe('missionOriginSpace', () => {
 
 describe('slugifyProjectId', () => {
   it('derives a kebab id and avoids collisions', () => {
-    assert.equal(slugifyProjectId('1health Website'), '1health-website');
+    assert.equal(slugifyProjectId('Acme Website'), 'acme-website');
     assert.equal(slugifyProjectId('  Fancy, Name!!  '), 'fancy-name');
-    assert.equal(slugifyProjectId('1health Website', ['1health-website']), '1health-website-2');
+    assert.equal(slugifyProjectId('Acme Website', ['acme-website']), 'acme-website-2');
     assert.equal(slugifyProjectId('', []), 'project');
   });
 });
 
 describe('findProjectBySpace (idempotent adopt)', () => {
   const projects = {
-    'tachin-web': { id: 'tachin-web', gchat_space_id: 'spaces/AAA', status: 'active' },
+    'marketing-site': { id: 'marketing-site', gchat_space_id: 'spaces/AAA', status: 'active' },
     'old': { id: 'old', gchat_space_id: 'spaces/BBB', status: 'archived' },
   };
   it('finds a live project bound to the space', () => {
-    assert.equal(findProjectBySpace(projects, 'spaces/AAA'), 'tachin-web');
+    assert.equal(findProjectBySpace(projects, 'spaces/AAA'), 'marketing-site');
   });
   it('ignores archived + returns null when unbound', () => {
     assert.equal(findProjectBySpace(projects, 'spaces/BBB'), null);
@@ -87,9 +87,9 @@ describe('resolveTeam', () => {
       { role: 'devops', specialty: 'devops' },
     ];
     const { team, unresolved } = resolveTeam(spec, ROSTER);
-    assert.equal(team[0].email, 'engineer-agent-bobby@tachin.ag');
+    assert.equal(team[0].email, 'engineer-agent-bobby@example.com');
     assert.equal(team[0].responsibilities, 'code');
-    assert.equal(team[1].email, 'devops-agent-stan@tachin.ag');
+    assert.equal(team[1].email, 'devops-agent-stan@example.com');
     assert.deepEqual(unresolved, []);
   });
   it('leaves an unmatchable specialty unresolved (never fabricates an email)', () => {
@@ -98,21 +98,21 @@ describe('resolveTeam', () => {
     assert.deepEqual(unresolved, ['legal']);
   });
   it('passes a human owner through by email without a roster match', () => {
-    const { team } = resolveTeam([{ type: 'human', role: 'owner', email: 'chill@tachin.ai', name: 'Chris' }], ROSTER);
+    const { team } = resolveTeam([{ type: 'human', role: 'owner', email: 'chill@example.com', name: 'Chris' }], ROSTER);
     assert.equal(team[0].type, 'human');
-    assert.equal(team[0].email, 'chill@tachin.ai');
+    assert.equal(team[0].email, 'chill@example.com');
   });
   it('offline agents are excluded by default, included with anyStatus', () => {
     assert.deepEqual(resolveTeam([{ specialty: 'designer' }], ROSTER).unresolved, ['designer']);
-    assert.equal(resolveTeam([{ specialty: 'designer' }], ROSTER, { anyStatus: true }).team[0].email, 'designer-agent-dot@tachin.ag');
+    assert.equal(resolveTeam([{ specialty: 'designer' }], ROSTER, { anyStatus: true }).team[0].email, 'designer-agent-dot@example.com');
   });
 });
 
 describe('membershipGap', () => {
   it('returns required emails not present in the space (localpart-compared)', () => {
-    const req = ['engineer-agent-bobby@tachin.ag', 'devops-agent-stan@tachin.ag'];
-    const members = ['engineer-agent-bobby@tachin.ag'];
-    assert.deepEqual(membershipGap(req, members), ['devops-agent-stan@tachin.ag']);
+    const req = ['engineer-agent-bobby@example.com', 'devops-agent-stan@example.com'];
+    const members = ['engineer-agent-bobby@example.com'];
+    assert.deepEqual(membershipGap(req, members), ['devops-agent-stan@example.com']);
     assert.deepEqual(membershipGap(req, req), []);
     assert.deepEqual(membershipGap([], ['x@y.z']), []);
   });
@@ -121,18 +121,18 @@ describe('membershipGap', () => {
 describe('buildProjectDoc', () => {
   it('assembles a full project doc bound to the origin space', () => {
     const doc = buildProjectDoc({
-      id: '1health-website', name: '1health Website', description: 'd', goal: 'g',
+      id: 'acme-website', name: 'Acme Website', description: 'd', goal: 'g',
       spaceId: 'spaces/XYZ',
-      team: [{ email: 'engineer-agent-bobby@tachin.ag', role: 'engineer', type: 'agent' }],
+      team: [{ email: 'engineer-agent-bobby@example.com', role: 'engineer', type: 'agent' }],
       canon: [{ key: 'deploy-flow', text: 'staging then prod' }],
       context: [{ key: 'source', kind: 'drive', ref: '1OJ...', summary: 'HTML' }],
-      owner: 'chill@tachin.ai', createdBy: 'archie', now: '2026-08-07T00:00:00Z',
+      owner: 'chill@example.com', createdBy: 'archie', now: '2026-08-07T00:00:00Z',
     });
     assert.equal(doc.gchat_space_id, 'spaces/XYZ');
     assert.equal(doc.status, 'active');
-    assert.equal(doc.team[0].email, 'engineer-agent-bobby@tachin.ag');
+    assert.equal(doc.team[0].email, 'engineer-agent-bobby@example.com');
     assert.equal(doc.canon.entries[0].key, 'deploy-flow');
-    assert.deepEqual(doc.canon.authority, ['chill@tachin.ai']);
+    assert.deepEqual(doc.canon.authority, ['chill@example.com']);
     assert.equal(doc.context.source.kind, 'drive');
     assert.equal(doc.context.source.ref, '1OJ...');
     assert.equal(doc.created_at, '2026-08-07T00:00:00Z');

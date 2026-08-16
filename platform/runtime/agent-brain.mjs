@@ -5184,7 +5184,7 @@ async function checkWaitingEnvelopes() {
           await firestoreWrite('work', childId, child);
 
           // FC-B: bound re-delegation of a repeatedly-failing checkpoint. Unbounded, a
-          // delegate that structurally cannot succeed loops — the 1health review re-delegated
+          // delegate that structurally cannot succeed loops — the observed review re-delegated
           // ~6× over 35 min, then false-completed. After the cap, escalate to the operator
           // honestly instead of clearing _cp_progress for yet another cortex → re-delegate round.
           if (!cpAllOk && CONTRACTS?.dispatch?.redelegation_cap_enabled) {

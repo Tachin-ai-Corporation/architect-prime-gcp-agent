@@ -1,7 +1,7 @@
 // tests/approval-scope.test.mjs — pure tests for scopeApprovalsToAgent (approval-leakage fix)
 //
 // The pathology being prevented, live: a web-master agent (tom) was asked to promote the
-// 1health site to production. When the operator replied "approve", the resolver queried
+// acme site to production. When the operator replied "approve", the resolver queried
 // approvals scoped ONLY by prime_id and surfaced a disambiguation of 7 "pending approvals"
 // — mostly OTHER agents' / OLD missions' gates (a home.html review, a DESIGN_SYSTEM.md
 // review, p-repo-improve proposals) accumulated over days/weeks. Owner scope (refined to the
@@ -10,7 +10,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { scopeApprovalsToAgent } from '../platform/work/approvals.mjs';
 
-const TOM = 'web-agent-tom@tachin.ag';
+const TOM = 'web-agent-tom@example.com';
 const SPACE_1HEALTH = 'spaces/AAQA2xzUYgM';
 
 // Builds an approval doc as checkpoint-executor now stamps it.
@@ -27,11 +27,11 @@ const A = (o) => ({
 describe('scopeApprovalsToAgent', () => {
   it('REPRODUCES the incident: tom\'s one prod gate survives; six cross-agent/old gates are dropped', () => {
     const pending = [
-      A({ id: 'apr-prod', owner: TOM, space: SPACE_1HEALTH, project: '1health-website', channel: 'gchat', title: 'Promote 1health to production' }),
-      A({ id: 'apr-old1', owner: 'devops-agent-stan@tachin.ag', channel: 'gchat', title: 'Report staging URL (old p-web-deploy)' }),
-      A({ id: 'apr-old2', owner: 'design-agent-dot@tachin.ag', space: 'spaces/OTHER', title: 'Review DESIGN_SYSTEM.md' }),
-      A({ id: 'apr-old3', owner: 'architect-agent-archie@tachin.ag', title: 'Push generic improvements (p-repo-improve)' }),
-      A({ id: 'apr-old4', owner: 'devops-agent-stan@tachin.ag', channel: 'gchat', title: 'Report staging URL (dup)' }),
+      A({ id: 'apr-prod', owner: TOM, space: SPACE_1HEALTH, project: 'acme-www', channel: 'gchat', title: 'Promote acme to production' }),
+      A({ id: 'apr-old1', owner: 'devops-agent-stan@example.com', channel: 'gchat', title: 'Report staging URL (old p-web-deploy)' }),
+      A({ id: 'apr-old2', owner: 'design-agent-dot@example.com', space: 'spaces/OTHER', title: 'Review DESIGN_SYSTEM.md' }),
+      A({ id: 'apr-old3', owner: 'architect-agent-archie@example.com', title: 'Push generic improvements (p-repo-improve)' }),
+      A({ id: 'apr-old4', owner: 'devops-agent-stan@example.com', channel: 'gchat', title: 'Report staging URL (dup)' }),
       A({ id: 'apr-legacy', owner: undefined, title: 'Pre-stamp gate with no owner' }),
     ];
     const scoped = scopeApprovalsToAgent(pending, { agentEmail: TOM, space: SPACE_1HEALTH, channel: 'gchat' });
@@ -40,8 +40,8 @@ describe('scopeApprovalsToAgent', () => {
 
   it('owner scope is STRICT: another agent\'s gate is never returned', () => {
     const pending = [
-      A({ id: 'a1', owner: 'devops-agent-stan@tachin.ag', channel: 'gchat' }),
-      A({ id: 'a2', owner: 'architect-agent-archie@tachin.ag', channel: 'gchat' }),
+      A({ id: 'a1', owner: 'devops-agent-stan@example.com', channel: 'gchat' }),
+      A({ id: 'a2', owner: 'architect-agent-archie@example.com', channel: 'gchat' }),
     ];
     const scoped = scopeApprovalsToAgent(pending, { agentEmail: TOM, channel: 'gchat' });
     assert.deepEqual(scoped, []);
@@ -67,10 +67,10 @@ describe('scopeApprovalsToAgent', () => {
 
   it('PROJECT refines when space is absent on the reply', () => {
     const pending = [
-      A({ id: 'p1', owner: TOM, project: '1health-website', channel: 'gchat' }),
+      A({ id: 'p1', owner: TOM, project: 'acme-www', channel: 'gchat' }),
       A({ id: 'p2', owner: TOM, project: 'other-site', channel: 'gchat' }),
     ];
-    const scoped = scopeApprovalsToAgent(pending, { agentEmail: TOM, projectId: '1health-website', channel: 'gchat' });
+    const scoped = scopeApprovalsToAgent(pending, { agentEmail: TOM, projectId: 'acme-www', channel: 'gchat' });
     assert.deepEqual(scoped.map(a => a.id), ['p1']);
   });
 
@@ -87,7 +87,7 @@ describe('scopeApprovalsToAgent', () => {
   it('single owned gate short-circuits (no refinement needed)', () => {
     const pending = [
       A({ id: 'only', owner: TOM, space: 'spaces/SOMETHING_ELSE' }),
-      A({ id: 'other', owner: 'devops-agent-stan@tachin.ag' }),
+      A({ id: 'other', owner: 'devops-agent-stan@example.com' }),
     ];
     // Even though the reply space differs from the gate's space, my single owned gate is returned.
     const scoped = scopeApprovalsToAgent(pending, { agentEmail: TOM, space: SPACE_1HEALTH });

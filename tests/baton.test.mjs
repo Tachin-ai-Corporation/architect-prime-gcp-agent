@@ -7,18 +7,18 @@ import {
   deriveHandoffCheckpoints, resolveAssignee,
 } from '../platform/work/baton.mjs';
 
-// A project team roster shaped like projects/{id}.team (tachin-web).
+// A project team roster shaped like projects/{id}.team (marketing-site).
 const ROSTER = [
-  { email: 'chill@tachin.ai', role: 'owner', name: 'Christopher', type: 'human' },
-  { email: 'product-architect-agent-archie@tachin.ag', role: 'lead', name: 'Archie', type: 'agent' },
-  { email: 'devops-agent-stan@tachin.ag', role: 'devops', name: 'Stan', type: 'agent' },
-  { email: 'designer-agent-dot@tachin.ag', role: 'designer', name: 'Dot', type: 'agent' },
-  { email: 'engineer-agent-bobby@tachin.ag', role: 'engineer', name: 'Bobby', type: 'agent' },
+  { email: 'chill@example.com', role: 'owner', name: 'Christopher', type: 'human' },
+  { email: 'product-architect-agent-archie@example.com', role: 'lead', name: 'Archie', type: 'agent' },
+  { email: 'devops-agent-stan@example.com', role: 'devops', name: 'Stan', type: 'agent' },
+  { email: 'designer-agent-dot@example.com', role: 'designer', name: 'Dot', type: 'agent' },
+  { email: 'engineer-agent-bobby@example.com', role: 'engineer', name: 'Bobby', type: 'agent' },
 ];
 
-const A = 'product-architect-agent-archie@tachin.ag';
-const B = 'engineer-agent-bobby@tachin.ag';
-const C = 'devops-agent-stan@tachin.ag';
+const A = 'product-architect-agent-archie@example.com';
+const B = 'engineer-agent-bobby@example.com';
+const C = 'devops-agent-stan@example.com';
 const cp = (status, assignee) => ({ status, ...(assignee ? { assignee } : {}) });
 
 describe('sameAgent', () => {
@@ -151,26 +151,26 @@ describe('resolveAssignee (roster resolution — the canary bug)', () => {
     // The exact live failure: planner emitted engineer-agent@<operator-domain> (wrong domain,
     // missing -bobby) with agent="engineer". Resolve by role -> the roster's real address.
     assert.equal(
-      resolveAssignee(ROSTER, { target_email: 'engineer-agent@tachin.ai', agent: 'engineer' }),
-      'engineer-agent-bobby@tachin.ag',
+      resolveAssignee(ROSTER, { target_email: 'engineer-agent@example.com', agent: 'engineer' }),
+      'engineer-agent-bobby@example.com',
     );
     assert.equal(
-      resolveAssignee(ROSTER, { target_email: 'devops-agent@tachin.ai', _specialty: 'devops' }),
-      'devops-agent-stan@tachin.ag',
+      resolveAssignee(ROSTER, { target_email: 'devops-agent@example.com', _specialty: 'devops' }),
+      'devops-agent-stan@example.com',
     );
   });
   it('honors a verbatim-correct email (case-insensitive) and returns the canonical form', () => {
-    assert.equal(resolveAssignee(ROSTER, { target_email: 'ENGINEER-AGENT-BOBBY@tachin.ag' }), 'engineer-agent-bobby@tachin.ag');
+    assert.equal(resolveAssignee(ROSTER, { target_email: 'ENGINEER-AGENT-BOBBY@example.com' }), 'engineer-agent-bobby@example.com');
   });
   it('resolves a specialty whose role label differs, via the email localpart token', () => {
     // product-architect maps to role "lead"; match the specialty token in the member email.
-    assert.equal(resolveAssignee(ROSTER, { agent: 'product-architect' }), 'product-architect-agent-archie@tachin.ag');
+    assert.equal(resolveAssignee(ROSTER, { agent: 'product-architect' }), 'product-architect-agent-archie@example.com');
   });
   it('resolves by teammate name', () => {
-    assert.equal(resolveAssignee(ROSTER, { target_name: 'Bobby' }), 'engineer-agent-bobby@tachin.ag');
+    assert.equal(resolveAssignee(ROSTER, { target_name: 'Bobby' }), 'engineer-agent-bobby@example.com');
   });
   it('NEVER resolves to a human — batons route to agent daemons', () => {
-    assert.equal(resolveAssignee(ROSTER, { target_email: 'chill@tachin.ai' }), null);
+    assert.equal(resolveAssignee(ROSTER, { target_email: 'chill@example.com' }), null);
   });
   it('returns null when nothing matches (caller keeps the originator, never strands)', () => {
     assert.equal(resolveAssignee(ROSTER, { agent: 'astrophysicist' }), null);
@@ -185,13 +185,13 @@ describe('resolveAssignee (roster resolution — the canary bug)', () => {
 describe('deriveHandoffCheckpoints with roster', () => {
   it('pins the RESOLVED roster email as assignee, not the hallucinated one', () => {
     const cps = [
-      { instruction: 'edit', tasks: [{ type: 'delegation', agent: 'engineer', target_email: 'engineer-agent@tachin.ai', task: 'edit index.html' }] },
-      { instruction: 'deploy', tasks: [{ type: 'delegation', agent: 'devops', target_email: 'devops-agent@tachin.ai', task: 'deploy' }] },
+      { instruction: 'edit', tasks: [{ type: 'delegation', agent: 'engineer', target_email: 'engineer-agent@example.com', task: 'edit index.html' }] },
+      { instruction: 'deploy', tasks: [{ type: 'delegation', agent: 'devops', target_email: 'devops-agent@example.com', task: 'deploy' }] },
       { instruction: 'report', tasks: [{ agent: 'motor', type: 'standard', task: 'report' }] },
     ];
     const out = deriveHandoffCheckpoints(cps, ROSTER);
-    assert.equal(out[0].assignee, 'engineer-agent-bobby@tachin.ag');
-    assert.equal(out[1].assignee, 'devops-agent-stan@tachin.ag');
+    assert.equal(out[0].assignee, 'engineer-agent-bobby@example.com');
+    assert.equal(out[1].assignee, 'devops-agent-stan@example.com');
     assert.ok(!out[2].assignee);            // originator keeps the report
     assert.equal(out[0].tasks[0].agent, 'motor');       // de-delegated
     assert.equal(out[0].tasks[0].target_email, undefined);

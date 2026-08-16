@@ -18,7 +18,7 @@
  * Extract the document ID from a Firestore REST resource name.
  *
  * A REST `name` is a full resource path:
- *   projects/{gcp}/databases/(default)/documents/projects/tachin-website
+ *   projects/{gcp}/databases/(default)/documents/projects/marketing-site
  *                                                        ^^^^^^^^^^^^^^^ the ID
  *
  * @param {string} name - Firestore document resource name

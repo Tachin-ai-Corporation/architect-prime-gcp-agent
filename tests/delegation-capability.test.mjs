@@ -18,7 +18,7 @@ const specialtySkills = {
 describe('checkDelegationCapability', () => {
   it('FIRES on the observed failure: devops delegating a firebase deploy to engineer', () => {
     const r = checkDelegationCapability({
-      instruction: 'Deploy the updated website to the tachin-website.web.app Firebase Hosting channel using p-web-deploy.',
+      instruction: 'Deploy the updated website to the marketing-site.web.app Firebase Hosting channel using p-web-deploy.',
       delegatorSpecialty: 'devops', targetSpecialty: 'engineer', specialtySkills,
     });
     assert.equal(r.ok, false);

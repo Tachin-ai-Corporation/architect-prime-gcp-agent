@@ -70,7 +70,7 @@ desired outcome and the inputs, not the tool invocations.
    Good: "Update the hero section of index.html with a new headline and color scheme"
 
 2. **Input files** — by repo + exact file path (the delegate works in `shared/<mission_id>`)
-   "Read `operator/docs/TACHIN_SITE_IA.md` from the project's shared workspace"
+   "Read `content/INFORMATION_ARCHITECTURE.md` from the project's shared workspace"
    > [!WARNING]
    > Do NOT refer to files by generic names or artifact names that only exist in your local artifact directory (e.g. "Website Refactor Plan.md"). The delegate agent CANNOT see your local artifacts! You must either upload the file to the project's Git repository and provide the exact Git path, or provide a Google Drive file ID if applicable.
 

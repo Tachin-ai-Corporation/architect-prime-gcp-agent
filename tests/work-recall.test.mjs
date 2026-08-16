@@ -13,7 +13,7 @@ function makeEnvelope(overrides = {}) {
     id: 'env-001',
     type: 'M',
     status: 'complete',
-    owner: 'bot@test.com',
+    owner: 'bot@example.com',
     title: 'Deploy the analytics service',
     instruction: 'Run the deploy script for analytics',
     output: 'Deployment succeeded on us-central1',
@@ -121,7 +121,7 @@ describe('searchWork', () => {
   it('returns scored and ranked results', async () => {
     const hits = await searchWork({
       firestoreQuery: mockFirestoreQuery(docs),
-      owner: 'bot@test.com',
+      owner: 'bot@example.com',
       cues: ['deploy', 'analytics', 'service'],
       sinceDays: 30,
     });
@@ -132,7 +132,7 @@ describe('searchWork', () => {
   it('filters out envelopes outside the time window', async () => {
     const hits = await searchWork({
       firestoreQuery: mockFirestoreQuery(docs),
-      owner: 'bot@test.com',
+      owner: 'bot@example.com',
       cues: ['deploy', 'service'],
       sinceDays: 30,
     });
@@ -143,7 +143,7 @@ describe('searchWork', () => {
   it('drops results below RELEVANCE_FLOOR', async () => {
     const hits = await searchWork({
       firestoreQuery: mockFirestoreQuery(docs),
-      owner: 'bot@test.com',
+      owner: 'bot@example.com',
       cues: ['xylophone', 'platypus', 'quasar'],
       sinceDays: 30,
     });
@@ -153,7 +153,7 @@ describe('searchWork', () => {
   it('output format includes expected fields', async () => {
     const hits = await searchWork({
       firestoreQuery: mockFirestoreQuery(docs),
-      owner: 'bot@test.com',
+      owner: 'bot@example.com',
       cues: ['deploy', 'analytics'],
       sinceDays: 30,
     });
@@ -185,7 +185,7 @@ describe('recentWorkDigest', () => {
     ];
     const digest = await recentWorkDigest({
       firestoreQuery: mockFirestoreQuery(docs),
-      owner: 'bot@test.com',
+      owner: 'bot@example.com',
       sinceDays: 7,
     });
     assert.match(digest, /## Recent Work \(Last 7 Days\)/, 'should have header');
@@ -207,7 +207,7 @@ describe('recentWorkDigest', () => {
     ];
     const digest = await recentWorkDigest({
       firestoreQuery: mockFirestoreQuery(docs),
-      owner: 'bot@test.com',
+      owner: 'bot@example.com',
       sinceDays: 7,
     });
     assert.ok(digest.includes('[done]'), 'complete work is marked [done]');
@@ -220,7 +220,7 @@ describe('recentWorkDigest', () => {
   it('handles empty results gracefully', async () => {
     const digest = await recentWorkDigest({
       firestoreQuery: mockFirestoreQuery([]),
-      owner: 'bot@test.com',
+      owner: 'bot@example.com',
       sinceDays: 7,
     });
     assert.ok(digest.includes('No recent work found'), 'should say no work found');
@@ -231,7 +231,7 @@ describe('recentWorkDigest', () => {
     const old = new Date(Date.now() - 30 * 86400000).toISOString();
     const digest = await recentWorkDigest({
       firestoreQuery: mockFirestoreQuery([makeEnvelope({ id: 'stale', title: 'Ancient history', completed_at: old })]),
-      owner: 'bot@test.com',
+      owner: 'bot@example.com',
       sinceDays: 7,
     });
     assert.ok(!digest.includes('Ancient history'), 'work outside the window is dropped');

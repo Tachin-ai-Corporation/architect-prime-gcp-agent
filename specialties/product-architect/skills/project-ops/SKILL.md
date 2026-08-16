@@ -33,7 +33,7 @@ not yet linked to a project, the decision context surfaces it as `project_bootst
 {
   "action": "project_bootstrap",
   "project": {
-    "name": "1health Website",
+    "name": "Acme Marketing Site",
     "description": "…",
     "goal": "Ship the single-page site to production via draft → staging → prod",
     "team": [

@@ -38,7 +38,7 @@ When hiring, deploying, creating, or spinning up a new fleet agent inside the GC
 Task: "Hire a pm named anora"
 
 Step 1: fleet-hire --name anora --specialty pm
-→ Result: {"status":"deploying","agent":"anora","specialty":"pm","vmStatus":"creating","email":"anora-pm@domain.com"}
+→ Result: {"status":"deploying","agent":"anora","specialty":"pm","vmStatus":"creating","email":"anora-pm@example.com"}
 
 Outcome: Deployment started. VM is being provisioned in GCE.
 ```

@@ -39,7 +39,7 @@ tool*. The only programs you invoke here are:
 
 ### Write (mutating — obey Safety below)
 - `firebase hosting:channel:deploy CHANNEL --project=PROJECT` — deploy to a **preview** channel; prints a preview URL.
-- `firebase hosting:clone SRC_SITE:SRC_CHANNEL DST_SITE:DST_CHANNEL --project=PROJECT` — copy an **exact version** between channels/sites (e.g. `tachin-web:staging tachin-web:live`). This is the **promote** command: it releases the already-built, already-reviewed version to live without rebuilding.
+- `firebase hosting:clone SRC_SITE:SRC_CHANNEL DST_SITE:DST_CHANNEL --project=PROJECT` — copy an **exact version** between channels/sites (e.g. `marketing-site:staging marketing-site:live`). This is the **promote** command: it releases the already-built, already-reviewed version to live without rebuilding.
 - `firebase deploy --only hosting --project=PROJECT` — build+deploy the local directory to the **live** site. Ships whatever is in `public/` *now* — only correct when that directory is the reviewed source (see Deploy procedure).
 - `firebase deploy --only firestore:indexes --project=PROJECT` — apply Firestore indexes from `firestore.indexes.json`.
 
@@ -164,7 +164,7 @@ owner approved on staging — not a fresh rebuild of whatever is lying around.
    version that was approved to the live channel, so production serves the same bytes the owner
    reviewed:
    ```bash
-   firebase hosting:clone SITE:staging SITE:live --project=PROJECT   # e.g. tachin-web:staging tachin-web:live
+   firebase hosting:clone SITE:staging SITE:live --project=PROJECT   # e.g. marketing-site:staging marketing-site:live
    ```
    A fresh `firebase deploy --only hosting` from the *same, unchanged* directory also works, but
    re-deploying risks shipping something different from what was reviewed — prefer the clone.
