@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDb, workCol } from "@/lib/firestore";
+import type { StoredEnvelope } from "@/lib/types";
 
 interface RouteContext {
   params: Promise<{ id: string; workId: string }>;
@@ -21,19 +22,19 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
       return NextResponse.json({ error: "Envelope not found" }, { status: 404 });
     }
 
-    const root = { id: rootDoc.id, ...rootDoc.data() } as any;
-    const descendants: any[] = [];
+    const root = { id: rootDoc.id, ...rootDoc.data() } as StoredEnvelope;
+    const descendants: StoredEnvelope[] = [];
     const seenIds = new Set([root.id]);
 
     // BFS through children arrays
     let currentLevel = [root];
     while (currentLevel.length > 0) {
-      const childIds = currentLevel.flatMap((node: any) => node.children || []);
+      const childIds = currentLevel.flatMap((node: StoredEnvelope) => node.children || []);
       const newIds = childIds.filter((cid: string) => !seenIds.has(cid));
       if (newIds.length === 0) break;
 
       const refs = newIds.map((cid: string) => wCol.doc(cid));
-      const nextLevel: any[] = [];
+      const nextLevel: StoredEnvelope[] = [];
 
       for (let i = 0; i < refs.length; i += 500) {
         const batch = refs.slice(i, i + 500);

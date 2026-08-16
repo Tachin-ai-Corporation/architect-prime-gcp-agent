@@ -134,19 +134,31 @@ async function pollCloudBuild(
 
 /* ---- Deploy steps helper ---- */
 
+/**
+ * A deploy step as bootstrap writes it. Every field optional: the writer is a
+ * shell script appending to Firestore, so a partially-written step is a real
+ * state rather than a hypothetical one.
+ */
+interface RawDeployStep {
+  id?: string;
+  label?: string;
+  status?: string;
+  timestamp?: string;
+  detail?: string;
+}
+
 /** Parse raw deploy steps into normalized OperationSteps + progress percentage. */
 function parseDeploySteps(deploySteps: unknown[]): { steps: OperationStep[]; progress: number } {
-  const steps = deploySteps.map((s: any) => ({
-    id: s.id,
-    label: s.label,
-    status: s.status,
-    timestamp: s.timestamp || "",
+  const raw = deploySteps as RawDeployStep[];
+  const steps: OperationStep[] = raw.map((s) => ({
+    id: s.id ?? "",
+    label: s.label ?? "",
+    status: s.status ?? "",
+    timestamp: s.timestamp ?? "",
     ...(s.detail ? { detail: s.detail } : {}),
   }));
-  const completed = deploySteps.filter(
-    (s: any) => s.status === "done" || s.status === "skipped",
-  ).length;
-  const progress = Math.round((completed / deploySteps.length) * 100);
+  const completed = raw.filter((s) => s.status === "done" || s.status === "skipped").length;
+  const progress = raw.length === 0 ? 0 : Math.round((completed / raw.length) * 100);
   return { steps, progress };
 }
 

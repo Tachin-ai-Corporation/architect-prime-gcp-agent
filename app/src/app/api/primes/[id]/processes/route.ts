@@ -19,14 +19,14 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
     const col = processesCol();
     const snap = await col.orderBy("created_at", "desc").get();
 
-    let processes = snap.docs.map((doc) => ({
+    let processes: Array<{ id: string; status?: string }> = snap.docs.map((doc) => ({
       id: doc.id,
       ...doc.data(),
     }));
 
     // Exclude deprecated by default
     if (!includeDeprecated) {
-      processes = processes.filter((p: any) => p.status !== "deprecated");
+      processes = processes.filter((p: { status?: string }) => p.status !== "deprecated");
     }
 
     return NextResponse.json({ processes });

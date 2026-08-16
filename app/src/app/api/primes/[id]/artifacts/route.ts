@@ -112,10 +112,13 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
     if (contentLength) headers.set("Content-Length", contentLength);
 
     return new Response(res.body, { headers });
-  } catch (err: any) {
+  } catch (err) {
+    // `catch (err: any)` let `err.message` compile on a value that is not
+    // required to have one. Anything can be thrown, so narrow before reading.
+    const message = err instanceof Error ? err.message : String(err);
     console.error(`[api/primes/${primeId}/artifacts] Error streaming artifact:`, err);
     return NextResponse.json(
-      { error: `Internal server error: ${err.message}` },
+      { error: `Internal server error: ${message}` },
       { status: 500 }
     );
   }

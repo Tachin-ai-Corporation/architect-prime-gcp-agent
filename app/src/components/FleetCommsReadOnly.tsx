@@ -77,7 +77,7 @@ export function FleetCommsReadOnly({ primeId, agentName }: FleetCommsReadOnlyPro
             </div>
             <h2 className={styles.heroTitle}>{agentName} Comms Archive</h2>
             <p className={styles.heroSubtitle}>
-              Historic records of this agent's interactions.
+              Historic records of this agent&apos;s interactions.
             </p>
           </div>
 

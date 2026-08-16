@@ -133,6 +133,18 @@ export interface WorkEnvelope {
   _cp_progress?: CheckpointProgress | null;
 }
 
+/**
+ * A work document as Firestore returns it: the envelope shape, every field
+ * optional, plus the document id.
+ *
+ * The collection predates the interface, so an older document can be missing
+ * keys `WorkEnvelope` declares. Asserting the full type would let TypeScript
+ * promise a status that is not there — which is how reading `.status` on an
+ * archived envelope yields undefined at runtime with nothing warning. The API
+ * routes used `any` for this, which had the same effect and said less.
+ */
+export type StoredEnvelope = Partial<WorkEnvelope> & { id: string };
+
 /** Step ledger entry — records a completed dispatch step for replay dedup */
 export interface StepLedgerEntry {
   status: 'complete' | 'failed';

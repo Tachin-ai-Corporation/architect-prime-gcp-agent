@@ -27,19 +27,21 @@ export async function GET(req: NextRequest) {
     queryRef = queryRef.orderBy("created_at", "desc");
     const snap = await queryRef.get();
 
-    let projects = snap.docs.map((doc) => ({
+    // doc.data() is DocumentData, so the spread contributes no known keys —
+    // the status filters below are what this shape has to satisfy.
+    let projects: Array<{ id: string; status?: string }> = snap.docs.map((doc) => ({
       id: doc.id,
       ...doc.data(),
     }));
 
     // Exclude archived by default
     if (!includeArchived) {
-      projects = projects.filter((p: any) => p.status !== "archived");
+      projects = projects.filter((p: { status?: string }) => p.status !== "archived");
     }
 
     // Optional status filter
     if (statusFilter) {
-      projects = projects.filter((p: any) => p.status === statusFilter);
+      projects = projects.filter((p: { status?: string }) => p.status === statusFilter);
     }
 
     return NextResponse.json({ projects });

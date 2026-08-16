@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { workCol, getDb } from "@/lib/firestore";
 import { ACTIVE_STATUSES_ARRAY } from "@/lib/types";
+import type { StoredEnvelope } from "@/lib/types";
 
 interface RouteContext {
   params: Promise<{ id: string }>;
@@ -40,14 +41,14 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
       .limit(50)
       .get();
 
-    const roots = rootSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as any[];
+    const roots = rootSnap.docs.map(doc => ({ id: doc.id, ...doc.data() })) as StoredEnvelope[];
 
     // Phase 2: For active/R roots, fetch full descendant tree via getAll()
-    const allEnvelopes: any[] = [...roots];
+    const allEnvelopes: StoredEnvelope[] = [...roots];
     const seenIds = new Set(roots.map(r => r.id));
 
     for (const root of roots) {
-      if (!ACTIVE_STATUSES_ARRAY.includes(root.status) && root.type !== "R") continue;
+      if (!ACTIVE_STATUSES_ARRAY.includes(root.status ?? "") && root.type !== "R") continue;
 
       // Level 1: root.children → C envelopes
       const childIds: string[] = root.children || [];
@@ -60,7 +61,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
       if (childRefs.length === 0) continue;
 
       const childDocs = await db.getAll(...childRefs);
-      const children: any[] = [];
+      const children: StoredEnvelope[] = [];
       for (const doc of childDocs) {
         if (doc.exists) {
           const data = { id: doc.id, ...doc.data() };
@@ -73,7 +74,7 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
       }
 
       // Level 2: C.children → T envelopes
-      const grandchildIds: string[] = children.flatMap((c: any) => c.children || []);
+      const grandchildIds: string[] = children.flatMap((c: StoredEnvelope) => c.children || []);
       if (grandchildIds.length === 0) continue;
 
       const gcRefs = grandchildIds
@@ -125,12 +126,12 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
     // Apply client-side filters
     let envelopes = allEnvelopes;
     if (statusFilter) {
-      envelopes = envelopes.filter((e: any) => e.status === statusFilter);
+      envelopes = envelopes.filter((e: StoredEnvelope) => e.status === statusFilter);
     }
     if (typeFilter) {
-      envelopes = envelopes.filter((e: any) => e.type === typeFilter);
+      envelopes = envelopes.filter((e: StoredEnvelope) => e.type === typeFilter);
     }
-    envelopes = envelopes.filter((e: any) => e.status !== "archived");
+    envelopes = envelopes.filter((e: StoredEnvelope) => e.status !== "archived");
 
     return NextResponse.json({ envelopes });
   } catch (err) {

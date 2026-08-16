@@ -115,8 +115,8 @@ function TreeNodeRow({
 
   if (node.owner) metaJsx.push(<span key="owner" title={node.owner}>{formatAgentDisplayName(node.owner)}</span>);
   if (node.project_id) metaJsx.push(<span key="proj">{node.project_id}</span>);
-  if ((node as any).depends_on?.length) metaJsx.push(<span key="deps">⛓ {(node as any).depends_on.length} deps</span>);
-  if ((node as any).plan_id) metaJsx.push(<span key="plan" className={styles.live}>📑 Plan</span>);
+  if (node.depends_on?.length) metaJsx.push(<span key="deps">⛓ {node.depends_on.length} deps</span>);
+  if (node.plan_id) metaJsx.push(<span key="plan" className={styles.live}>📑 Plan</span>);
 
   if (node.status === "active" && node.started_at) {
     const el = elapsedSince(node.started_at);

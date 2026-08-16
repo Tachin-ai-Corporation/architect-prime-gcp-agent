@@ -115,7 +115,7 @@ export function ChatPanel({ primeId, entityName, entityStatus, specialty, inline
             <div className={styles.heroAvatar}>
               {entityName?.trim()?.[0]?.toUpperCase() || "•"}
             </div>
-            <h2 className={styles.heroTitle}>Hi, I'm {entityName}.</h2>
+            <h2 className={styles.heroTitle}>Hi, I&apos;m {entityName}.</h2>
             <p className={styles.heroSubtitle}>
               Send a message to start the conversation.
             </p>
@@ -127,7 +127,7 @@ export function ChatPanel({ primeId, entityName, entityStatus, specialty, inline
             <div className={styles.heroAvatar}>
               {entityName?.trim()?.[0]?.toUpperCase() || "•"}
             </div>
-            <h2 className={styles.heroTitle}>Hi, I'm {entityName}.</h2>
+            <h2 className={styles.heroTitle}>Hi, I&apos;m {entityName}.</h2>
           </div>
 
           {messages.map((msg) => {

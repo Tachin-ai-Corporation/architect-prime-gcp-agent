@@ -60,7 +60,7 @@ export function GeneralTab() {
     setArtifactsSaving(false);
   }, [artifactsFolder]);
 
-  const fleetCount = Object.values(sidebarFleet || {}).flat().filter((a: any) => a.status !== "removed").length;
+  const fleetCount = Object.values(sidebarFleet || {}).flat().filter((a: { status?: string }) => a.status !== "removed").length;
 
   return (
     <>

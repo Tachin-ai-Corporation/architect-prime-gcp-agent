@@ -46,7 +46,12 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
     const registry = await registryRes.json();
     const registryAgents = registry.agents || {};
 
-    const slots = Object.entries(registryAgents).map(([key, data]: [string, any]) => {
+    // The agent registry is fetched JSON, so nothing has checked its shape.
+    // Only these three fields are read, and each is optional because an organ
+    // entry written before a field existed simply will not carry it.
+    type RegistryAgent = { description?: string; model?: string; tools?: string[] };
+
+    const slots = Object.entries(registryAgents as Record<string, RegistryAgent>).map(([key, data]) => {
       // Map Cortex role to "Decision authority", Prefrontal to "Decomposition" specifically as per D2.2/D4.6
       let desc = data.description || "";
       if (key === "cortex") desc = "Decision authority";

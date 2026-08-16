@@ -208,14 +208,19 @@ jobs:
       - name: Typecheck
         run: npx tsc --noEmit
 
-      # NOT YET A GATE. `npm run lint` currently reports 56 errors and 32
-      # warnings inherited from the Next 16 / react-hooks v6 upgrade
-      # (24 set-state-in-effect, 22 no-explicit-any, plus refs/purity/entities).
-      # Adding a job that fails on every commit teaches people to ignore CI, so
-      # the gate lands in the CLEANUP phase together with the fixes. Until then
-      # it runs for visibility only — see docs/plans/THREE_PLANES_PLAN.md.
-      - name: Lint (advisory — becomes a gate in CLEANUP)
-        run: npm run lint || true
+      # A GATE, as of CLEANUP. It reported 57 errors and ran with `|| true`,
+      # which is a job that cannot fail and therefore says nothing.
+      #
+      # The 25 type and markup errors were FIXED, not suppressed — most of them
+      # were `any` on Firestore work documents, and the WorkEnvelope type they
+      # needed already existed and simply was not imported.
+      #
+      # The 32 react-hooks v6 errors are warnings, scoped and explained in
+      # app/eslint.config.mjs. They are real, and fixing them changes runtime
+      # behaviour on a dashboard behind NextAuth that CI cannot sign into — so
+      # they are visible and tracked rather than swept.
+      - name: Lint
+        run: npm run lint
 
       - name: Build
         run: npm run build
