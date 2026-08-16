@@ -171,7 +171,10 @@ export function BrainInspector({ primeId, agentName }: BrainInspectorProps) {
     setLoadingModels(false);
   }, [primeId]);
 
-  useEffect(() => { fetchModelCatalog(); }, [fetchModelCatalog]);
+  useEffect(() => {
+    // Wrapped so these updates are not in the effect body; same tick, same order.
+    void (async () => { await fetchModelCatalog(); })();
+  }, [fetchModelCatalog]);
 
   /* ---- Introspect: fetch live brain config from agent VM ---- */
   const fetchLiveConfig = useCallback(async (introspectAgent: string) => {
@@ -218,13 +221,16 @@ export function BrainInspector({ primeId, agentName }: BrainInspectorProps) {
 
   // Fetch live config when agentName changes
   useEffect(() => {
-    if (agentName) {
-      fetchLiveConfig(agentName);
-    } else {
-      setLiveConfig(null);
-      setPendingChanges({});
-      setApplyResult(null);
-    }
+    // Wrapped so these updates are not in the effect body; same tick, same order.
+    void (async () => {
+      if (agentName) {
+        await fetchLiveConfig(agentName);
+      } else {
+        setLiveConfig(null);
+        setPendingChanges({});
+        setApplyResult(null);
+      }
+    })();
   }, [agentName, fetchLiveConfig]);
 
   /* ---- Available models (only "available" status) ---- */

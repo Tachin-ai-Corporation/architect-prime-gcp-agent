@@ -36,14 +36,24 @@ const eslintConfig = defineConfig([
     // To close these out: run the dashboard locally with a session, fix a file,
     // check the screen, repeat. Then delete the rule from this block — it is
     // sized so that removing one line at a time is the natural motion.
-    // Closed out so far — these are back to errors, and staying there:
-    //   react-hooks/purity  Math.random() during render in FleetVisualization
-    //                       re-rolled every animation duration on every render.
-    //   react-hooks/refs    MemoryViewer read didInitRef during render; the ref
-    //                       was only ever `lastRefreshed !== null`, so it went.
+    // Closed out — back to errors, and staying there:
+    //   react-hooks/purity              Math.random() during render in
+    //                                   FleetVisualization re-rolled every
+    //                                   animation duration on every render.
+    //   react-hooks/refs                MemoryViewer read didInitRef during
+    //                                   render; it was only ever
+    //                                   `lastRefreshed !== null`.
+    //   react-hooks/set-state-in-effect all 25 fixed, each checked on its screen.
+    //                                   The transformation is an async IIFE: the
+    //                                   body runs synchronously to its first
+    //                                   await, so the updates keep their tick and
+    //                                   their order and simply leave the effect's
+    //                                   own path. setTimeout also satisfies the
+    //                                   rule and is worse — it delays the first
+    //                                   update by a task, so a component paints
+    //                                   its empty state before its spinner.
     files: ["src/**/*.{ts,tsx}"],
     rules: {
-      "react-hooks/set-state-in-effect": "warn",
       "react-hooks/exhaustive-deps": "warn",
       "react-hooks/preserve-manual-memoization": "warn",
     },

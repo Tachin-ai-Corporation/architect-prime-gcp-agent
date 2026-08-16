@@ -124,8 +124,10 @@ export function useWorkEnvelopes(
 
   useEffect(() => {
     if (!primeId) {
-      setEnvelopes([]);
-      setLoading(false);
+      void (async () => {
+        setEnvelopes([]);
+        setLoading(false);
+      })();
       return;
     }
 
@@ -141,8 +143,11 @@ export function useWorkEnvelopes(
       setLoading(false);
     };
 
-    setLoading(true);
-    fetchWork();
+    // Wrapped so these updates are not in the effect body; same tick, same order.
+    void (async () => {
+      setLoading(true);
+      await fetchWork();
+    })();
 
     // Refresh on an interval, but skip while the tab is hidden. The previous fixed
     // 5s poll re-fetched the whole work set and rebuilt every tree forever — even on

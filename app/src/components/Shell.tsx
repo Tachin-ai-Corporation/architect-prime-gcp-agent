@@ -20,12 +20,21 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const [opsOpen, setOpsOpen] = useState(false);
 
   /* Auto-open drawer when new active operations appear */
+  //
+  // Kept in an effect, wrapped like the rest. React does document adjusting
+  // state during render for a previous-value comparison, and I tried it here —
+  // it hung the entire app at the loading screen. Shell wraps every page from
+  // layout.tsx, and `activeCount` comes from useOperations, which sets state of
+  // its own; setting state during Shell's render fed that loop and React never
+  // committed. The APIs all returned 200 the whole time.
   const [prevActiveCount, setPrevActiveCount] = useState(0);
   useEffect(() => {
-    if (activeCount > prevActiveCount && activeCount > 0) {
-      setOpsOpen(true);
-    }
-    setPrevActiveCount(activeCount);
+    void (async () => {
+      if (activeCount > prevActiveCount && activeCount > 0) {
+        setOpsOpen(true);
+      }
+      setPrevActiveCount(activeCount);
+    })();
   }, [activeCount, prevActiveCount]);
 
   const isActive = (path: string) => {

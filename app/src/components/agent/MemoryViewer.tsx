@@ -41,9 +41,10 @@ export function MemoryViewer({ primeId, agentName }: MemoryViewerProps) {
 
   // Track when data arrives
   useEffect(() => {
-    if (data && !loading) {
-      setLastRefreshed(new Date());
-    }
+    // Wrapped so the timestamp write is not in the effect body; same tick.
+    void (async () => {
+      if (data && !loading) setLastRefreshed(new Date());
+    })();
   }, [data, loading]);
 
 

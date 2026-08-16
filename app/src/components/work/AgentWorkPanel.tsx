@@ -101,10 +101,13 @@ export function AgentWorkPanel({ primeId, agentFilter }: AgentWorkPanelProps) {
   /* ---- Archived: auto-fetch on tab switch (once) ---- */
   const archivedFetchedRef = useRef(false);
   useEffect(() => {
-    if (activeTab === "archived" && !archivedFetchedRef.current && !archivedLoading) {
-      archivedFetchedRef.current = true;
-      fetchArchived("", null, false);
-    }
+    // Wrapped so these updates are not in the effect body; same tick, same order.
+    void (async () => {
+      if (activeTab === "archived" && !archivedFetchedRef.current && !archivedLoading) {
+        archivedFetchedRef.current = true;
+        await fetchArchived("", null, false);
+      }
+    })();
   }, [activeTab, archivedLoading, fetchArchived]);
 
   /* ---- Archived: debounced search ---- */

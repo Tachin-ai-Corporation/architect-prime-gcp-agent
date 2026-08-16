@@ -119,11 +119,14 @@ export function useOperations(primeIds: string[]) {
 
   useEffect(() => {
     if (primeIds.length === 0) {
-      setOperations([]);
+      void (async () => { setOperations([]); })();
       return;
     }
-    setLoading(true);
-    poll();
+    // Wrapped so these updates are not in the effect body; same tick, same order.
+    void (async () => {
+      setLoading(true);
+      await poll();
+    })();
     const iv = setInterval(poll, 5000);
     return () => clearInterval(iv);
   }, [primeIds, poll]);

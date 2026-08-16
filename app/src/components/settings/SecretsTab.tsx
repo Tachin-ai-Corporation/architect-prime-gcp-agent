@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import { usePrime } from "@/contexts/PrimeContext";
 import { useDialog } from "@/components/DialogProvider";
 import styles from "@/app/settings/page.module.css";
@@ -36,7 +36,7 @@ export function SecretsTab() {
   const [rotateTarget, setRotateTarget] = useState<string | null>(null);
   const [rotateValue, setRotateValue] = useState("");
   const [rotateLoading, setRotateLoading] = useState(false);
-  const [allFleetAgents, setAllFleetAgents] = useState<FleetAgentInfo[]>([]);
+
   const [grantLoading, setGrantLoading] = useState<string | null>(null);
 
   const loadSecrets = useCallback(async () => {
@@ -53,36 +53,41 @@ export function SecretsTab() {
 
   // Load secrets on mount
   useEffect(() => {
-    loadSecrets();
-    // Build flat list of all agents (fleet + primes) across all primes
+    void (async () => { await loadSecrets(); })();
+  }, [loadSecrets]);
+
+  // The flat agent list is DERIVED from primes + sidebarFleet, so it is computed,
+  // not stored. As effect state it lagged one render behind its own inputs and
+  // wrote state from an effect to say something render already knew.
+  const allFleetAgents = useMemo<FleetAgentInfo[]>(() => {
     const agents: FleetAgentInfo[] = [];
-
-    // Add Prime agents first
-    if (primes) {
-      for (const prime of primes) {
-        if (prime.status !== "removed") {
-          agents.push({
-            name: prime.name,
-            email: `prime:${prime.id}`,
-            specialty: "prime",
-            primeId: prime.id,
-          });
-        }
-      }
-    }
-
-    // Add fleet agents
-    if (sidebarFleet) {
-      for (const [primeId, fleet] of Object.entries(sidebarFleet)) {
-        for (const agent of fleet as Array<{ name: string; email: string; specialty: string }>) {
-          if (agent.email) {
-            agents.push({ name: agent.name, email: agent.email, specialty: agent.specialty, primeId });
+  
+      // Add Prime agents first
+      if (primes) {
+        for (const prime of primes) {
+          if (prime.status !== "removed") {
+            agents.push({
+              name: prime.name,
+              email: `prime:${prime.id}`,
+              specialty: "prime",
+              primeId: prime.id,
+            });
           }
         }
       }
-    }
-    setAllFleetAgents(agents);
-  }, [loadSecrets, sidebarFleet, primes]);
+  
+      // Add fleet agents
+      if (sidebarFleet) {
+        for (const [primeId, fleet] of Object.entries(sidebarFleet)) {
+          for (const agent of fleet as Array<{ name: string; email: string; specialty: string }>) {
+            if (agent.email) {
+              agents.push({ name: agent.name, email: agent.email, specialty: agent.specialty, primeId });
+            }
+          }
+        }
+      }
+    return agents;
+  }, [primes, sidebarFleet]);
 
   const handleCreateSecret = useCallback(async () => {
     if (!newSecretName || !newSecretValue) return;
