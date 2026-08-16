@@ -339,6 +339,49 @@ deployment converge to the same effective state for the same two version coordin
 
 ---
 
+
+### CLEANUP — the platform/ move, proven on the canary
+
+**Shipped** `d3d1de6`..`58f1732`. corekit/lib + corekit/contracts + corekit/daemon ->
+`platform/{work,persistence,security,context,providers,control-plane,deployment,contracts,runtime}`.
+The package DAG was checked before anything moved: security at the bottom, then persistence and
+providers, then context and control-plane, then work. No cycles.
+
+**Three gates built first, each negative-tested:**
+- `install-surface` — every bundle a deployment can produce, folded to one digest over dest->content.
+  Found a live dest collision (declared) and, two commits later, that the lock hashed the WORKING
+  COPY: 52 files land CRLF on Windows and LF on Linux, so the first lock could only pass on the
+  machine that wrote it.
+- `resolve-imports` — parsing is not linking. Found all five daemons unloadable from a checkout,
+  then found its own hole: it filtered on `.mjs`, so two extensionless ES modules
+  (fleet-config, compile-contracts) were never checked and the move broke both silently.
+- `line-endings` — .gitattributes pinned LF by DEPTH (`corekit/*/*`); the launchers moved out of
+  coverage and only survived because `git mv` carries a blob unchanged. brain/ was never covered
+  at all, and those files are HASHED — a CRLF SOUL.md never converges.
+
+**The symlink was load-bearing.** `lib -> corekit/lib` made `../../lib/x.mjs` resolve in BOTH
+trees, which is the only reason a test could import an action handler. Moving lib/ alone broke it,
+so the daemon move had to land in the same commit. Daemons now install to `platform/runtime/` at
+their repo path; bin/ keeps only launchers. All 84 shipped modules load from a checkout; the
+ratchet is empty.
+
+**Canary proof (millie + candicejr on `58f1732`):** 76 files pruned, old dirs and the symlink gone,
+all services active with **NRestarts=0** and zero ERR_MODULE_NOT_FOUND. All eight platform packages
+import on the installed tree. A real mission ran end to end — memory recall, cortex classify,
+envelope complete — and the envelope proves the plane split:
+
+```
+platform_version   58f17321…   <- moved
+fleet_release      fr-6a524ab97fd1   <- unchanged
+agent_spec_digest  sha256:f9a980797b8d…   <- unchanged
+```
+
+**Not yet done:** fresh deploy (bootstrap is the path an upgrade never exercises — operator
+approved a throwaway hire); catalog/ move; corekit/brain gateway move; per-file efficiency pass;
+canon/README regeneration; lint gate.
+
+---
+
 ## Progress log
 
 | Phase | Commit | Proven on the canary |
