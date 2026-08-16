@@ -10,6 +10,8 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, existsSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 import {
@@ -17,6 +19,8 @@ import {
   fragmentsFor,
   resolveBundle,
   bundleDigest,
+  contentOnlyDigest,
+  normalizeForDigest,
   installSurface,
   platformJobs,
 } from '../corekit/system/install-surface.mjs';
@@ -131,6 +135,52 @@ describe('install surface — collision detection', () => {
   });
 });
 
+describe('install surface — the checkout is not the artifact', () => {
+  it('CRLF and LF text hash the same — the lock cannot depend on the OS', () => {
+    const crlf = normalizeForDigest(Buffer.from('a\r\nb\r\n', 'utf8'));
+    const lf = normalizeForDigest(Buffer.from('a\nb\n', 'utf8'));
+    assert.equal(crlf.toString(), lf.toString());
+  });
+
+  it('binary is left alone — 0x0D0A inside a PNG is not a line ending', () => {
+    const png = Buffer.from([0x89, 0x50, 0x00, 0x0d, 0x0a, 0x1a]);
+    assert.deepEqual(normalizeForDigest(png), png);
+  });
+
+  it('a lone CR is not a line ending either', () => {
+    const cr = Buffer.from('a\rb', 'utf8');
+    assert.equal(normalizeForDigest(cr).toString(), 'a\rb');
+  });
+
+  it('the live lock matches the blobs git stores, not this working copy', () => {
+    // What install.sh curls from GitHub raw is the stored blob. Hashing the
+    // working copy on a machine with core.autocrlf=true answers a different
+    // question, and the answer changes per developer.
+    const lock = JSON.parse(readFileSync(lockPath, 'utf8').replace(/^﻿/, ''));
+    const read = (p) => {
+      try { return execFileSync('git', ['show', `HEAD:${p}`], { maxBuffer: 1e8 }); }
+      catch { return null; }
+    };
+    const files = {};
+    for (const frag of ['infra/manifests/base.txt', 'infra/manifests/role-prime.txt']) {
+      const text = read(frag);
+      if (!text) return; // no HEAD yet (fresh clone in CI shallow mode) — nothing to compare
+      for (const { src, dest } of parseManifest(text.toString())) {
+        const body = read(src);
+        if (!body) continue;
+        files[dest.replace(/\?$/, '')] =
+          `sha256:${createHash('sha256').update(body).digest('hex')}`;
+      }
+    }
+    assert.equal(
+      bundleDigest(files),
+      lock.bundles.prime.digest,
+      'the lock was generated from a working copy whose line endings differ from the ' +
+      'committed blobs; it would pass locally and fail on a Linux checkout',
+    );
+  });
+});
+
 describe('install surface — the digest is over paths and content together', () => {
   it('same files at different dests are different bundles', () => {
     const a = bundleDigest({ 'bin/x': 'sha256:aa' });
@@ -142,6 +192,22 @@ describe('install surface — the digest is over paths and content together', ()
     const a = bundleDigest({ 'bin/x': 'sha256:aa', 'bin/y': 'sha256:bb' });
     const b = bundleDigest({ 'bin/y': 'sha256:bb', 'bin/x': 'sha256:aa' });
     assert.equal(a, b);
+  });
+
+  it('the content digest survives a relocation but not an edit', () => {
+    const before = { 'corekit/lib/x.mjs': 'sha256:aa', 'corekit/lib/y.mjs': 'sha256:bb' };
+    const moved = { 'platform/work/x.mjs': 'sha256:aa', 'platform/work/y.mjs': 'sha256:bb' };
+    const edited = { 'platform/work/x.mjs': 'sha256:cc', 'platform/work/y.mjs': 'sha256:bb' };
+
+    assert.equal(contentOnlyDigest(before), contentOnlyDigest(moved), 'a pure move changed it');
+    assert.notEqual(bundleDigest(before), bundleDigest(moved), 'the path lock should still move');
+    assert.notEqual(contentOnlyDigest(moved), contentOnlyDigest(edited), 'an edit slipped through');
+  });
+
+  it('a dropped duplicate is visible — content is a multiset, not a set', () => {
+    const two = { 'bin/a': 'sha256:aa', 'corekit/a': 'sha256:aa' };
+    const one = { 'bin/a': 'sha256:aa' };
+    assert.notEqual(contentOnlyDigest(two), contentOnlyDigest(one));
   });
 });
 

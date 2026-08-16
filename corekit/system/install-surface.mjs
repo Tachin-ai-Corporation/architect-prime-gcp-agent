@@ -121,6 +121,24 @@ export function bundleDigest(files) {
   return `sha256:${createHash('sha256').update(JSON.stringify(entries)).digest('hex')}`;
 }
 
+/**
+ * A digest over content alone, ignoring where each file lands.
+ *
+ * `bundleDigest` deliberately changes when a file moves — that is what makes it
+ * a lock. But a restructure moves files on purpose, so during one the lock can
+ * only say "something changed", never "only addresses changed". This says the
+ * second thing: a pure relocation preserves it exactly, and an edit made while
+ * moving breaks it. Together the two separate "I moved things" from "I moved
+ * things and also changed one of them".
+ *
+ * Content is a multiset — a file installed to two dests contributes twice, so
+ * losing one of the two copies is still visible.
+ */
+export function contentOnlyDigest(files) {
+  const hashes = Object.keys(files).sort().map((dest) => files[dest]).sort();
+  return `sha256:${createHash('sha256').update(JSON.stringify(hashes)).digest('hex')}`;
+}
+
 /** Every job fragment the platform ships, derived from disk rather than listed. */
 export function platformJobs(repoRoot) {
   return readdirSync(join(repoRoot, 'infra', 'manifests'))
@@ -145,12 +163,32 @@ export function allBundles(repoRoot) {
   return bundles;
 }
 
+/**
+ * Line endings, normalised for text — because the checkout is not the artifact.
+ *
+ * This repo sets `core.autocrlf=true`, and `.gitattributes` pins LF for only
+ * some paths. Everything else lands CRLF in a Windows working copy and LF on
+ * Linux, so hashing raw bytes answers differently per developer machine — a
+ * lock that can only match the platform that generated it.
+ *
+ * An agent never receives the working copy. install.sh curls each file from
+ * GitHub raw, which serves the stored blob: LF. So LF is what a VM gets, and
+ * hashing it is not a convenience, it is the correct question.
+ *
+ * Binary content passes through untouched. A PNG containing 0x0D0A is not a
+ * line ending, and two of them sit in this tree.
+ */
+export function normalizeForDigest(buf) {
+  if (buf.includes(0)) return buf;                       // NUL byte — binary
+  return Buffer.from(buf.toString('utf8').replace(/\r\n/g, '\n'), 'utf8');
+}
+
 /** Read helper bound to a repo root; returns null for absent paths. */
 export function repoReader(repoRoot) {
   return (rel) => {
     const full = join(repoRoot, rel);
     if (!existsSync(full)) return null;
-    return readFileSync(full);
+    return normalizeForDigest(readFileSync(full));
   };
 }
 
@@ -171,6 +209,7 @@ export function installSurface(repoRoot) {
     const { files, conflicts, missing } = resolveBundle(fragments, { readFile });
     out.bundles[name] = {
       digest: bundleDigest(files),
+      contentDigest: contentOnlyDigest(files),
       fileCount: Object.keys(files).length,
       conflicts,
       missing,
