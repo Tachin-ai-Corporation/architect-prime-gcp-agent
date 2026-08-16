@@ -157,3 +157,39 @@ test('bootstrap scripts never echo the gateway token', () => {
     }
   }
 });
+
+// ── Secrets do not travel as build arguments ───────────────────────────
+//
+// The dashboard's self-upgrade route submits a Cloud Build config, and a build
+// config is persisted in build history and readable by anyone with
+// build-viewer access. It used to re-send NEXTAUTH_SECRET — the session-signing
+// key, sufficient on its own to mint a valid cookie for this dashboard — as a
+// `--update-env-vars` argument.
+//
+// It was reading its own environment to do it, which is circular: those values
+// are in the process because they are already on the service, and
+// `--update-env-vars` MERGES, leaving unmentioned values untouched. So the
+// re-listing changed nothing except who could read the secret.
+
+test('the upgrade route sends no secret in its build config', () => {
+  const src = readFileSync(join(REPO, 'app', 'src', 'app', 'api', 'upgrade', 'route.ts'), 'utf8');
+
+  // Ignore prose: a comment explaining the removal must not read as a violation.
+  const code = src.replace(/\/\*[\s\S]*?\*\//g, '').replace(/^\s*\/\/.*$/gm, '');
+
+  for (const name of ['NEXTAUTH_SECRET', 'DWD_CLIENT_ID', 'GOOGLE_CLIENT_ID']) {
+    assert.ok(!code.includes(name),
+      `${name} appears in the upgrade route's code. A Cloud Build config is persisted and ` +
+      `readable; --update-env-vars merges, so an existing value needs no re-sending.`);
+  }
+});
+
+test('the deploy step still merges rather than replacing the environment', () => {
+  // The removal above is only safe BECAUSE the flag merges. If this ever becomes
+  // --set-env-vars, dropping those values would wipe them from the service.
+  const src = readFileSync(join(REPO, 'app', 'src', 'app', 'api', 'upgrade', 'route.ts'), 'utf8');
+  assert.ok(src.includes('--update-env-vars'), 'the deploy must merge env vars');
+  assert.ok(!src.includes('--set-env-vars'),
+    '--set-env-vars REPLACES the whole environment; with the pass-through removed that would ' +
+    'delete NEXTAUTH_SECRET from the running service and invalidate every session');
+});

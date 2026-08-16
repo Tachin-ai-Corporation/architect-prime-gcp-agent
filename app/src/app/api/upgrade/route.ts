@@ -215,24 +215,26 @@ export async function POST(req: NextRequest) {
     // is "deploy the previous tag", not "rebuild and hope".
     const image = `${imageRepo}:${deploySha}`;
 
-    // Preserve existing env vars from current deployment
-    const dwdClientId = process.env.DWD_CLIENT_ID || "";
-    const googleClientId = process.env.GOOGLE_CLIENT_ID || "";
-    const nextAuthSecret = process.env.NEXTAUTH_SECRET || "";
-    const allowedDomain = process.env.ALLOWED_DOMAIN || "";
-    const nextAuthUrl = process.env.NEXTAUTH_URL || "";
-
-    // Build env vars string
+    // Only what this deploy actually CHANGES.
+    //
+    // This used to re-send DWD_CLIENT_ID, GOOGLE_CLIENT_ID, ALLOWED_DOMAIN,
+    // NEXTAUTH_URL and NEXTAUTH_SECRET, read from this process's own
+    // environment. That reading is circular — they are in this process because
+    // they are already on the service — and the deploy step below uses
+    // `--update-env-vars`, which MERGES. Values it does not mention are left
+    // untouched. So re-listing them changed nothing about the outcome and
+    // everything about their exposure: every value became an argument in a
+    // Cloud Build config, which is persisted in build history and readable by
+    // anyone with build-viewer access.
+    //
+    // NEXTAUTH_SECRET is the session-signing key. Anyone who reads it can mint
+    // a valid session cookie for this dashboard. It does not belong in a build
+    // argument, and it never needed to be there.
     const envVars = [
       `APP_VERSION=${deployVersion}`,
       `APP_COMMIT=${deployCommit}`,
       `GCP_PROJECT_ID=${projectId}`,
       `NODE_ENV=production`,
-      ...(dwdClientId ? [`DWD_CLIENT_ID=${dwdClientId}`] : []),
-      ...(googleClientId ? [`GOOGLE_CLIENT_ID=${googleClientId}`] : []),
-      ...(nextAuthSecret ? [`NEXTAUTH_SECRET=${nextAuthSecret}`] : []),
-      ...(allowedDomain ? [`ALLOWED_DOMAIN=${allowedDomain}`] : []),
-      ...(nextAuthUrl ? [`NEXTAUTH_URL=${nextAuthUrl}`] : []),
       `GH_OWNER=${ghOwner}`,
       `GH_REPO=${ghRepo}`,
     ].join(",");
