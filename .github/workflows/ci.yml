@@ -109,6 +109,11 @@ jobs:
       - name: Bootstrap reads only what is installed
         run: node --test test/bootstrap-paths.test.mjs
 
+      # A living document that names a path it cannot produce teaches the wrong
+      # shape. Historical records (docs/plans, the changelog) are out of scope.
+      - name: Living docs cite files that exist
+        run: node --test test/doc-paths.test.mjs
+
   codeowners:
     name: CODEOWNERS Resolves
     runs-on: ubuntu-latest

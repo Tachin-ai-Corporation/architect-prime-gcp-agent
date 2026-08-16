@@ -8,7 +8,7 @@ You are the **repo maintainer and developer** of this project. You are NOT a dep
 |-----------------------|------------------------------|
 | Edit repo files, write code, ship commits | Execute missions via brain daemon |
 | Use `.agents/skills/` for dev workflows | Use `skills/` installed via manifests |
-| Use `.agents/workflows/` for git/SSH/deploy | Use `corekit/bin/` tools governed by their skills |
+| Use `.agents/workflows/` for git/SSH/deploy | Use `/opt/corekit/bin/` tools governed by their skills |
 | Work in PowerShell on Windows | Run as systemd services on Linux VMs |
 | Local env config in `.claude/` (gitignored) | Identity in `brain/`, `specialties/` |
 
@@ -44,7 +44,17 @@ Architect Prime is a self-bootstrapping AI agent factory for Google Cloud. It de
 ```
 app/            Dashboard control plane (Cloud Run, Next.js, 1health design)
 infra/          contracts.json, install.sh, manifests, bootstraps
-corekit/        VM runtime — daemons, libs, brain tools, config
+platform/       VM runtime, one package per concern:
+                  contracts/      schemas, digests, ids, state machines
+                  security/       workload identity, DWD auth
+                  persistence/    firestore, git-store, artifacts
+                  providers/      channel, notifications, vertex, json-repair
+                  context/        memory, compaction, prompt budgets
+                  control-plane/  projects, deploy targets
+                  work/           envelopes, delegation, checkpoints, scheduler
+                  deployment/     registry, compiler, content-sync, rollout
+                  runtime/        the daemons + their action handlers
+corekit/        gateway module (brain/), system tools, fleet tools, config
 brain/          Agent identity workspaces — SOUL.md, IDENTITY.md per role
 specialties/    Per-agent-type bundles — workspace, brain appends, skills
 skills/         Versioned skill packages installed to VMs via manifests
@@ -52,7 +62,16 @@ docs/           Canons, Culture of Work, primitives, guides
 operator/       Operator-specific content (not loaded by default)
 ```
 
-Cross-module reach-ins forbidden (C-10). Dashboard never contains runtime logic; runtime never reaches into dashboard.
+**Repo path == VM path.** A manifest line is `<src> <dest>`; for every module the two
+columns are the same string, so `platform/work/delegation.mjs` in the repo is the same
+path on the VM and an import resolves identically in both. Do not reintroduce a layout where
+they differ — the `lib -> corekit/lib` bridge symlink that used to paper over it made
+daemons unloadable from a checkout and broke only FRESH deploys.
+
+The package order is load-bearing: `security` <- `persistence`/`providers` <-
+`context`/`control-plane` <- `work`. An import against that direction means two concerns
+share one name. Cross-module reach-ins forbidden (C-10). Dashboard never contains runtime
+logic; runtime never reaches into dashboard.
 
 ## Development Discipline
 

@@ -96,7 +96,7 @@ Agents never depend on parsing the GChat reply to resume. The Firestore polling 
 
 ## Library
 
-`corekit/lib/delegation.mjs` — Pure functions, zero dependencies:
+`platform/work/delegation.mjs` — Pure functions, zero dependencies:
 - `composeDelegationMarker()` / `parseDelegationMarker()`
 - `composeDelegationResultMarker()` / `parseDelegationResultMarker()`
 - `isDelegationMarker()` / `isDelegationResultMarker()`

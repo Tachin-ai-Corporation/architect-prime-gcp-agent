@@ -198,9 +198,12 @@ Deviation is permitted only when the skill demonstrably does not cover the case 
 What the implementation is supposed to look like, and the direction every refactor should move it.
 
 ### B-18 · A thin orchestrator spine over single-purpose libraries
-The brain daemon is the spine: state transitions, dispatch, lifecycle — and as little else as possible. Everything reusable lives in `corekit/lib/` modules with one responsibility each, consumed by all daemons. The permanent direction of motion: **the daemon shrinks, the libraries grow.**
-**Better looks like:** a refactor that moves logic out of the daemon into a named lib at constant behavior; a daemon whose main loop fits in one reading; lib modules whose names fully predict their contents.
-**Worse looks like:** convenience logic accreting into the daemon "because it's already open"; a lib that needs three sentences to describe; the same helper re-implemented in two daemons.
+The brain daemon is the spine: state transitions, dispatch, lifecycle — and as little else as possible. Everything reusable lives under `platform/` in a package named for one concern — `work`, `persistence`, `security`, `context`, `providers`, `control-plane`, `deployment`, `contracts` — consumed by all daemons. The permanent direction of motion: **the daemon shrinks, the libraries grow.**
+
+The packages are ordered, and the order is the design: `security` depends on nothing, `persistence` and `providers` sit on it, `context` and `control-plane` on those, `work` on top. A dependency pointing the other way is not a stylistic problem — it means two concerns have been given one name. When the modules were one flat directory this was unenforceable, because every file was every other file's sibling and any import looked equally legitimate.
+
+**Better looks like:** a refactor that moves logic out of the daemon into a named package at constant behavior; a daemon whose main loop fits in one reading; a module whose package tells you what it may depend on before you open it.
+**Worse looks like:** convenience logic accreting into the daemon "because it's already open"; a module that needs three sentences to describe; the same helper re-implemented in two daemons; a new import that makes the package graph cyclic.
 
 ### B-19 · Pure core, effectful edges
 Logic that can be a pure function is a pure function — testable on a laptop with no GCP, no network, no clock. Side effects (Firestore, gateway HTTP, file system, time) live at the edges behind narrow, named modules. Tests target the pure core; the edges stay thin enough to trust by inspection.

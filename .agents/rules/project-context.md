@@ -3,6 +3,32 @@
 ## What this project is
 Architect Prime is an AI agent fleet management system for Google Workspace on GCP. It deploys autonomous AI agent teams (each with its own VM, host-native neural gateway, and Google Chat identity) that collaborate with humans via Google Chat.
 
+## Repository layout (changed v2026.08.15.11.0 — read this before searching for a file)
+
+The VM runtime moved out of `corekit/` into `platform/`, one package per concern:
+
+```
+platform/contracts/      schemas, digests, ids, work-transitions
+platform/security/       gce-auth, dwd-auth
+platform/persistence/    firestore, git-store, artifacts, archival, entity-id
+platform/providers/      channel, notifications, vertex-text, json-repair, to-str
+platform/context/        compaction, conversation-context, history, prompt-blocks
+platform/control-plane/  projects, project-context, project-bootstrap, deploy-target
+platform/work/           envelopes, delegation, checkpoints, scheduler, verdict, …
+platform/deployment/     registry, compiler, content-sync, rollout, evals, diff
+platform/runtime/        the daemons + actions/ + their .service units + launchers
+corekit/                 gateway module (brain/), system tools, fleet tools, config
+```
+
+**Repo path == VM path** for every module — `platform/work/delegation.mjs` is that path in
+both trees. The old `lib -> corekit/lib` symlink is gone; nothing resolves through a link.
+Package dependencies run one way: `security` <- `persistence`/`providers` <-
+`context`/`control-plane` <- `work`.
+
+References to `corekit/lib/…`, `corekit/daemon/…` and `corekit/contracts/…` BELOW this line
+are historical — they describe where things were when that entry was written. Do not treat
+them as current locations.
+
 ## Current Architecture (v2026.08.14.6.15)
 
 > **Delegation BATON model implemented, flag OFF (v2026.08.07.1.0–1.2, `f99568c`).** Single-mission

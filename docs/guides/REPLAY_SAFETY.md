@@ -1,6 +1,6 @@
 # Replay Safety Guide
 
-> **Audience:** Anyone modifying `agent-brain.mjs` or `corekit/lib/` modules  
+> **Audience:** Anyone modifying `platform/runtime/agent-brain.mjs` or a `platform/` package  
 > **Purpose:** Rules for writing code that behaves correctly when replayed after a crash
 
 ## Core Principle

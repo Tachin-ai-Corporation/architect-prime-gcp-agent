@@ -6,8 +6,12 @@
 A manifest-driven "core kit" for Architect Prime that includes:
 
 - Agent workspace files (`brain/prime/`, `brain/fleet/`, `specialties/`)
-- CoreKit scripts (`corekit/{brain,fleet,chat,daemon,memory,dashboard,system}/`)
+- The VM runtime (`platform/{contracts,security,persistence,providers,context,control-plane,work,deployment,runtime}/`)
+- CoreKit scripts (`corekit/{brain,fleet,chat,memory,dashboard,system}/`)
 - Infrastructure contracts (`infra/contracts.json`)
+
+Every module installs at the path it occupies in the repo, so an import resolves
+the same in a checkout and on a VM. Nothing resolves through a symlink.
 
 ## How you use it (manifest installer)
 1. Install via `infra/install.sh --role prime` or `--role fleet --job devops`

@@ -68,7 +68,7 @@ Each space maintains an independent high-water cursor. A busy space cannot advan
 
 ## Delivery Primitive
 
-`deliverToAddress(addr, text, opts)` in `corekit/lib/channel.mjs` is the single delivery function. The Mouth's job collapses to: read `delivery_address` off the envelope, voice the text, call `deliverToAddress`. No discovery, no ordering dependence, no "first space."
+`deliverToAddress(addr, text, opts)` in `platform/providers/channel.mjs` is the single delivery function. The Mouth's job collapses to: read `delivery_address` off the envelope, voice the text, call `deliverToAddress`. No discovery, no ordering dependence, no "first space."
 
 ---
 

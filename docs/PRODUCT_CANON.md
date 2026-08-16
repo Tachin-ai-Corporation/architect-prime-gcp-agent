@@ -143,7 +143,7 @@ Branch → local pre-commit gates → test-agent verification → PR with declar
 ## VIII. Artifact Substrate
 
 ### C-24 · Git is the artifact substrate; objects-before-refs is the law
-Work products live in git repos backed by GCS bundles (objects) + Firestore CAS refs (branches). Two planes: **Plane 1** (GitHub) is the template source — `architect-prime` repo deployed to VMs via manifests. **Plane 2** (GCS+Firestore) is the shared agentic ether — one repo per project, mission branches merged to `main`. Object writes to GCS must precede Firestore ref advancement (parallel to C-18). Ref advancement uses Firestore `commit` with precondition guards (compare-and-swap). Transport: `corekit/lib/git-store.mjs`. Motor atoms: `skills/workspace-git/`.
+Work products live in git repos backed by GCS bundles (objects) + Firestore CAS refs (branches). Two planes: **Plane 1** (GitHub) is the template source — `architect-prime` repo deployed to VMs via manifests. **Plane 2** (GCS+Firestore) is the shared agentic ether — one repo per project, mission branches merged to `main`. Object writes to GCS must precede Firestore ref advancement (parallel to C-18). Ref advancement uses Firestore `commit` with precondition guards (compare-and-swap). Transport: `platform/persistence/git-store.mjs`. Motor atoms: `skills/workspace-git/`.
 **Violation looks like:** Raw file uploads to Drive as the primary artifact substrate; refs advanced before objects are durably stored; CAS-free ref writes; mission branches not merged to main on completion.
 
 ---

@@ -1,7 +1,7 @@
 # The Analyze Phase
 
 > **Amends:** `docs/BRAIN_CANON.md` — B-10 (the iteration loop) and B-9 (organ roles).
-> **Supersedes:** the deterministic gate in `docs/guides/PLANNING_AND_DELEGATION.md` (Change 1). The Brief and the step taxonomy below replace it.
+> **Supersedes:** the deterministic gate that lived in the old planning-and-delegation guide (Change 1), which has since been removed. The Brief and the step taxonomy below replace it; see [TEAM_AND_DELEGATION.md](TEAM_AND_DELEGATION.md) and [DELEGATION_PROTOCOL.md](DELEGATION_PROTOCOL.md) for what remains current.
 > **Ownership:** Human maintainers via CODEOWNERS. This is a canon amendment — it lands by PR with human approval.
 > **Status:** Normative once merged. Describes what the loop *is becoming*.
 

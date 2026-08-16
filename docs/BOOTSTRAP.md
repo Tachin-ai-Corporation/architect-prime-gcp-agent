@@ -99,9 +99,9 @@ To modify the bootstrap:
 | `infra/bootstrap/prime-bootstrap.sh` | Full VM setup script (standalone bash) |
 | `app/src/app/api/primes/[id]/deploy/route.ts` | Deploy API with boot stub |
 | `corekit/brain/index.mjs` | Node.js native neural gateway |
-| `corekit/daemon/agent-ears.mjs` | Deterministic input processing |
-| `corekit/daemon/agent-mouth.mjs` | Output classification + delivery |
-| `corekit/daemon/agent-brain.mjs` | Brain v3 orchestration daemon |
-| `corekit/daemon/agent-brain.service` | Systemd unit for brain daemon |
+| `platform/runtime/agent-ears.mjs` | Deterministic input processing |
+| `platform/runtime/agent-mouth.mjs` | Output classification + delivery |
+| `platform/runtime/agent-brain.mjs` | Brain v3 orchestration daemon |
+| `platform/runtime/agent-brain.service` | Systemd unit for brain daemon |
 | `infra/install.sh` | CoreKit manifest installer |
 | `infra/manifests/base.txt` | Repo path → VM path mapping |
