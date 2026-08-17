@@ -3,9 +3,9 @@
 > **Question asked:** can the corekit updates be rolled to the rest of the fleet and still work, and
 > does any production data or instance need migrating?
 >
-> **Answer:** yes to the first, with one real unknown named below. **No data migration is required.**
-> Six state defects exist and are recorded here; none of them block a rollout, and one of them makes
-> the control plane report a ref that is not installed.
+> **Answer:** yes — the rollout is DONE, all eight agents on one ref, each gated 12/12. **No data
+> migration was required.** Seven state defects were found; two were errors in this audit, three are
+> fixed in code, and two were closed by operator decision. §3 carries each with its resolution.
 
 Method: read every VM's `STATE.json` and service state directly, diff the deployed contract against
 HEAD, diff the Firestore collection surface, and audit the registry. Nothing here is inferred from
@@ -120,7 +120,7 @@ None block the rollout. All were found by direct audit.
 
 > **Resolution status.** S-1 closed by the rollout (every agent reports its ref). S-2 and S-7 were
 > real defects and are fixed in code. **S-3 and S-5 were errors in this audit, not in the system** —
-> both are struck through below with what was actually true. S-4 remains an operator decision. S-6 and the phantom document are DONE — deleted at the operator's instruction.
+> both are struck through below with what was actually true. S-4, S-6 and the phantom document are all CLOSED by operator decision — the VM and the phantom deleted, the null parent_release left to age out.
 
 <a id="s-1"></a>
 ### S-1 · The registry reports a ref that is not installed — *the important one*
@@ -212,10 +212,32 @@ the normal case, since `/opt/corekit` is root-owned and the tool runs under `sud
 was left behind and nothing checked ([IMPROVEMENT_POLICY](../IMPROVEMENT_POLICY.md) R-5). Fixed in
 `336ea4f` and proven under `sudo` with no environment.
 
-### S-4 · `fr-6a524ab97fd1` has a null `parent_release`
+### S-4 · `fr-6a524ab97fd1` has a null `parent_release` — *closed: left to age out*
 
-Known and previously reported. `previousLiveReleaseId()` fixed the code path; the existing record was
-never edited, and no tenant data was changed to make this document tidier. **Operator action.**
+**What it is.** C-31 makes rollback a pointer operation with its target chosen in advance: a release
+records `parent_release`, the release it supersedes, and `rollback()` repoints assignments at that
+predecessor. Nothing is rebuilt and nothing re-authored, which is the property that makes a rollback
+safe to run under pressure.
+
+**Why it was null.** `parent_release` was populated from `activeReleaseId()`, which matches only
+`status === 'active'` — and a release reaches `active` only after a full promotion, which a
+canary-first workflow may never perform. Both live releases sit at `canary` (`fr-bc76ebe656e2` at
+17:54:40, `fr-6a524ab97fd1` at 18:23:47), so every release recorded a null parent and `rollback()`
+fails closed on exactly that. Worse, `evaluateRollout` can *decide* rollback and `observe --apply`
+would then find no target and pause — the one moment the promise matters was the one where it was
+missing. `previousLiveReleaseId()` replaced it: newest at `active` **or** `canary`, excluding
+`superseded` and `rolled-back`, since rolling forward onto something already rolled back would undo
+the undo.
+
+**Decision: leave it (operator, 2026-08-17).** No rollback of this release is anticipated. The code
+path is fixed, so every release created from here carries a correct parent; this one's null stops
+mattering the moment it is superseded. The alternative — hand-writing a lineage into an existing
+release — would make the record assert a relationship that was not established at creation time, and
+that is a lie in the exact ledger rollback depends on.
+
+**The residual risk, stated plainly:** until a newer release supersedes it, `fr-6a524ab97fd1` has no
+rollback target, and an attempt to roll it back will throw rather than silently pick one. Failing
+loudly is the correct behaviour here, and it is the behaviour in place.
 
 ### ~~S-5 · Two removed primes carry `coreRef: "main"`~~ — *not an issue*
 
