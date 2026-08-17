@@ -626,15 +626,42 @@ function markGChatConsumed(msg) {
 }
 
 // ---- Firestore Heartbeat ----
+/**
+ * Heartbeat the prime's status. UPDATE ONLY — a heartbeat may never create the
+ * thing it reports on.
+ *
+ * A Firestore PATCH with an updateMask UPSERTS. Without a precondition this
+ * heartbeat brought a prime into existence whenever PRIME_ID named something
+ * that was not a prime, and the surrounding `catch {}` meant nothing ever said
+ * so. A live audit found `primes/prime-chucknorris` holding exactly one field,
+ * `status: "online"`, where every real prime carries seven to nine — a phantom
+ * created by this write from a VM whose PRIME_ID had been set to its VM NAME
+ * (`prime-` prefix) rather than its prime id. The dashboard then listed a prime
+ * that had never existed, as online.
+ *
+ * `currentDocument.exists=true` makes the write conditional: a heartbeat for an
+ * unknown prime now fails instead of inventing one, and the failure is logged
+ * rather than swallowed, because a heartbeat that cannot find its own prime is
+ * a misconfiguration worth seeing.
+ */
 async function updateFirestoreStatus(status) {
   if (CHANNEL !== 'dashboard') return;
+  if (!PRIME_ID) { log('WARN: heartbeat skipped — PRIME_ID is unset'); return; }
   try {
     const token = await getGceToken();
-    await fetch(`${FIRESTORE_URL}/primes/${PRIME_ID}?updateMask.fieldPaths=status`, {
+    const url = `${FIRESTORE_URL}/primes/${PRIME_ID}`
+      + `?updateMask.fieldPaths=status&currentDocument.exists=true`;
+    const resp = await fetch(url, {
       method: 'PATCH', headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
       body: JSON.stringify({ fields: { status: { stringValue: status } } })
     });
-  } catch {}
+    if (!resp.ok) {
+      log(`WARN: prime heartbeat rejected (HTTP ${resp.status}) for prime '${PRIME_ID}'`
+        + ' — if this prime is real, its record is missing; if it is not, PRIME_ID is wrong');
+    }
+  } catch (e) {
+    log(`WARN: prime heartbeat failed: ${e.message}`);
+  }
 }
 
 // ---- Phase 3: Approval gate response detection ----
