@@ -15,21 +15,26 @@ the dashboard, because [defect S-1](#s-1) is that the dashboard is currently wro
 
 ## 1. What is deployed
 
-**Final state — the rollout is complete. All eight agents are on one ref.**
+**Final state — the rollout is complete. All eight agents are on one ref, `d75f58e`.**
 
 | VM | role / job | ref | layout | services | skills |
 |---|---|---|---|---|---|
-| prime-candicejr | prime | `dea5673` | post-move | 5/5 | 23 |
-| prime-chuck | prime | `dea5673` | post-move | 5/5 | 23 |
-| fleet-archie | product-architect + operator | `dea5673` | post-move | 5/5 | 16 |
-| fleet-bobby | engineer | `dea5673` | post-move | 5/5 | 15 |
-| fleet-dot | designer | `dea5673` | post-move | 5/5 | 17 |
-| fleet-millie | assistant | `dea5673` | post-move | 5/5 | 19 |
-| fleet-stan | devops + operator | `dea5673` | post-move | 5/5 | 17 |
-| fleet-tom | web-master | `dea5673` | post-move | 5/5 | 21 |
-| architect-prime | — | — | no corekit | 0/5 | — |
+| prime-candicejr | prime | `d75f58e` | post-move | 5/5 | 23 |
+| prime-chuck | prime | `d75f58e` | post-move | 5/5 | 23 |
+| fleet-archie | product-architect + operator | `d75f58e` | post-move | 5/5 | 16 |
+| fleet-bobby | engineer | `d75f58e` | post-move | 5/5 | 15 |
+| fleet-dot | designer | `d75f58e` | post-move | 5/5 | 17 |
+| fleet-millie | assistant | `d75f58e` | post-move | 5/5 | 19 |
+| fleet-stan | devops + operator | `d75f58e` | post-move | 5/5 | 17 |
+| fleet-tom | web-master | `d75f58e` | post-move | 5/5 | 21 |
+| architect-prime | — | — | pre-move, idle | 0/5 | — |
 
-Every one passed the §4 gate at 12/12, and the registry now reports the installed ref for all eight.
+Every one passed the §4 gate at 12/12, and the registry reports the installed ref for all eight. The
+fleet was rolled twice: first to `dea5673` to close the `platform/` split, then to `d75f58e` to carry
+the S-2 and S-7 fixes, which is what a routine rollout looks like once the procedure is proven.
+
+**S-7 verified on the agent that exhibited it.** A read-only mission on tom after the second roll
+rendered `[verified]` twice and `[undefined]` zero times.
 
 <details><summary>The starting state this document was written against</summary>
 
