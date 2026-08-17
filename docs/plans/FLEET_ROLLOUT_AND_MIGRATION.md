@@ -27,7 +27,7 @@ the dashboard, because [defect S-1](#s-1) is that the dashboard is currently wro
 | fleet-millie | assistant | `d75f58e` | post-move | 5/5 | 19 |
 | fleet-stan | devops + operator | `d75f58e` | post-move | 5/5 | 17 |
 | fleet-tom | web-master | `d75f58e` | post-move | 5/5 | 21 |
-| architect-prime | — | — | pre-move, idle | 0/5 | — |
+| ~~architect-prime~~ | — | — | *deleted 2026-08-17* | — | — |
 
 Every one passed the §4 gate at 12/12, and the registry reports the installed ref for all eight. The
 fleet was rolled twice: first to `dea5673` to close the `platform/` split, then to `d75f58e` to carry
@@ -120,7 +120,7 @@ None block the rollout. All were found by direct audit.
 
 > **Resolution status.** S-1 closed by the rollout (every agent reports its ref). S-2 and S-7 were
 > real defects and are fixed in code. **S-3 and S-5 were errors in this audit, not in the system** —
-> both are struck through below with what was actually true. S-4 and S-6 remain operator decisions.
+> both are struck through below with what was actually true. S-4 remains an operator decision. S-6 and the phantom document are DONE — deleted at the operator's instruction.
 
 <a id="s-1"></a>
 ### S-1 · The registry reports a ref that is not installed — *the important one*
@@ -190,8 +190,10 @@ logged with which of the two causes it is. **A report may not author its own sub
 shape as the fleet-status column compared against itself (S-1) and the blocked handler whose fallback
 chain ended in a constant.
 
-The phantom document itself is left in place: removing tenant data is the operator's call, and the
-fix means it cannot come back. `primes/prime-chucknorris` can be deleted whenever convenient.
+**The phantom document is deleted** (2026-08-17, operator instruction). Verified first: zero
+subcollections and a single `status` field, so nothing was orphaned, and the delete script refused if
+the record had held any field a real prime carries. The two `removed` primes from S-5 were left — they
+are real history with `removedAt` set, and one has a fleet subcollection a doc-delete would orphan.
 
 ### ~~S-3 · Releases exist with no definitions behind them~~ — *this audit was wrong*
 
