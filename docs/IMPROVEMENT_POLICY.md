@@ -148,6 +148,39 @@ Recorded proofs from this program: a planted dead path in `skills/delegation/SKI
 organ SOUL body edit failing the C-28 soft-lock — *after* a first attempt that edited the deliberately
 mutable deep-truths tail and correctly stayed green.
 
+And a corollary the rollout paid for: **run a new gate against a known-good subject before trusting
+it against an unknown one.** Three gates were wrong the same way in a single session — a fixed
+three-minute journal window met a healthy agent whose startup banner was hours old; four "pre-move
+tree" checks named three directories that are never install destinations and so could never fail; and
+`NRestarts`, a lifetime counter that never resets, was compared to a ceiling of 5, which made every
+agent that had ever crash-looped permanently un-upgradeable because C-19 fails the install closed. A
+threshold is only as good as the quantity it is applied to, and a delta over a window beats an
+absolute count wherever history can accumulate.
+
+### R-11. A report may not author its own subject
+
+An observation is supposed to *find* something. When it can create, supply, or stand in for the thing
+it claims to observe, it stops being evidence and starts being an echo — and it reads exactly like
+evidence, which is what makes this shape expensive.
+
+Three instances, all found in one session, all in different layers:
+
+- **`fleet-status`** had one "version" column and filled it from a single source, so a mission asked
+  to compare installed refs against registered refs compared a value to itself, found agreement, and
+  reported **"zero drift"** across a fleet where every agent had drifted.
+- **The `blocked` handler's** eight-deep fallback chain ended in a constant, so a mission that had
+  correctly diagnosed a missing capability terminated with a generic phrase instead of its own
+  diagnosis — the explanation was generated and then replaced by a stand-in.
+- **`agent-ears`' heartbeat** PATCHed `primes/${PRIME_ID}` with an updateMask, and a Firestore PATCH
+  with an updateMask **upserts** — so a VM whose `PRIME_ID` was wrong did not fail, it *created the
+  prime it was reporting on*, and the dashboard listed a prime that had never existed as online.
+
+The test: for each fact a report states, ask **what would have to be true for this field to be
+wrong** — and if the answer is "nothing, it is derived from the report itself", it is not a
+measurement. Fixes look like: two separately-sourced fields instead of one (`reportedRef` vs
+`installedRef`), a fallback that ends in evidence or in an honest "there is none", and a write
+precondition (`currentDocument.exists=true`) so a heartbeat updates or fails.
+
 ---
 
 ## 3. Where the modules stand
