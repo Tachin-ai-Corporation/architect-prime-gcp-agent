@@ -15,24 +15,35 @@ the dashboard, because [defect S-1](#s-1) is that the dashboard is currently wro
 
 ## 1. What is deployed
 
-| VM | ref | installed | layout | services |
-|---|---|---|---|---|
-| prime-candicejr | `7bcaa1c` | 08-16 | post-move | 5/5 |
-| fleet-millie | `0a2b78d` | 08-16 | post-move | 5/5 |
-| prime-chuck | `13be751` | 08-14 | **pre-move** | 5/5 |
-| fleet-archie | `13be751` | 08-14 | **pre-move** | 5/5 |
-| fleet-bobby | `13be751` | 08-14 | **pre-move** | 5/5 |
-| fleet-dot | `13be751` | 08-14 | **pre-move** | 5/5 |
-| fleet-stan | `13be751` | 08-14 | **pre-move** | 5/5 |
-| fleet-tom | `13be751` | 08-14 | **pre-move** | 5/5 |
-| architect-prime | — | — | no corekit | 0/5 |
+**Final state — the rollout is complete. All eight agents are on one ref.**
 
-"Pre-move" means the VM still holds `corekit/lib/`, `corekit/daemon/`, `corekit/contracts/`, `brain/`
-and the `/opt/corekit/lib` symlink. Six production agents are on the far side of the `platform/`
-restructure from the two canaries.
+| VM | role / job | ref | layout | services | skills |
+|---|---|---|---|---|---|
+| prime-candicejr | prime | `dea5673` | post-move | 5/5 | 23 |
+| prime-chuck | prime | `dea5673` | post-move | 5/5 | 23 |
+| fleet-archie | product-architect + operator | `dea5673` | post-move | 5/5 | 16 |
+| fleet-bobby | engineer | `dea5673` | post-move | 5/5 | 15 |
+| fleet-dot | designer | `dea5673` | post-move | 5/5 | 17 |
+| fleet-millie | assistant | `dea5673` | post-move | 5/5 | 19 |
+| fleet-stan | devops + operator | `dea5673` | post-move | 5/5 | 17 |
+| fleet-tom | web-master | `dea5673` | post-move | 5/5 | 21 |
+| architect-prime | — | — | no corekit | 0/5 | — |
 
-`13be751` → HEAD is **73 commits**, and it is not an ordinary upgrade: every runtime module's install
-destination changed.
+Every one passed the §4 gate at 12/12, and the registry now reports the installed ref for all eight.
+
+<details><summary>The starting state this document was written against</summary>
+
+| VM | ref | installed | layout |
+|---|---|---|---|
+| prime-candicejr | `7bcaa1c` | 08-16 | post-move |
+| fleet-millie | `0a2b78d` | 08-16 | post-move |
+| chuck, archie, bobby, dot, stan, tom | `13be751` | 08-14 | **pre-move** |
+
+"Pre-move" means the VM still held `corekit/lib/` and the `/opt/corekit/lib` symlink. Six production
+agents were on the far side of the `platform/` restructure from the two canaries, and `13be751` → HEAD
+was **73 commits** in which every runtime module's install destination changed.
+
+</details>
 
 ---
 
@@ -160,6 +171,16 @@ never edited, and no tenant data was changed to make this document tidier. **Ope
 `mhive2`, `pdf-to-cqd-team` — both `status: removed`. Harmless, and a reminder that `coreRef` holds
 two kinds of thing: a floating branch name before a deploy resolves one, a pinned commit after.
 
+### S-7 · Epistemic bins rendered as `[undefined]` on one agent
+
+tom's post-roll report closed with five claims tagged `[undefined]` where every other agent this
+session rendered `[verified]` / `[inferred]` — millie, bobby and candicejr all labelled correctly, at
+three different refs. The claims themselves were true (the 1health `live` channel was independently
+confirmed HTTP 200 with the exact reported title, from a different VM). So this is a **labelling**
+defect, not a truthfulness one — but B-29 exists so a reader can tell an observation from an
+inference, and `[undefined]` silently removes that distinction on every claim at once. Not
+investigated; recorded with the four other agents as the control group.
+
 ### S-6 · An idle VM
 
 `architect-prime` is RUNNING with no corekit installed and all five services inactive. It is the
@@ -201,12 +222,49 @@ it (§3, S-1) is younger than the fleet it will be used on.
 > this content*, whenever the gate happens to run. **Run a gate against a known-good subject before
 > depending on it against an unknown one.**
 
-### Order
+### Order — as executed
 
-`bobby → dot → tom → stan → archie → chuck`
+`bobby → dot → stan → archie → chuck → tom`
 
-Ascending blast radius. bobby (engineer) is the least entangled; archie and stan carry the operator
-job layer; chuck is the prime that owns the whole fleet and goes last.
+Ascending blast radius, with **tom last** at the operator's direction: he holds the 1health
+production website, so he gets every other agent's evidence before anyone touches him.
+
+| agent | job | gate | note |
+|---|---|---|---|
+| bobby | engineer | **PASS 12/12** | forward → back → forward; rollback proven here |
+| dot | designer | **FAIL, then PASS 12/12** | the crash-loop ceiling bug, below |
+| stan | devops + operator layer | **PASS 12/12** | first proof of the double-upgrade: pass 1 silent, pass 2 reported |
+| archie | product-architect + operator layer | **PASS 12/12** | |
+| chuck | **prime** | **PASS 12/12** | `NRestarts 20005`, stable — would have been blocked |
+| tom | web-master | **PASS 12/12** | 1health `live` verified HTTP 200 from a *different* VM |
+
+All five previously-unproven job manifests crossed the boundary. No data migration was needed at any
+step, as predicted in §2.
+
+### The gate stopped the rollout once, correctly
+
+`dot` failed, and the install itself refused: *"Contract validation failed. Refusing to complete an
+install whose contracts do not hold (C-19)"* — over `agent-brain is crash-looping (16016 restarts)`.
+
+dot's brain was not crash-looping. Same PID throughout its journal, continuously active for two days.
+**`NRestarts` is a lifetime counter that never resets**, and the check compared it to a fixed ceiling
+of 5. Any agent that had ever looped would fail forever, and because C-19 fails closed, the check
+written to catch a broken agent made healthy ones **un-upgradeable**.
+
+Blast radius, measured before fixing: dot `16016` and chuck `20005` — two of the five remaining, one
+of them the Prime. Everyone else `0`. Fixed in `dea5673` to measure a **rate**: sample, wait 10s,
+sample again. A delta carries no history and is right in both directions — a unit looping every few
+seconds climbs inside the window, while a unit that restarted four seconds ago as part of *this*
+install does not. A bare uptime threshold was the obvious fix and would have failed every fresh
+deploy instead.
+
+That is the third gate corrected the same way in one session: a fixed journal window, four checks of
+which three could never fail, and now a lifetime counter used as a health signal. **A threshold is
+only as good as the quantity it is applied to.**
+
+dot was left mid-install between the failure and the fix — new tree on disk, old brain process still
+running, services never restarted because the install aborted at the gate. That mixed state is
+exactly what the gate exists to surface.
 
 ### Rollback — exercised, not assumed
 
