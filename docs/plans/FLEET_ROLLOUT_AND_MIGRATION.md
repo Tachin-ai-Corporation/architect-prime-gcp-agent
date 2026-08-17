@@ -221,10 +221,22 @@ gives the reader none at all while looking like a bug rather than a caveat — t
 to be waved past. Entries carrying no claim text are dropped rather than printing a bin over the word
 "undefined".
 
-### S-6 · An idle VM
+### S-6 · An idle VM — *operator decision, now specific*
 
-`architect-prime` is RUNNING with no corekit installed and all five services inactive. It is the
-original bootstrap/control instance. Cost with no current function — decide whether to keep it.
+`architect-prime`: `e2-standard-2`, created 2026-03-31, **up 138 days**, **zero `agent-*` services**.
+
+It does hold `/opt/corekit`, but a pre-move one (`bin/` + `lib/`, no readable `STATE.json`), so it is
+a March-era install that no rollout has touched. It also carries `/opt/openclaw`, which belongs to
+nothing in this architecture.
+
+So it is the original bootstrap/control instance, running continuously for four and a half months
+without running an agent. That is a standing `e2-standard-2` bill for no current function.
+
+**Not touched, and deliberately.** Deleting an instance is irreversible, and this is the operator's
+oldest box — it may hold state, keys or notes that exist nowhere else. If the goal is to stop paying
+for it while keeping everything on the disk, `gcloud compute instances stop architect-prime` is the
+reversible half of the decision and can be undone with `start`. Deletion should follow only after
+someone has looked at what `/opt/openclaw` is.
 
 ---
 
