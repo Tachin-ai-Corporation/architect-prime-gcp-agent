@@ -36,6 +36,22 @@ the S-2 and S-7 fixes, which is what a routine rollout looks like once the proce
 **S-7 verified on the agent that exhibited it.** A read-only mission on tom after the second roll
 rendered `[verified]` twice and `[undefined]` zero times.
 
+> **A wrong call during the second roll, corrected.** An ad-hoc check with
+> `pgrep -f upgrade-corekit` reported an upgrade running on two agents at once, which a sequential
+> batch cannot do. That part was a genuine false positive — `pgrep -f` matches full command lines and
+> the SSH wrapper running the check contained the pattern, so the check matched itself.
+>
+> The conclusion drawn from it was wrong. `ps` showed no process and the roll logs were an hour old,
+> and that was read as *the batch has stalled*. It had not — it was slow, its output buffered until
+> each agent's full cycle finished, and it went on to roll both agents successfully. So stan and tom
+> were each rolled twice: once directly, once by the batch. The timestamps show the two passes were
+> **sequential, not concurrent** (direct brains up at 02:25:35 / 02:29:21, the batch's at 02:29:23 /
+> 02:33:16), so nothing interleaved, and both agents re-gate 12/12 afterwards.
+>
+> Recorded because "no output yet" and "not running" are different states, and only one of them was
+> checked. The right check would have been the agent's own `STATE.json` timestamp, which is what the
+> gate reads and what settled it in the end.
+
 <details><summary>The starting state this document was written against</summary>
 
 | VM | ref | installed | layout |
