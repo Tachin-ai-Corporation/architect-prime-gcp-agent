@@ -1070,29 +1070,58 @@ if [[ "$MODE" == "runtime" ]]; then
   # often as a healthy one. This gate reported agent-ears active while it was on
   # its 106th restart. A restart count is the difference between running and
   # merely being started repeatedly.
-  RESTART_CEILING="${VALIDATE_RESTART_CEILING:-5}"
+  # Measure the restart RATE, not the lifetime total.
+  #
+  # `NRestarts` never resets. This check first compared it to a fixed ceiling of
+  # 5, which made any agent that had EVER crash-looped permanently un-upgradeable
+  # — and because C-19 refuses to complete an install whose contracts do not
+  # hold, the check written to catch a broken agent was bricking healthy ones.
+  # Found mid-rollout: dot reported 16016 restarts and chuck 20005, both from a
+  # crash-loop era long past, while both had been continuously up for two days.
+  #
+  # A delta over a short window carries no history and is right in both
+  # directions: a unit looping every few seconds climbs within the window, and a
+  # unit that restarted four seconds ago as part of THIS install does not — which
+  # a bare uptime threshold would have failed on every fresh deploy.
   svc_restarts() { systemctl show "$1" -p NRestarts --value 2>/dev/null || echo 0; }
+  RESTART_SAMPLE_S="${VALIDATE_RESTART_SAMPLE_S:-10}"
+  declare -A _restarts_before
+  for svc in agent-brain agent-introspect agent-ears agent-mouth; do
+    _restarts_before["$svc"]="$(svc_restarts "$svc")"
+  done
+  sleep "$RESTART_SAMPLE_S"
+  # 0 (true) when the unit restarted during the sample window.
+  svc_looping() {
+    local before="${_restarts_before[$1]:-0}" after
+    after="$(svc_restarts "$1")"
+    [[ "$after" -gt "$before" ]]
+  }
+  svc_restart_delta() {
+    local before="${_restarts_before[$1]:-0}" after
+    after="$(svc_restarts "$1")"
+    echo $(( after - before ))
+  }
 
   for svc in agent-brain agent-introspect; do
     if ! systemctl is-active --quiet "$svc" 2>/dev/null; then
       fail "${svc} service not active"
-    elif [[ "$(svc_restarts "$svc")" -gt "$RESTART_CEILING" ]]; then
-      fail "${svc} is crash-looping ($(svc_restarts "$svc") restarts) — active is not healthy"
+    elif svc_looping "$svc"; then
+      fail "${svc} is crash-looping ($(svc_restart_delta "$svc") restart(s) in ${RESTART_SAMPLE_S}s) — active is not healthy"
     else
       pass "${svc} service active"
     fi
   done
 
   for svc in agent-ears agent-mouth; do
-    restarts="$(svc_restarts "$svc")"
-    if [[ "$restarts" -gt "$RESTART_CEILING" ]]; then
+    restarts="$(svc_restart_delta "$svc")"
+    if svc_looping "$svc"; then
       # Looping is a distinct state from not-started, and its usual cause here is
       # a Workspace user that does not exist yet — the daemon starts, fails the
       # DWD healthcheck, and systemd tries again forever.
       if [[ "$DWD_READY" == "1" ]]; then
-        fail "${svc} is crash-looping (${restarts} restarts) — check the DWD healthcheck"
+        fail "${svc} is crash-looping (${restarts} restart(s) in ${RESTART_SAMPLE_S}s) — check the DWD healthcheck"
       else
-        warn_only "${svc} restarting (${restarts}×) — no Workspace user yet; it will settle once the account exists"
+        warn_only "${svc} restarting (${restarts}× in ${RESTART_SAMPLE_S}s) — no Workspace user yet; it will settle once the account exists"
       fi
     elif systemctl is-active --quiet "$svc" 2>/dev/null; then
       pass "${svc} service active"
