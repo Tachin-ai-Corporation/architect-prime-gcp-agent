@@ -16,18 +16,44 @@ function isSynthExempt(envelope, contracts = {}) {
   return false;
 }
 
+/**
+ * The three epistemic bins (B-29), and what to do with anything else.
+ *
+ * A claim whose `status` cortex omitted used to interpolate straight into the
+ * output as `[undefined]`. Observed live: an agent closed a fleet report with
+ * five true claims, every one tagged `[undefined]`, while three other agents on
+ * three different refs tagged theirs correctly. The claims were right — this is
+ * a labelling defect, not a truthfulness one — but B-29 exists so a reader can
+ * separate an observation from an inference, and `[undefined]` removes that
+ * distinction on every claim at once while looking like a rendering bug rather
+ * than a caveat, which is the reading most likely to be ignored.
+ *
+ * An unlabelled claim falls to `assumed`, the most cautious bin, because a claim
+ * that was not shown to be checked has not been shown to be checked. Downgrading
+ * is safe; anything else invents a warrant the agent did not give.
+ */
+const EPISTEMIC_BINS = ['assumed', 'inferred', 'verified'];
+export function epistemicBin(status) {
+  const s = String(status ?? '').trim().toLowerCase();
+  return EPISTEMIC_BINS.includes(s) ? s : 'assumed';
+}
+
 // B-30: Compose answer-first delivery order from cortex decision fields.
 function composeAnswerFirst(decision, synthesisOutput) {
   if (!decision.answer) return synthesisOutput;
   const lines = [String(decision.answer).trim()];
   if (synthesisOutput) lines.push('', '— Reasoning —', String(synthesisOutput).trim());
-  const assumptions = Array.isArray(decision.assumptions) ? decision.assumptions : [];
+  const assumptions = (Array.isArray(decision.assumptions) ? decision.assumptions : [])
+    // An entry with no claim has nothing to tell the reader; rendering it would
+    // print a bin over the word "undefined".
+    .filter((a) => a && String(a.claim ?? '').trim())
+    .map((a) => ({ ...a, status: epistemicBin(a.status) }));
   const order = { assumed: 0, inferred: 1, verified: 2 };
-  const sorted = [...assumptions].sort((a, b) => (order[a.status] ?? 3) - (order[b.status] ?? 3));
+  const sorted = [...assumptions].sort((a, b) => order[a.status] - order[b.status]);
   if (decision.risk || sorted.length > 0) {
     lines.push('', '— Risk & assumptions —');
     if (decision.risk) lines.push(String(decision.risk).trim());
-    for (const a of sorted) lines.push(`• [${a.status}] ${a.claim}${a.note ? ' — ' + a.note : ''}`);
+    for (const a of sorted) lines.push(`• [${a.status}] ${String(a.claim).trim()}${a.note ? ' — ' + a.note : ''}`);
   }
   return lines.join('\n');
 }

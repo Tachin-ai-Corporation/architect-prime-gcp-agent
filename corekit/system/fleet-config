@@ -718,7 +718,20 @@ if (!command || command === '--help' || command === '-h') {
   process.exit(command ? 0 : 1);
 }
 
-const registry = createRegistry({ projectId: await resolveProject(), actor: actorId(), logger: (lvl, m) => note(`${lvl}: ${m}`) });
+// git-store resolves its bucket and Firestore base from the ENVIRONMENT and
+// caches that on first use, so passing projectId to createRegistry is not enough
+// — the store never sees it. Without the variable it builds a `projects//` URL
+// and Firestore answers 400 "Invalid resource field value in the request",
+// which reads like a malformed query rather than a missing variable.
+//
+// That is every fleet-config command failing, `rollback` included, whenever the
+// variable is absent — which is the normal case: /opt/corekit is root-owned, so
+// this is run under sudo, and sudo does not pass it through. agent-content-sync
+// hit exactly this and fixed it for itself; this caller was left behind, and
+// nothing checked. Set it before anything touches the store.
+const PROJECT_ID = await resolveProject();
+process.env.GCP_PROJECT_ID = process.env.GCP_PROJECT_ID || PROJECT_ID;
+const registry = createRegistry({ projectId: PROJECT_ID, actor: actorId(), logger: (lvl, m) => note(`${lvl}: ${m}`) });
 
 const COMMANDS = {
   import: cmdImport, list: cmdList, get: cmdGet, diff: cmdDiff, validate: cmdValidate,
