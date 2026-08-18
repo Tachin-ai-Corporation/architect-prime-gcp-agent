@@ -79,13 +79,38 @@ shape of the operator's rule: **Prime composes; the repo supplies the parts.**
 
 ## 4. The code budget
 
-"Keep code tight" is only real if it is a constraint with a number attached.
+"Keep code tight" is only real if it is a constraint with a number attached — and the number is only
+real if there is one agreed way to take it.
 
-> **Rule: the repo's tracked line count must not grow across this program.** Every module added is
+> **Rule: the repo's authored line count must not grow across this program.** Every module added is
 > paid for by a deletion. Where that is impossible, the growth is named and justified in the commit.
 
-That is achievable because the biggest wins here are *removals* — retiring a competing authority
-deletes more than the service replacing it adds.
+**The measurement is [`scripts/line-budget.sh`](../../scripts/line-budget.sh), and its baseline is
+`474d7fd` — the commit that wrote this rule.** It counts tracked lines excluding gitignored dev
+tooling (`.claude/`), generated lockfiles, and binary or vendored assets. Fixing the definition in a
+script is not ceremony: the first two figures quoted for this budget disagreed by roughly 1,400 lines
+purely because one included `package-lock.json` and measured from a different starting point. A
+budget whose value depends on who took it cannot fail — and this program has now named that failure
+mode often enough to have a rule for it ([R-11](../IMPROVEMENT_POLICY.md)).
+
+### Standing balance
+
+| commit | delta | what bought it |
+|---|---|---|
+| `5f3a0e8` | +338 | setup gate — a live internet-facing hole (Phase C item 9, pulled forward) |
+| `75f2726` | +576 | `readReleaseDefinitions` — Finding A, the blocker every later phase rests on |
+| `5b3916e` | +582 | that read proven against live data |
+| `9488f11` | **+733** | retired content retires — Finding D |
+
+**+733 and rising, as designed.** Phase A is all addition: it is the four defects that make a release
+mean one thing, and not one of them replaces an existing authority. The debt is paid in Phase D, where
+seeding a Fleet release retires `agent-types.json`, static `kit.json` persona assembly, the
+composition half of `job-*.txt`, local process JSON, the legacy responsibility tools and the
+dashboard's GitHub-catalog readers — all listed below. Carrying visible debt through A–C is the plan.
+Carrying it unmeasured was not.
+
+That balance is achievable because the biggest wins here are *removals* — retiring a competing
+authority deletes more than the service replacing it adds.
 
 ### Delete now — advertised surface with no consumer
 

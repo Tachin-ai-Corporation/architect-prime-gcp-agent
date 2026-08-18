@@ -26,18 +26,39 @@ jobs:
             | xargs -0 -I {} node --check {}
           echo "All .mjs files pass syntax check."
 
+      # Discovery is a DENY-list. This used to walk four corekit subdirectories
+      # plus infra/, which reached 37 of the repo's 127 shell scripts. Outside it
+      # sat EVERY shipped skill tool — the files a deployed agent executes at
+      # mission time — and all twelve corekit/brain/ tools. A parse error in one
+      # of those ships green here and fails on a VM mid-mission. A scan root that
+      # excludes most of its subject does not report reduced coverage; it reports
+      # success.
+      #
+      # Scope, stated so it is not over-read: `bash -n` catches PARSE errors. It
+      # does not catch the quoting-bug class (the project-manage apostrophe break
+      # parsed fine and failed at runtime) — that is what test/tool-hygiene.test.mjs
+      # and per-tool tests are for. Proven by planting a missing `fi` in
+      # skills/workspace-docs/docs-cat: old loop exit 0, this loop exit 1.
+      #
+      # The floor is not decoration: a discovery bug that matches nothing would
+      # otherwise pass as "all clear", which is the same defect one level up.
+      # Proven by narrowing ls-files to one directory: COUNT 3, exit 1.
       - name: Check shell scripts parse
         run: |
-          echo "Parsing shell scripts..."
+          set -uo pipefail
           FAILED=0
-          for f in infra/install.sh \
-                   $(find infra/bootstrap infra/deploy -name "*.sh" 2>/dev/null) \
-                   corekit/system/* corekit/fleet/* corekit/chat/* corekit/memory/* \
-                   platform/runtime/start-* platform/runtime/*-health-check; do
+          COUNT=0
+          while IFS= read -r f; do
             [ -f "$f" ] || continue
-            head -1 "$f" | grep -q '^#!.*\(bash\|sh\)' || continue
-            if bash -n "$f"; then echo "  OK  $f"; else echo "  FAIL $f"; FAILED=1; fi
-          done
+            head -1 "$f" | grep -qE '^#!.*(bash|/sh|env sh)' || continue
+            COUNT=$((COUNT+1))
+            if bash -n "$f"; then :; else echo "  FAIL $f"; FAILED=1; fi
+          done < <(git ls-files)
+          echo "parsed $COUNT shell scripts"
+          if [ "$COUNT" -lt 100 ]; then
+            echo "::error::only $COUNT shell scripts discovered — expected ~127. Discovery is broken, not the repo clean."
+            exit 1
+          fi
           [ "$FAILED" -eq 0 ] || exit 1
 
       - name: Validate JSON configs

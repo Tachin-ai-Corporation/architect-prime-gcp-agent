@@ -46,9 +46,12 @@ A ranked-6 improvement is not forbidden. It is simply never the answer to "what 
 An allow-list of directories does not report reduced coverage — **it reports success**. Every tree
 added after the list was written is silently outside it.
 
-This repo has been bitten five separate times: `contract-liveness`, `primitive-contracts`, CI's `.mjs`
-syntax job, the depth-shaped `.gitattributes` rules, and `identity-scan`. In each case the check was
-green while covering a fraction of what it named.
+This repo has been bitten six separate times: `contract-liveness`, `primitive-contracts`, CI's `.mjs`
+syntax job, the depth-shaped `.gitattributes` rules, `identity-scan`, and CI's **shell-parse** job —
+which named four `corekit/` subdirectories and `infra/`, and so parsed 37 of the repo's 127 shell
+scripts. The 90 it never opened included every shipped skill tool: the exact files a deployed agent
+executes at mission time. In each case the check was green while covering a fraction of what it named,
+and in each case the fraction shrank as the repo grew — an allow-list decays silently by construction.
 
 **Do:** scan everything, exclude by explicit pattern with a written reason.
 **Never:** exclude a whole tree to spare one file. `test/identity-scan.test.mjs` must contain
