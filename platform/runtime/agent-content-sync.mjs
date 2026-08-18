@@ -185,6 +185,25 @@ async function onePass() {
     return { action: 'skip', reason: 'sync disabled by contract' };
   }
 
+  // Retire the directory the previous version of this daemon left behind.
+  //
+  // `.content-previous` was written by every apply and read by nothing. Removing
+  // the code that wrote it does not remove the ~27 stale files already sitting
+  // under it on every deployed VM, and a directory named "previous" that nothing
+  // maintains is a worse artifact than the code was: the next person to inspect a
+  // VM would reasonably read it as a rollback source and reason from bytes that
+  // stopped being updated at whatever release was live when this shipped.
+  //
+  // Idempotent (C-18) and self-deleting: the branch stops firing once it has run,
+  // and it costs one existsSync on a pass that is usually a no-op anyway. Disposal
+  // belongs to the code that created the mess, not to an operator runbook.
+  const retired = join(CORE_DIR, '.content-previous');
+  if (existsSync(retired)) {
+    rmSync(retired, { recursive: true, force: true });
+    log('INFO', 'removed .content-previous — it was written by every apply and read by nothing; '
+      + 'rollback is registry.rollback() re-rendering from the predecessor release\'s pinned commit');
+  }
+
   const projectId = await resolveProject();
 
   // git-store resolves its bucket and Firestore base from the environment and

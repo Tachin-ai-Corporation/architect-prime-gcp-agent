@@ -169,6 +169,14 @@ jobs:
       - name: The installer respects content-plane ownership
         run: node --test test/content-plane-ownership.test.mjs
 
+      # Reading the ownership record correctly is not the same as respecting it.
+      # This runs the sweep block lifted out of install.sh over a tree holding all
+      # three ownership cases, and asserts the counterfactual too — with no record
+      # the release-owned skill IS deleted, which is what makes the survival a
+      # proof rather than a coincidence.
+      - name: The orphan sweep keeps release content and still removes orphans
+        run: node --test test/orphan-sweep.test.mjs
+
   codeowners:
     name: CODEOWNERS Resolves
     runs-on: ubuntu-latest
