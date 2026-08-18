@@ -185,6 +185,15 @@ jobs:
       - name: An applied release is a live release
         run: node --test test/capability-refresh.test.mjs
 
+      # A storage outage must not read as an empty world. read() returned null for
+      # a 404, a 500 and a 403 alike and query() returned [] on failure, so the
+      # lifecycle acted on the difference without knowing there was one. Includes
+      # the wiring checks: strict must be passed at the TOP LEVEL of each call —
+      # the transform that added them first nested it inside pathFor(), where it
+      # parsed, read correctly in a grep, and did nothing.
+      - name: The lifecycle fails closed on a storage failure
+        run: node --test test/storage-fails-closed.test.mjs
+
   codeowners:
     name: CODEOWNERS Resolves
     runs-on: ubuntu-latest

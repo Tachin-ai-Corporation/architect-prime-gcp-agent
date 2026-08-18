@@ -99,22 +99,71 @@ export function firestoreDecode(fields) {
  * @param {function} [config.logger] - Logger function, defaults to console.log
  * @returns {object} Client with read/write/query/patch/del methods
  */
+/**
+ * A storage operation that did not complete — as distinct from one that
+ * completed and found nothing.
+ *
+ * The distinction is the whole point. `read()` returned null for a 404, a 500
+ * and a 403 alike, so an outage was indistinguishable from an empty world, and
+ * `query()` returned [] on failure, which reads as "no matching documents".
+ * Callers then acted on that: agent-brain treats an unreadable delegate as a
+ * FAILED one (:5089 `// Null child = deleted from Firestore (treat as failed)`)
+ * and escalates to a human about work that is running fine.
+ *
+ * This is not a new convention. git-store.mjs:152-157 in this same package
+ * already does exactly this — `if (resp.status === 404) return null;` then
+ * throw, under a comment reading "surface real errors instead of silently
+ * returning null". That fix was made on the git side and never applied here.
+ */
+export class StoreUnavailable extends Error {
+  constructor(op, path, status, body) {
+    super(`Firestore ${op} ${path}: HTTP ${status} ${String(body).slice(0, 200)}`);
+    this.name = 'StoreUnavailable';
+    this.status = status;
+  }
+}
+
+/**
+ * How long any single Firestore call may take.
+ *
+ * There was no timeout at all: the token fetch had AbortSignal.timeout(5_000)
+ * but the five calls it authorises had none, so a hung connection blocked a
+ * daemon poll tick indefinitely — a worse failure than an error, because an
+ * error at least terminates. Matches the 10s git-store.mjs:150 already uses.
+ */
+const DEFAULT_TIMEOUT_MS = 10_000;
+
 export function createClient(config) {
   const BASE = `https://firestore.googleapis.com/v1/projects/${config.projectId}/databases/(default)/documents`;
   const log = config.logger || ((...args) => console.log('[firestore]', ...args));
+  const timeoutMs = config.timeoutMs || DEFAULT_TIMEOUT_MS;
+  const abort = () => AbortSignal.timeout(timeoutMs);
 
   /**
    * Read a single document by path.
    * @param {string} path - Document path, e.g. 'primes/chuck/work/w-123'
    * @returns {Promise<object|null>} Decoded document or null if not found
    */
-  async function read(path) {
+  async function read(path, opts = {}) {
     const token = await getGceToken();
     const url = `${BASE}/${path}`;
     const resp = await fetch(url, {
       headers: { 'Authorization': `Bearer ${token}` },
+      signal: abort(),
     });
-    if (!resp.ok) return null;
+    if (!resp.ok) {
+      // A 404 is an answer: the document is not there. Every other status is a
+      // failure to get an answer, and the two must not share a return value.
+      if (resp.status === 404) return null;
+      const text = await resp.text();
+      if (opts.strict) throw new StoreUnavailable('read', path, resp.status, text);
+      // Non-strict callers keep the old return so nothing outside the lifecycle
+      // changes behaviour — but this is no longer SILENT. read() was the only
+      // one of the five methods that did not log at all, which made an outage
+      // byte-for-byte identical to a healthy idle agent in the journal.
+      log('WARN', `Firestore read failed: ${resp.status} ${path} — returning null, which callers may read as 'absent'`);
+      return null;
+    }
     const doc = await resp.json();
     return firestoreDecode(doc.fields || {});
   }
@@ -127,7 +176,7 @@ export function createClient(config) {
    * @param {object} data - Plain JS object to write
    * @returns {Promise<object|null>} Written document or null on failure
    */
-  async function write(path, data) {
+  async function write(path, data, opts = {}) {
     const token = await getGceToken();
     // Guard against Firestore 1MB document limit — truncate oversized output fields
     if (data?.output && typeof data.output === 'string') {
@@ -160,10 +209,12 @@ export function createClient(config) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ fields: firestoreEncode(data) }),
+      signal: abort(),
     });
     if (!resp.ok) {
       const text = await resp.text();
       log('ERROR', `Firestore write failed: ${resp.status} ${text}`);
+      if (opts.strict) throw new StoreUnavailable('write', path, resp.status, text);
       return null;
     }
     return await resp.json();
@@ -218,10 +269,16 @@ export function createClient(config) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ structuredQuery }),
+      signal: abort(),
     });
     if (!resp.ok) {
       const text = await resp.text();
       log('ERROR', `Firestore query failed: ${resp.status} ${text}`);
+      // [] is the most dangerous of the failure values: it does not read as an
+      // error, it reads as a fact — "no matching documents". A dedup guard in
+      // agent-brain.mjs:4829 catches an exception "to avoid a duplicate" and can
+      // never fire, because this returned [] instead of throwing.
+      if (opts.strict) throw new StoreUnavailable('query', `${parentPath}/${collectionId}`, resp.status, text);
       return [];
     }
     const results = await resp.json();
@@ -241,7 +298,7 @@ export function createClient(config) {
    * @param {object} fields - Already-encoded Firestore fields to set
    * @returns {Promise<object|null>} Updated document or null on failure
    */
-  async function patch(path, fieldPaths, fields) {
+  async function patch(path, fieldPaths, fields, opts = {}) {
     const token = await getGceToken();
     const mask = fieldPaths.map(f => `updateMask.fieldPaths=${f}`).join('&');
     const url = `${BASE}/${path}?${mask}`;
@@ -252,10 +309,12 @@ export function createClient(config) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({ fields }),
+      signal: abort(),
     });
     if (!resp.ok) {
       const text = await resp.text();
       log('ERROR', `Firestore patch failed: ${resp.status} ${text}`);
+      if (opts.strict) throw new StoreUnavailable('patch', path, resp.status, text);
       return null;
     }
     return await resp.json();
@@ -267,16 +326,18 @@ export function createClient(config) {
    * @param {string} path - Document path to delete
    * @returns {Promise<boolean>} True if deleted successfully
    */
-  async function del(path) {
+  async function del(path, opts = {}) {
     const token = await getGceToken();
     const url = `${BASE}/${path}`;
     const resp = await fetch(url, {
       method: 'DELETE',
       headers: { 'Authorization': `Bearer ${token}` },
+      signal: abort(),
     });
     if (!resp.ok) {
       const text = await resp.text();
       log('ERROR', `Firestore delete failed: ${resp.status} ${text}`);
+      if (opts.strict) throw new StoreUnavailable('del', path, resp.status, text);
       return false;
     }
     return true;

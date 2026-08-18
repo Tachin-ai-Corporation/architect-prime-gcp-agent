@@ -130,7 +130,7 @@ export function createRegistry(config) {
    * @returns {Promise<{definitions: Map, release: object, commit: string}>}
    */
   async function readReleaseDefinitions(releaseId) {
-    const release = await db.read(pathFor('fleetRelease', releaseId));
+    const release = await db.read(pathFor('fleetRelease', releaseId), { strict: true });
     if (!release) throw new Error(`readRelease: unknown release '${releaseId}'`);
 
     const commit = release.content_ref?.commit;
@@ -319,7 +319,7 @@ export function createRegistry(config) {
       risk,
     };
 
-    await db.write(pathFor('fleetChange', changeId), change);
+    await db.write(pathFor('fleetChange', changeId), change, { strict: true });
     log('INFO', `change ${changeId}: ${sealed.length} revision(s) on ${branch}`);
     return { ok: true, change, branch };
   }
@@ -361,10 +361,10 @@ export function createRegistry(config) {
   /** Record a validation verdict on a change. An absent check is not a pass. */
   async function recordValidation(changeId, { passed, errors, checks }) {
     const path = pathFor('fleetChange', changeId);
-    const change = await db.read(path);
+    const change = await db.read(path, { strict: true });
     if (!change) throw new Error(`unknown change '${changeId}'`);
     const validation = { at: nowIso(), passed, errors: errors || [], checks: checks || [] };
-    await db.write(path, { ...change, validation, status: passed ? 'validated' : 'draft' });
+    await db.write(path, { ...change, validation, status: passed ? 'validated' : 'draft' }, { strict: true });
     return validation;
   }
 
@@ -380,7 +380,7 @@ export function createRegistry(config) {
 
     const changes = [];
     for (const id of changeIds) {
-      const change = await db.read(pathFor('fleetChange', id));
+      const change = await db.read(pathFor('fleetChange', id), { strict: true });
       if (!change) throw new Error(`unknown change '${id}'`);
       if (!change.validation?.passed) {
         throw new Error(`change '${id}' has no passing validation — a release carries its evidence (C-31)`);
@@ -503,9 +503,9 @@ export function createRegistry(config) {
       status: 'pending',
     };
 
-    await db.write(pathFor('fleetRelease', releaseId), release);
+    await db.write(pathFor('fleetRelease', releaseId), release, { strict: true });
     for (const change of changes) {
-      await db.write(pathFor('fleetChange', change.id), { ...change, status: 'released' });
+      await db.write(pathFor('fleetChange', change.id), { ...change, status: 'released' }, { strict: true });
     }
     log('INFO', `release ${releaseId} at ${commit.slice(0, 12)} (parent ${parent || 'none'})`);
     return release;
@@ -516,13 +516,13 @@ export function createRegistry(config) {
    * agent, and the only thing that makes a definition live.
    */
   async function assign({ releaseId, agents, specDigests, pinned = false }) {
-    const release = await db.read(pathFor('fleetRelease', releaseId));
+    const release = await db.read(pathFor('fleetRelease', releaseId), { strict: true });
     if (!release) throw new Error(`unknown release '${releaseId}'`);
 
     const written = [];
     for (const agentId of agents) {
       const path = pathFor('fleetAssignment', agentId);
-      const existing = await db.read(path);
+      const existing = await db.read(path, { strict: true });
       const assignment = {
         id: agentId,
         schema_version: 1,
@@ -550,16 +550,16 @@ export function createRegistry(config) {
         last_error: null,
         updated_at: nowIso(),
       };
-      await db.write(path, assignment);
+      await db.write(path, assignment, { strict: true });
       written.push(assignment);
     }
 
     const status = pinned ? 'canary' : 'active';
-    await db.write(pathFor('fleetRelease', releaseId), { ...release, status });
+    await db.write(pathFor('fleetRelease', releaseId), { ...release, status }, { strict: true });
     if (status === 'active' && release.parent_release) {
-      const prev = await db.read(pathFor('fleetRelease', release.parent_release));
+      const prev = await db.read(pathFor('fleetRelease', release.parent_release), { strict: true });
       if (prev && prev.status === 'active') {
-        await db.write(pathFor('fleetRelease', prev.id), { ...prev, status: 'superseded' });
+        await db.write(pathFor('fleetRelease', prev.id), { ...prev, status: 'superseded' }, { strict: true });
       }
     }
     return written;
@@ -574,12 +574,12 @@ export function createRegistry(config) {
    * rollback safe to perform under pressure.
    */
   async function rollback({ releaseId, reason }) {
-    const release = await db.read(pathFor('fleetRelease', releaseId));
+    const release = await db.read(pathFor('fleetRelease', releaseId), { strict: true });
     if (!release) throw new Error(`unknown release '${releaseId}'`);
     const target = release.parent_release;
     if (!target) throw new Error(`release '${releaseId}' has no predecessor to roll back to`);
 
-    const prior = await db.read(pathFor('fleetRelease', target));
+    const prior = await db.read(pathFor('fleetRelease', target), { strict: true });
     if (!prior) throw new Error(`rollback target '${target}' is missing from the registry`);
 
     const affected = await listAssignments();
@@ -593,19 +593,19 @@ export function createRegistry(config) {
         drift: 'pending',
         last_error: `rolled back from ${releaseId}: ${reason}`,
         updated_at: nowIso(),
-      });
+      }, { strict: true });
       repointed.push(a.id);
     }
 
-    await db.write(pathFor('fleetRelease', releaseId), { ...release, status: 'rolled-back' });
-    await db.write(pathFor('fleetRelease', target), { ...prior, status: 'active' });
+    await db.write(pathFor('fleetRelease', releaseId), { ...release, status: 'rolled-back' }, { strict: true });
+    await db.write(pathFor('fleetRelease', target), { ...prior, status: 'active' }, { strict: true });
     log('INFO', `rolled back ${releaseId} → ${target} for ${repointed.length} agent(s)`);
     return { from: releaseId, to: target, agents: repointed };
   }
 
   /** Every assignment in the deployment. */
   async function listAssignments() {
-    const docs = await db.query('', 'fleet_assignments', [], { noOrderBy: true, limit: 300 });
+    const docs = await db.query('', 'fleet_assignments', [], { strict: true, noOrderBy: true, limit: 300 });
     return docs || [];
   }
 
@@ -630,7 +630,7 @@ export function createRegistry(config) {
   async function readReleaseWork(releaseId, digests, { limit = 500 } = {}) {
     const rows = (await db.query('', 'work', [
       { field: 'fleet_release', op: 'EQUAL', value: { stringValue: releaseId } },
-    ], { noOrderBy: true, limit })) || [];
+    ], { strict: true, noOrderBy: true, limit })) || [];
 
     const wanted = new Set(digests);
     const work = [];
@@ -662,7 +662,7 @@ export function createRegistry(config) {
     for (const status of ['active', 'canary']) {
       const docs = await db.query('', 'fleet_releases', [
         { field: 'status', op: 'EQUAL', value: { stringValue: status } },
-      ], { noOrderBy: true, limit: 100 });
+      ], { strict: true, noOrderBy: true, limit: 100 });
       live.push(...(docs || []));
     }
     if (!live.length) return null;
@@ -678,14 +678,14 @@ export function createRegistry(config) {
 
   /** The currently active release id, or null. */
   async function activeReleaseId() {
-    const docs = await db.query('', 'fleet_releases', [{ field: 'status', op: 'EQUAL', value: { stringValue: 'active' } }], { noOrderBy: true, limit: 5 });
+    const docs = await db.query('', 'fleet_releases', [{ field: 'status', op: 'EQUAL', value: { stringValue: 'active' } }], { strict: true, noOrderBy: true, limit: 5 });
     return docs?.[0]?.id ?? null;
   }
 
   /** Report an agent's actual applied state, closing the desired/actual loop. */
   async function reportApplied({ agentId, releaseId, specDigest, error = null }) {
     const path = pathFor('fleetAssignment', agentId);
-    const a = await db.read(path);
+    const a = await db.read(path, { strict: true });
     if (!a) throw new Error(`no assignment for agent '${agentId}'`);
     // With no pinned digest, converging means running the assigned release and
     // having attested a digest for it. With one, the digests must match.
@@ -703,7 +703,7 @@ export function createRegistry(config) {
       last_error: error,
       updated_at: nowIso(),
     };
-    await db.write(path, next);
+    await db.write(path, next, { strict: true });
     return next;
   }
 

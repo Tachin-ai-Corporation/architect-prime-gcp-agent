@@ -240,7 +240,7 @@ async function cmdValidate(registry, args) {
   const [changeId] = args;
   if (!changeId) die('usage: fleet-config validate <changeId>');
 
-  const change = await registry._db.read(`fleet_changes/${changeId}`);
+  const change = await registry._db.read(`fleet_changes/${changeId}`, { strict: true });
   if (!change) die(`unknown change '${changeId}'`);
 
   const { definitions } = await registry.readDefinitions({ branch: `change/${changeId}` });
@@ -303,7 +303,7 @@ async function cmdAssign(registry, args) {
   const explicitRole = argValue(args, '--role');
   const specDigests = {};
   for (const agentId of agents) {
-    const existing = await registry._db.read(`fleet_assignments/${agentId}`);
+    const existing = await registry._db.read(`fleet_assignments/${agentId}`, { strict: true });
     const roleId = explicitRole || existing?.role_id;
     if (!roleId || roleId === 'unknown') {
       die(`no role for agent '${agentId}' — pass --role <id>`);
@@ -355,7 +355,7 @@ async function cmdCompile(registry, args) {
   const [agentId] = args.filter((a) => !a.startsWith('--'));
   if (!agentId) die('usage: fleet-config compile <agentId>');
 
-  const assignment = await registry._db.read(`fleet_assignments/${agentId}`);
+  const assignment = await registry._db.read(`fleet_assignments/${agentId}`, { strict: true });
   const roleId = argValue(args, '--role') || assignment?.role_id;
   if (!roleId) die(`no role for agent '${agentId}' — pass --role`);
 
@@ -409,7 +409,7 @@ async function cmdEvaluate(registry, args) {
   try { suite = JSON.parse(readFileSync(suitePath, 'utf8')); }
   catch (e) { die(`suite is not valid JSON: ${e.message}`); }
 
-  const assignment = await registry._db.read(`fleet_assignments/${agentId}`);
+  const assignment = await registry._db.read(`fleet_assignments/${agentId}`, { strict: true });
   const roleId = argValue(args, '--role') || assignment?.role_id;
   if (!roleId) die(`no role for agent '${agentId}' — pass --role`);
 
@@ -468,7 +468,7 @@ async function cmdEvaluate(registry, args) {
 
   note(renderEvaluation(record));
   if (args.includes('--save')) {
-    await registry._db.write(pathFor('fleetEvaluation', record.id), record);
+    await registry._db.write(pathFor('fleetEvaluation', record.id), record, { strict: true });
     note(`saved ${record.id}`);
   }
   emit(record);
@@ -491,7 +491,7 @@ async function cmdObserve(registry, args) {
   const [releaseId] = args.filter((a) => !a.startsWith('--'));
   if (!releaseId) die('usage: fleet-config observe <releaseId> [--apply] [--stage canary|partial|fleet]');
 
-  const release = await registry._db.read(pathFor('fleetRelease', releaseId));
+  const release = await registry._db.read(pathFor('fleetRelease', releaseId), { strict: true });
   if (!release) die(`unknown release '${releaseId}'`);
 
   /** The release's own work, reporting anything the read did not cover. */
@@ -512,7 +512,7 @@ async function cmdObserve(registry, args) {
 
   const digests = new Set(onRelease.map((a) => a.actual_spec_digest));
   const priorId = release.parent_release;
-  const prior = priorId ? await registry._db.read(pathFor('fleetRelease', priorId)) : null;
+  const prior = priorId ? await registry._db.read(pathFor('fleetRelease', priorId), { strict: true }) : null;
 
   // Work is deployment-rooted (C-1), so one read per release covers every agent
   // on it; the digest stamp then separates the groups.
@@ -599,7 +599,7 @@ async function cmdFinding(registry, args) {
   if (sub === 'list') {
     const status = argValue(args, '--status');
     const filters = status ? [{ field: 'status', op: 'EQUAL', value: { stringValue: status } }] : [];
-    const docs = await registry._db.query('', 'platform_findings', filters, { noOrderBy: true, limit: 100 });
+    const docs = await registry._db.query('', 'platform_findings', filters, { strict: true, noOrderBy: true, limit: 100 });
     emit({
       findings: (docs || []).map((f) => ({
         id: f.id, title: f.title, severity: f.severity, class: f.required_class,
@@ -612,7 +612,7 @@ async function cmdFinding(registry, args) {
   if (sub === 'status') {
     const id = args.filter((a) => !a.startsWith('--'))[1];
     if (!id) die('usage: fleet-config finding status <id>');
-    const f = await registry._db.read(pathFor('platformFinding', id));
+    const f = await registry._db.read(pathFor('platformFinding', id), { strict: true });
     if (!f) die(`no such finding '${id}'`);
     emit(f);
     return;
@@ -654,6 +654,11 @@ ${logs}`);
   }
 
   const now = new Date().toISOString();
+  // Best-effort, and deliberately NOT strict. These coordinates stamp a FINDING,
+  // which is a note for a human — and a finding may well be ABOUT the storage
+  // being degraded. Refusing to file one because the store is unreachable would
+  // suppress the report exactly when it matters most. Every other _db call in
+  // this file drives a lifecycle decision and fails closed.
   const assignment = await registry._db.read(`fleet_assignments/${actorId()}`).catch(() => null);
 
   const finding = {
@@ -686,7 +691,7 @@ ${logs}`);
   const record = { id, ...finding };
   assertValid(PLATFORM_FINDING_SCHEMA, record, `platformFinding/${id}`);
 
-  await registry._db.write(pathFor('platformFinding', id), record);
+  await registry._db.write(pathFor('platformFinding', id), record, { strict: true });
   note(`filed ${id} — a maintainer reviews it; nothing in this deployment changed`);
   emit(record);
 }

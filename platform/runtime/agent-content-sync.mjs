@@ -418,8 +418,15 @@ async function onePass() {
 
   rmSync(staging, { recursive: true, force: true });
 
-  await registry.reportApplied({ agentId: agent, releaseId: assignment.desired_release, specDigest: spec.digest });
+  // Log the apply BEFORE reporting it upstream. The content is on disk by this
+  // point and the record is written; reportApplied only closes the desired/actual
+  // loop in Firestore, and that write now fails closed (it goes through the
+  // registry, which is strict). If it throws, the pass surfaces as an ERROR —
+  // correctly, because the registry no longer knows what this agent is running —
+  // but the apply itself SUCCEEDED, and a journal that omits that line would send
+  // the next person looking for a failed apply that never happened.
   log('INFO', `applied ${assignment.desired_release} (${spec.digest.slice(0, 19)}…): ${plan.write.length} written, ${plan.remove.length} removed, ${plan.unchanged.length} unchanged`);
+  await registry.reportApplied({ agentId: agent, releaseId: assignment.desired_release, specDigest: spec.digest });
   return { action: 'applied', digest: spec.digest };
 }
 
