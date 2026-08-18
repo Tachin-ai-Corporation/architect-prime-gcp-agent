@@ -129,6 +129,12 @@ jobs:
       - name: First-run setup surface is token-gated
         run: node --test test/setup-gate.test.mjs
 
+      # A release id must mean ONE set of bytes. The daemon used to compile the
+      # mutable branch tip and stamp it with the pinned release, so an agent could
+      # run content nobody approved while every coordinate read correct.
+      - name: A release resolves to fixed bytes
+        run: node --test test/release-bytes.test.mjs
+
   codeowners:
     name: CODEOWNERS Resolves
     runs-on: ubuntu-latest
