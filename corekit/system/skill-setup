@@ -207,59 +207,34 @@ setup_all() {
   info "Checked ${count} skill directories"
 }
 
-# ---- Build the high-level brain capability map (auto-generated on deploy) ----
-# A curated, high-level index of what each brain organ can do — capability names +
-# one-line purpose only, NO paths and NO how-to. Prefrontal/Cortex plan against THIS
-# map (surfaced via the skill-introspect skill); they never read another organ's
-# SKILL.md. Regenerated on every upgrade so it never drifts from what's installed.
-build_capability_map() {
-  local out="${CORE_DIR}/skill-capability-map.md"
-  python3 - "$SKILLS_DIR" "$out" <<'PYEOF'
-import json, os, sys, glob
-skills_dir, out = sys.argv[1], sys.argv[2]
-seen = {}
-for jp in sorted(glob.glob(os.path.join(skills_dir, "*", "skill.json"))):
-    try: d = json.load(open(jp, encoding="utf-8"))
-    except Exception: continue
-    sid = d.get("id") or os.path.basename(os.path.dirname(jp))
-    if sid in seen: continue
-    ap = d.get("agent_part") or "motor"
-    parts = ap if isinstance(ap, list) else [ap]
-    summ = (d.get("summary") or "").strip()
-    if not summ:
-        desc = (d.get("description") or d.get("when_to_use") or "").strip()
-        summ = desc.split(". ")[0].strip().rstrip(".")
-        if len(summ) > 140: summ = summ[:137].rstrip() + "..."
-    seen[sid] = {"name": d.get("name") or sid, "parts": parts, "summary": summ}
-by_organ = {}
-for sid, s in seen.items():
-    for p in s["parts"]:
-        by_organ.setdefault(p, []).append((s["name"], s["summary"]))
-ORDER = ["cortex","prefrontal","motor","cerebellum","temporal-memory","temporal-research","all"]
-organs = sorted(by_organ, key=lambda o: (ORDER.index(o) if o in ORDER else 99, o))
-lines = [
-  "# Brain Capability Map (auto-generated on deploy — do not hand-edit)",
-  "",
-  "High-level view of what each brain organ can do: capability names + one-line",
-  "purpose only. This is NOT how-to and carries no paths — you cannot open another",
-  "organ's skills. Plan by OUTCOME and route by OWNERSHIP; each organ chooses its",
-  "own skills for the work it is given. Never tell another organ which skill to use.",
-  "",
-]
-for o in organs:
-    lines.append(f"## {o}")
-    for name, summ in sorted(by_organ[o]):
-        lines.append(f"- {name}" + (f" — {summ}" if summ else ""))
-    lines.append("")
-open(out, "w", encoding="utf-8", newline="\n").write("\n".join(lines))
-print(f"[skill-setup] wrote capability map ({len(seen)} skills, {len(organs)} organs) -> {out}")
-PYEOF
+# ---- Retire the generated capability map ----
+# This used to BUILD ${CORE_DIR}/skill-capability-map.md, and agent-brain preferred
+# that file over deriving the map from its live skill index. So the map that decides
+# what work is even possible refreshed only on a PLATFORM UPGRADE: a skill added by a
+# Fleet release stayed invisible to planning until an unrelated platform event, and a
+# brain restart did not help because it re-read the same stale file.
+#
+# The generator was also less correct than the derivation that replaced it. It globbed
+# skills/*/skill.json only — missing specialty skills and workspace/custom-skills — and
+# ignored skill.json `roles`, so it could advertise a capability the agent's role
+# excludes. Deleting it removes a second authority over one answer, not just some code.
+#
+# Removal, not just non-generation: dropping the writer leaves the stale file on every
+# deployed VM, and a file headed "auto-generated on deploy — do not hand-edit" that
+# nothing generates and nothing reads is a trap for whoever inspects a VM next.
+# Idempotent (C-18); disposal belongs to the code that created the mess.
+retire_capability_map() {
+  local stale="${CORE_DIR}/skill-capability-map.md"
+  if [[ -f "$stale" ]]; then
+    rm -f "$stale"
+    echo "[skill-setup] removed ${stale} — the brain now derives this from its live skill index"
+  fi
 }
 
 # ---- Main ----
 if [[ "${1:-}" == "--all" ]]; then
   setup_all
-  build_capability_map
+  retire_capability_map
 elif [[ -n "${1:-}" ]]; then
   SKILL_ID="$1"
   # Search for skill directory

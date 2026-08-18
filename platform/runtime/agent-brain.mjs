@@ -406,6 +406,12 @@ function buildSkillIndex() {
           agent_parts: Array.isArray(manifest.agent_part) ? manifest.agent_part : [manifest.agent_part || 'motor'],
           when_to_use: manifest.when_to_use || '',
           category: manifest.category || '',
+          // `summary` is the field skill-setup's generator preferred when it built
+          // the capability map out-of-process. Carrying it here is what lets that
+          // generator be deleted without losing fidelity — only two shipped
+          // skill.json files set it, but a silently different summary would be a
+          // hard difference to notice.
+          summary: manifest.summary || '',
           path: skillDir + '/SKILL.md',
         });
       } catch {}
@@ -427,15 +433,27 @@ function formatSkillCatalog(skillIndex) {
 
 // ---- Brain capability map (path-free, high-level; for planning organs) ----
 // The HIGH-LEVEL view of what each organ can do — names + one-line purpose, NO
-// paths, NO how-to. Generated on deploy by skill-setup (skill-capability-map.md).
-// Cortex/Prefrontal plan against THIS, never a skill catalog: they see WHICH organ
-// can do WHAT, not HOW — the executing organ chooses its own skills. Falls back to
-// an in-memory derivation if the generated file is absent (older install / boot race).
+// paths, NO how-to. Cortex/Prefrontal plan against THIS, never a skill catalog:
+// they see WHICH organ can do WHAT, not HOW — the executing organ chooses its own
+// skills.
+//
+// DERIVED from the live skill index. It used to prefer a file, skill-capability-map.md,
+// which skill-setup generated ON DEPLOY — so the map that decides what work is even
+// possible refreshed only at a PLATFORM UPGRADE. A skill added by a Fleet release was
+// invisible to planning until an unrelated platform event, and a brain restart did not
+// help because the restart re-read the same stale file.
+//
+// The derivation is also strictly more correct than the file was. That generator
+// globbed skills/*/skill.json only, so it missed specialty skills and
+// workspace/custom-skills entirely, and it ignored skill.json `roles` — it could
+// advertise to cortex a capability this agent's role excludes.
 function formatCapabilityMapFromIndex(skillIndex) {
   if (!skillIndex?.length) return '';
   const byOrgan = {};
   for (const s of skillIndex) {
-    const brief = (s.when_to_use || s.category || '').split('. ')[0].slice(0, 120);
+    // summary → when_to_use → category, matching the precedence the deleted
+    // out-of-process generator used, so the map does not silently change wording.
+    const brief = (s.summary || s.when_to_use || s.category || '').split('. ')[0].slice(0, 120);
     for (const o of (s.agent_parts || ['motor'])) {
       (byOrgan[o] ||= []).push(`- ${s.name}${brief ? ` — ${brief}` : ''}`);
     }
@@ -444,14 +462,52 @@ function formatCapabilityMapFromIndex(skillIndex) {
   const organs = Object.keys(byOrgan).sort((a, b) => ((order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99)));
   return organs.map(o => `## ${o}\n${byOrgan[o].sort().join('\n')}`).join('\n\n');
 }
-function loadCapabilityMap() {
-  try {
-    const m = readFileSync(CORE_DIR + '/skill-capability-map.md', 'utf8');
-    if (m && m.trim()) return m.trim();
-  } catch {}
-  return formatCapabilityMapFromIndex(SKILL_INDEX);
+let CAPABILITY_MAP = formatCapabilityMapFromIndex(SKILL_INDEX);
+
+/**
+ * Re-derive what this agent can do, at a mission boundary.
+ *
+ * Both of these were built once at module load and never rebuilt, and content-sync
+ * restarts nothing — so an APPLIED release was not a LIVE release. Every other
+ * correctness property in the release path sits upstream of this step.
+ *
+ * A BOUNDARY, deliberately, not a watcher. Responsibilities hot-reload on a
+ * watchFile because the scheduler only starts new work with them; these two are read
+ * throughout a mission, and swapping an agent's capabilities underneath running work
+ * is what C-32 forbids. Refreshing between missions gives a mission one stable answer
+ * to "what can I do" for its whole life, which is the same guarantee content-sync's
+ * idle boundary gives its files.
+ *
+ * Refuses an empty result. buildSkillIndex() swallows every error it meets — an
+ * unreadable directory, a half-written skill.json — and returns a SHORTER list rather
+ * than failing. A shorter list is legitimate (a release can retire a skill); an EMPTY
+ * one never is, because an agent always has base skills. Adopting it would silently
+ * strip the agent of every capability at the moment a scan glitched.
+ */
+function refreshCapabilities(reason) {
+  const next = buildSkillIndex();
+  if (!next.length) {
+    log('WARN', `skill index rebuild came back empty (${reason}) — keeping the previous `
+      + `${SKILL_INDEX.length}. An agent with zero skills is a failed scan, not a valid state.`);
+    return;
+  }
+
+  const before = SKILL_INDEX.map((s) => s.id).sort();
+  const after = next.map((s) => s.id).sort();
+  SKILL_INDEX = next;
+  CAPABILITY_MAP = formatCapabilityMapFromIndex(next);
+
+  // Quiet unless something actually moved: this runs before every mission, and a
+  // line per mission saying "nothing changed" is how a real change gets missed.
+  if (before.join(',') !== after.join(',')) {
+    const added = after.filter((id) => !before.includes(id));
+    const removed = before.filter((id) => !after.includes(id));
+    log('INFO', `capabilities changed at ${reason}: `
+      + `${added.length ? `+[${added.join(', ')}] ` : ''}`
+      + `${removed.length ? `-[${removed.join(', ')}] ` : ''}`
+      + `(${after.length} skills)`);
+  }
 }
-let CAPABILITY_MAP = loadCapabilityMap();
 
 // ---- Project registry (via platform/control-plane/projects.mjs, Phase 1A extraction) ----
 // NOTE: _projects is initialized later in startupInit() after PRIME_ID/AGENT_ID are set.
@@ -3709,6 +3765,10 @@ async function processEnvelope(envelope, memoryContext) {
     log('WARN', `Skipping envelope ${envelope.id} — claimed by another processor`);
     return;
   }
+
+  // The mission boundary. A release applied since the last mission takes effect
+  // here, and then stays fixed for this mission's whole life (C-32).
+  refreshCapabilities(`mission ${envelope.id}`);
 
   try {
     await _processEnvelopeInner(envelope, memoryContext, claimId);

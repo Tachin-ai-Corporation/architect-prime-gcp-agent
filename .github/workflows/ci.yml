@@ -177,6 +177,14 @@ jobs:
       - name: The orphan sweep keeps release content and still removes orphans
         run: node --test test/orphan-sweep.test.mjs
 
+      # An APPLIED release must be a LIVE release. SKILL_INDEX and the capability
+      # map cortex plans against were both built once at module load, and the map
+      # preferred a file that only a PLATFORM UPGRADE regenerated — so a skill a
+      # release added reached neither. Every other property in the release path
+      # sits upstream of this step.
+      - name: An applied release is a live release
+        run: node --test test/capability-refresh.test.mjs
+
   codeowners:
     name: CODEOWNERS Resolves
     runs-on: ubuntu-latest
