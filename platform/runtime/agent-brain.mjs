@@ -386,6 +386,19 @@ function buildSkillIndex() {
     skillsDirs.push(customDir);
   }
 
+  // One entry per skill id, first directory wins.
+  //
+  // The three scan roots OVERLAP by construction: skill-setup symlinks every
+  // specialty and custom skill into skills/<id>, so the same skill is reached
+  // twice — once through the link and once at its source. Without this, a live
+  // fleet agent derived a capability map listing "Calendar Operations" twice,
+  // which is both noise in cortex's context and a miscount of what the agent has.
+  //
+  // The out-of-process generator this replaced deduped (`if sid in seen:
+  // continue`) and dropping that was a real regression — caught by running the
+  // derivation against a live VM rather than by any test here, because the
+  // duplicate only exists where the symlinks do.
+  const seen = new Set();
   for (const dir of skillsDirs) {
     if (!existsSync(dir)) continue;
     let entries;
@@ -400,8 +413,11 @@ function buildSkillIndex() {
         // agents of other roles (e.g. delegation never surfaces on a Prime).
         const skillRoles = Array.isArray(manifest.roles) ? manifest.roles : null;
         if (skillRoles && AGENT_ROLE && !skillRoles.includes(AGENT_ROLE)) continue;
+        const skillId = manifest.id || name;
+        if (seen.has(skillId)) continue;
+        seen.add(skillId);
         index.push({
-          id: manifest.id || name,
+          id: skillId,
           name: manifest.name || name,
           agent_parts: Array.isArray(manifest.agent_part) ? manifest.agent_part : [manifest.agent_part || 'motor'],
           when_to_use: manifest.when_to_use || '',

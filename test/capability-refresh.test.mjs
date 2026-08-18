@@ -203,3 +203,52 @@ test('skill-setup no longer writes the file, and removes the stale one', () => {
     'and the file it used to write must be cleaned up, or it becomes a trap on every VM');
   assert.match(skillSetup, /rm -f "\$stale"/);
 });
+
+// ---- one entry per skill, across overlapping scan roots ------------------
+//
+// buildSkillIndex scans skills/, the specialty's skills/, and
+// workspace/custom-skills. Those OVERLAP by construction: skill-setup symlinks
+// every specialty and custom skill into skills/<id>, so the same skill is reached
+// twice. A live fleet agent derived a map listing "Calendar Operations" twice.
+//
+// The deleted out-of-process generator deduped by id and this did not — a real
+// regression, and one no test here would have caught, because the duplicate only
+// exists where the symlinks do. It was found by running the derivation against a
+// VM. This test is the standing version of that probe.
+
+test('a skill reached through two scan roots appears once', async () => {
+  const { mkdtempSync, mkdirSync, writeFileSync, rmSync } = await import('node:fs');
+  const { tmpdir } = await import('node:os');
+
+  const root = mkdtempSync(join(tmpdir(), 'skidx-'));
+  try {
+    const put = (dir, id, extra = {}) => {
+      mkdirSync(join(root, dir, id), { recursive: true });
+      writeFileSync(join(root, dir, id, 'skill.json'),
+        JSON.stringify({ id, name: id, agent_part: 'motor', ...extra }), 'utf8');
+    };
+    mkdirSync(join(root, 'corekit'), { recursive: true });
+    writeFileSync(join(root, 'corekit', 'chat-config.json'),
+      JSON.stringify({ specialty: 'assistant' }), 'utf8');
+
+    // The same skill in all three roots, exactly as the symlinks produce.
+    put('skills', 'calendar');
+    put('corekit/specialties/assistant/skills', 'calendar');
+    put('workspace/custom-skills', 'calendar');
+    put('skills', 'web-search');
+
+    const BUILD_FN = fnSource('buildSkillIndex');
+    const { readFileSync: rf, readdirSync, existsSync } = await import('node:fs');
+    const index = new Function('deps', `
+      const { CORE_DIR, readFileSync, readdirSync, existsSync, AGENT_ROLE } = deps;
+      ${BUILD_FN}
+      return buildSkillIndex();
+    `)({ CORE_DIR: root, readFileSync: rf, readdirSync, existsSync, AGENT_ROLE: '' });
+
+    const ids = index.map((s) => s.id).sort();
+    assert.deepEqual(ids, ['calendar', 'web-search'],
+      'a skill reachable through the symlink and its source is still one skill');
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});
