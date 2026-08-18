@@ -194,6 +194,14 @@ jobs:
       - name: The lifecycle fails closed on a storage failure
         run: node --test test/storage-fails-closed.test.mjs
 
+      # A planted regression must fail the gate. `evaluate` compiled ONE spec from
+      # the mutable branch tip and compared it to ITSELF, so every case came back
+      # unchanged, regressions() was always empty, and the exit-4 gate could not
+      # fire. compareRuns was always correct — the defect was entirely at the call
+      # site, which is why a unit test of the pure function stayed green.
+      - name: Evaluation compares two real runs
+        run: node --test test/evaluation-compares-two-runs.test.mjs
+
   codeowners:
     name: CODEOWNERS Resolves
     runs-on: ubuntu-latest

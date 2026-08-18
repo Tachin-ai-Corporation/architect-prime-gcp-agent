@@ -395,13 +395,22 @@ async function cmdCompile(registry, args) {
  * The graders are deterministic (C-4). A model judging a model disagrees with
  * itself between runs, which makes a regression and a bad mood indistinguishable.
  *
- * Usage: fleet-config evaluate <agentId> --suite <path> [--baseline <releaseId>]
+ * Usage:
+ *   fleet-config evaluate <agentId> --suite <path>
+ *                        [--baseline <releaseId>] [--candidate <releaseId>]
+ *
+ * Both sides are RESOLVED RELEASES, read at their pinned content commit. The
+ * baseline defaults to what the agent is running (`actual_release`) and the
+ * candidate to what it has been assigned (`desired_release`).
+ *
+ * `--baseline` was advertised in this usage string and never read — the flag
+ * existed only as documentation of an intention.
  */
 async function cmdEvaluate(registry, args) {
   const [agentId] = args.filter((a) => !a.startsWith('--'));
   const suitePath = argValue(args, '--suite');
   if (!agentId || !suitePath) {
-    die('usage: fleet-config evaluate <agentId> --suite <path> [--baseline <releaseId>]');
+    die('usage: fleet-config evaluate <agentId> --suite <path> [--baseline <releaseId>] [--candidate <releaseId>]');
   }
   if (!existsSync(suitePath)) die(`no such suite file: ${suitePath}`);
 
@@ -430,34 +439,63 @@ async function cmdEvaluate(registry, args) {
     });
   };
 
-  const { definitions } = await registry.readDefinitions();
-  const candidate = compileFrom(definitions, assignment?.desired_release || 'fr-uncommitted');
+  // Resolve BOTH sides to a pinned release before compiling either.
+  //
+  // This used to call readDefinitions(), which reads the mutable branch tip, and
+  // then compare the result to ITSELF:
+  //
+  //     compareRuns(candidateRun.results, candidateRun.results)
+  //
+  // Every case therefore came back `unchanged`, `regressions()` was always empty,
+  // and the `process.exit(4)` gate below could not fire. The evaluation was not
+  // weak — it was incapable, and it reported PASS while being so. A planted
+  // regression must fail this gate; that is the whole point of running it.
+  const candidateId = argValue(args, '--candidate') || assignment?.desired_release;
+  const baselineId = argValue(args, '--baseline') || assignment?.actual_release || null;
+  if (!candidateId) {
+    die(`no candidate release for '${agentId}' — assign one, or pass --candidate <releaseId>`);
+  }
+
+  const candidateDefs = (await registry.readReleaseDefinitions(candidateId)).definitions;
+  const candidate = compileFrom(candidateDefs, candidateId);
   const candidateRun = runSuite(suite, { spec: candidate.spec, files: candidate.files });
   if (!candidateRun.ok) die(candidateRun.reason);
 
-  // The baseline is what the agent is running now. With nothing applied yet
-  // there is nothing to regress FROM, and the run is reported on its own rather
-  // than compared against a fiction.
-  const baselineDigest = assignment?.actual_spec_digest || null;
-  const results = baselineDigest
-    ? compareRuns(candidateRun.results, candidateRun.results).map((r) => ({ ...r, notes: r.notes }))
-    : candidateRun.results.map((r) => ({
-        case_id: r.case_id, baseline_pass: false, candidate_pass: r.pass,
-        verdict: r.pass ? 'improved' : 'regressed',
-        notes: `${r.notes} (no applied baseline to compare against)`,
-      }));
+  // The baseline is what the agent is RUNNING. With nothing applied yet there is
+  // nothing to regress from, and the run is reported on its own rather than
+  // compared against a fiction — but that branch is now the exception it always
+  // claimed to be, not the only path.
+  let baseline = null;
+  let results;
+  if (baselineId && baselineId !== candidateId) {
+    const baselineDefs = (await registry.readReleaseDefinitions(baselineId)).definitions;
+    baseline = compileFrom(baselineDefs, baselineId);
+    const baselineRun = runSuite(suite, { spec: baseline.spec, files: baseline.files });
+    if (!baselineRun.ok) die(`baseline ${baselineId}: ${baselineRun.reason}`);
+    results = compareRuns(baselineRun.results, candidateRun.results);
+  } else {
+    results = candidateRun.results.map((r) => ({
+      case_id: r.case_id, baseline_pass: false, candidate_pass: r.pass,
+      verdict: r.pass ? 'improved' : 'regressed',
+      notes: `${r.notes} (${baselineId ? `baseline ${baselineId} is the candidate` : 'no applied baseline'} — nothing to compare against)`,
+    }));
+  }
 
   const record = evaluationRecord({
     id: `fe-${contentDigest({ suite: suite.id, digest: candidate.spec.digest }).slice(7, 19)}`,
     suiteId: suite.id || 'unnamed',
     baseline: {
-      release: assignment?.actual_release ?? null,
-      agent_spec_digest: baselineDigest || candidate.spec.digest,
+      // The release that was compiled and run, not the one the assignment
+      // happened to mention. When there is no baseline the candidate digest is
+      // recorded so the record still identifies what produced these results.
+      release: baseline ? baselineId : null,
+      agent_spec_digest: baseline ? baseline.spec.digest : candidate.spec.digest,
       platform_version: platformVersion(),
       model: suite.model || 'unspecified',
     },
     candidate: {
       change_id: argValue(args, '--change') ?? null,
+      release: candidateId,
       agent_spec_digest: candidate.spec.digest,
       platform_version: platformVersion(),
       model: suite.model || 'unspecified',
