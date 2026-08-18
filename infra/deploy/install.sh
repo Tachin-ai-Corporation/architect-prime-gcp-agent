@@ -267,6 +267,31 @@ else
     die "Image not found and 'app/' directory missing. Cannot build from source."
   fi
 fi
+# ---- First-run setup token ----
+# Cloud Run is deployed --allow-unauthenticated so the sign-in page is reachable.
+# When GOOGLE_CLIENT_ID is empty the app has no session auth yet and the setup
+# wizard is the only way in, so it must be gated by something. Without this the
+# wizard accepted OAuth credentials, touched Secret Manager and updated the
+# running service for ANY caller who reached an unconfigured deployment.
+#
+# Holding this token proves access to the environment doing the deploying, which
+# is exactly the authority first-run setup requires and what an internet caller
+# lacks. If OAuth is already configured no token is issued and the wizard stays
+# closed. The app LOCKS when neither is present rather than opening.
+SETUP_BOOTSTRAP_TOKEN=""
+if [[ -z "${GOOGLE_CLIENT_ID:-}" ]]; then
+  SETUP_BOOTSTRAP_TOKEN="$(head -c 48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | head -c 40)"
+  echo ""
+  echo "=============================================================="
+  echo " ONE-TIME SETUP TOKEN - sign-in is not configured yet."
+  echo " Open the dashboard setup wizard with this token appended:"
+  echo "   ?setup_token=${SETUP_BOOTSTRAP_TOKEN}"
+  echo " Without it the deployment stays LOCKED. It stops working the"
+  echo " moment OAuth is configured. Do not commit or share it."
+  echo "=============================================================="
+  echo ""
+fi
+
 info "Deploying Cloud Run service: ${SERVICE_NAME}..."
 gcloud run deploy "$SERVICE_NAME" \
   --image="$IMAGE" \
@@ -274,7 +299,7 @@ gcloud run deploy "$SERVICE_NAME" \
   --region="$REGION" \
   --service-account="$SA_EMAIL" \
   --allow-unauthenticated \
-  --set-env-vars="GCP_PROJECT_ID=${PROJECT_ID},NODE_ENV=production,DWD_CLIENT_ID=${DWD_CLIENT_ID},APP_VERSION=${APP_VERSION},GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID},NEXTAUTH_SECRET=${NEXTAUTH_SECRET},ALLOWED_DOMAIN=${ALLOWED_DOMAIN},NEXTAUTH_URL=WILL_BE_SET_AFTER_DEPLOY,GH_OWNER=${GH_OWNER},GH_REPO=${GH_REPO}" \
+  --set-env-vars="GCP_PROJECT_ID=${PROJECT_ID},NODE_ENV=production,DWD_CLIENT_ID=${DWD_CLIENT_ID},APP_VERSION=${APP_VERSION},GOOGLE_CLIENT_ID=${GOOGLE_CLIENT_ID},NEXTAUTH_SECRET=${NEXTAUTH_SECRET},ALLOWED_DOMAIN=${ALLOWED_DOMAIN},NEXTAUTH_URL=WILL_BE_SET_AFTER_DEPLOY,GH_OWNER=${GH_OWNER},GH_REPO=${GH_REPO},SETUP_BOOTSTRAP_TOKEN=${SETUP_BOOTSTRAP_TOKEN}" \
   --set-secrets="GOOGLE_CLIENT_SECRET=dashboard-oauth-secret:latest" \
   --memory=512Mi \
   --cpu=1 \

@@ -81,24 +81,43 @@ test('the fleet VM sends an audience-bound identity token', () => {
 // ── 2. Setup mode is bounded ───────────────────────────────────────────
 
 test('setup mode is narrowed to the onboarding surface', () => {
+  // Was a regex over middleware source, asserting the exact shape of an
+  // `if (!clientId)` block. It broke the moment that block was improved to add a
+  // bootstrap-token gate — a test that fails when the code gets better is
+  // measuring the wrong thing, which is why the audit called for API-aware
+  // boundary checks instead of line matching.
+  //
+  // The allowlist is still asserted structurally, because a bounded surface is
+  // the property that matters. The DECISION is asserted against the pure module
+  // in test/setup-gate.test.mjs, where it can be exercised rather than read.
   const src = read('app/src/middleware.ts');
 
   assert.match(src, /function isSetupSurface/, 'setup mode must be an explicit, bounded allowlist');
   assert.doesNotMatch(
     src,
-    /if \(!clientId\) \{\s*\n\s*return NextResponse\.next\(\);/,
+    /if \(!clientId\) \{[\s\S]{0,40}?return NextResponse\.next\(\);/,
     'setup mode must not allow every path through'
   );
-  assert.match(
-    src,
-    /if \(!clientId\) \{[\s\S]{0,400}?if \(isSetupSurface\(pathname\)\) return NextResponse\.next\(\);/,
-    'setup mode must gate on the setup surface'
-  );
-  assert.match(
-    src,
-    /if \(!clientId\) \{[\s\S]{0,600}?status: 401/,
-    'a non-setup API path in setup mode must 401'
-  );
+  // The gate is consulted, and the wizard is not reachable without the token.
+  assert.match(src, /setupGate\(/, 'middleware must consult the setup gate');
+  assert.match(src, /bootstrapTokenMatches\(/, 'the setup surface must require the bootstrap token');
+  assert.match(src, /gate\.state === "locked"/, 'a deployment with no auth and no token must lock');
+});
+
+test('the setup gate locks rather than opening, and both enforcers agree', async () => {
+  // The property the audit asked for: missing auth configuration must LOCK the
+  // application, not create a public administrative mode.
+  const { setupGate } = await import('../app/src/lib/setup-gate.ts');
+  assert.equal(setupGate({}).state, 'locked');
+  assert.equal(setupGate({ SETUP_BOOTSTRAP_TOKEN: 'z'.repeat(40) }).state, 'bootstrap');
+  assert.equal(setupGate({ GOOGLE_CLIENT_ID: 'x' }).state, 'configured');
+
+  // Defence in depth: the handler that can rewrite OAuth config, read Secret
+  // Manager and update the running service must check the token ITSELF, not rely
+  // on a middleware matcher staying correct.
+  const route = read('app/src/app/api/setup/oauth/route.ts');
+  assert.match(route, /bootstrapTokenMatches\(/,
+    'setup/oauth must verify the bootstrap token in the handler, not only in middleware');
 });
 
 test('update-status is the only session-exempt API path', () => {

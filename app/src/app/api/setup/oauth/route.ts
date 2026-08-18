@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { setupGate, bootstrapTokenMatches, BOOTSTRAP_HEADER, BOOTSTRAP_QUERY } from "@/lib/setup-gate";
 import { requireAuth } from "@/lib/require-auth";
 import { isAuthConfigured } from "@/lib/auth";
 
@@ -13,10 +14,35 @@ import { isAuthConfigured } from "@/lib/auth";
  */
 export async function POST(request: Request) {
   try {
-    // If OAuth is already configured, require auth to reconfigure
+    // If OAuth is already configured, require auth to reconfigure.
     if (isAuthConfigured()) {
       const auth = await requireAuth();
       if (!auth.authenticated) return auth.response;
+    } else {
+      // Not configured: this handler can set OAuth credentials, read and write
+      // Secret Manager, and update the running Cloud Run service. Before the
+      // bootstrap gate existed it required NOTHING, so an unconfigured public
+      // deployment could be claimed by whoever found it.
+      //
+      // Checked HERE and not only in middleware, deliberately: a handler with
+      // this much authority should not depend on a matcher pattern staying
+      // correct. Defence in depth is the difference between one mistake and one
+      // takeover.
+      const gate = setupGate({
+        GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+        SETUP_BOOTSTRAP_TOKEN: process.env.SETUP_BOOTSTRAP_TOKEN,
+      });
+      if (gate.state === "locked") {
+        return NextResponse.json({ success: false, error: gate.reason }, { status: 503 });
+      }
+      const presented = request.headers.get(BOOTSTRAP_HEADER)
+        ?? new URL(request.url).searchParams.get(BOOTSTRAP_QUERY);
+      if (!bootstrapTokenMatches(presented, process.env.SETUP_BOOTSTRAP_TOKEN)) {
+        return NextResponse.json(
+          { success: false, error: "Setup requires the one-time token printed by the installer." },
+          { status: 401 }
+        );
+      }
     }
 
     const { clientId, clientSecret, domain } = await request.json();

@@ -123,6 +123,12 @@ jobs:
       - name: Shell tools use per-run temp files
         run: node --test test/tool-hygiene.test.mjs
 
+      # A deployment with no sign-in configured must LOCK, not open a public
+      # administrative mode. The setup wizard can rewrite OAuth config, read
+      # Secret Manager and update the running service.
+      - name: First-run setup surface is token-gated
+        run: node --test test/setup-gate.test.mjs
+
   codeowners:
     name: CODEOWNERS Resolves
     runs-on: ubuntu-latest

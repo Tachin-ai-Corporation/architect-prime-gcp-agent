@@ -197,3 +197,69 @@ Then B (real evaluation) and C (the authoring verb), in that order: the verb is 
 
 Phase C item 9 (the setup hole) should be lifted out and done immediately regardless of sequencing —
 it is a live internet-facing exposure with no dependency on any of this.
+
+---
+
+## 7. "Is this better?" — the exemplar rubric
+
+Operator direction: *Prime should ask for an optional example file of what better looks like for a
+specific purpose, genericize it, and QA against it during iteration. If none is given, Prime derives
+one from grounded web search.*
+
+This is **not** the audit's P0-4. Two different questions, both needed:
+
+| | question | how | cost |
+|---|---|---|---|
+| **Regression guard** (P0-4, existing `evalSuite`) | *did I break something?* | structural assertions over the compiled spec and its files — `file_present`, `max_chars`. No LLM, no mission. | cheap |
+| **Exemplar rubric** (this section) | *is the output any good?* | a durable standard for a *purpose*, applied by cerebellum to a deliverable a real mission produced | expensive |
+
+### Why this matters more here than it looks
+
+Twice today a mission failed because a criterion was **invented on the spot**: prefrontal wrote
+*"Deployment uses a non-deprecated authentication method"* against a tool that always warns, and
+*"Cortex re-evaluates the mission's flawed premise"* — which cerebellum passed honestly while the
+deliverable did not exist. Both were fixed by *rules about what a criterion may say*
+(`plan-structuring` v7 and v12).
+
+Rules constrain invention. **An exemplar removes the need to invent.** A durable, purpose-scoped
+rubric gives cerebellum a standard it did not have to make up per mission — which is the actual cure
+for that whole defect family, not another rule.
+
+### The mechanism
+
+1. **Ask, don't require.** When Prime takes on a recurring deliverable it has no rubric for, it asks
+   the operator for one example of good. Optional — a missing rubric degrades to today's behaviour,
+   never blocks.
+2. **Genericize on ingest, and store only the generalisation.** The example file is read once,
+   properties are extracted, and **the properties are what persist** — the file is not kept as a
+   target.
+   - **Extract:** required sections and their order, tone register, length band, evidence
+     requirements, formatting conventions, what must never appear.
+   - **Strip:** company and operator names, project specifics, real people, real figures, real dates.
+   - *An exemplar used as a thing to match produces plagiarism and overfits the skill to one case. An
+     exemplar used to derive properties produces a standard.* That distinction is the whole value of
+     the genericization step, and it is the same guardrail as
+     `.claude/skills/skill-improvement-loop`: never fit the skill to the test case.
+3. **Provenance decides authority (B-29).**
+   - `source: operator` — authoritative. May gate a promotion.
+   - `source: derived` — Prime built it from grounded web search. Carries its sources, and **must be
+     confirmed by the operator before it can gate anything.** It may inform freely; it may not
+     silently judge.
+   - **The reason is R-11.** A derived rubric that gates its own author's work is *a report authoring
+     its own subject* in a new costume: Prime would invent the definition of better, then grade itself
+     against it, and every result would agree with itself. An unconfirmed derived rubric is a
+     hypothesis, and it is labelled as one.
+4. **Home: extend `evalSuite`, do not add a kind.** `evalSuite` is on the §4 delete list precisely
+   because it has no complete consumer. Giving it output-cases is **code-negative** against inventing
+   a parallel rubric kind, and it keeps "how do we know this is better" in one place instead of two.
+
+### Tests that must exist before it gates anything
+
+- A rubric derived from an exemplar about a named company **contains none of that company's
+  identifiers** — the genericization is asserted, not trusted.
+- An unconfirmed `derived` rubric **cannot** gate a promotion; an `operator` one can.
+- A missing rubric degrades to current behaviour and never blocks a mission.
+- The same exemplar ingested twice yields the same rubric digest — the extraction is deterministic
+  enough to be attributable.
+- A deliverable that satisfies the rubric while being verbatim-similar to the exemplar is **flagged**,
+  not passed: matching the example is the failure mode this design exists to avoid.

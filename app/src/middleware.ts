@@ -1,4 +1,5 @@
 import { getToken } from "next-auth/jwt";
+import { setupGate, bootstrapTokenMatches, presentedToken } from "@/lib/setup-gate";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
 
@@ -53,10 +54,36 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Setup mode: OAuth not yet configured. Narrow, not open.
-  const clientId = process.env.GOOGLE_CLIENT_ID;
-  if (!clientId) {
-    if (isSetupSurface(pathname)) return NextResponse.next();
+  // Setup mode: OAuth not yet configured. Narrow, TOKEN-GATED, and lockable.
+  //
+  // Narrow was not enough. With no OAuth the setup surface had no credential at
+  // all, so `POST /api/setup/oauth` accepted caller-supplied OAuth credentials,
+  // touched Secret Manager and updated the running service — a control-plane
+  // takeover for whoever reached an unconfigured deployment first. Missing auth
+  // configuration must LOCK the app, not open an administrative mode.
+  const gate = setupGate({
+    GOOGLE_CLIENT_ID: process.env.GOOGLE_CLIENT_ID,
+    SETUP_BOOTSTRAP_TOKEN: process.env.SETUP_BOOTSTRAP_TOKEN,
+  });
+
+  if (gate.state !== "configured") {
+    // No bootstrap token means nothing is reachable — including the wizard.
+    if (gate.state === "locked") {
+      return pathname.startsWith("/api/")
+        ? NextResponse.json({ error: gate.reason }, { status: 503 })
+        : new NextResponse(gate.reason, { status: 503, headers: { "content-type": "text/plain" } });
+    }
+    // Bootstrap: the wizard is reachable only with the token the installer printed.
+    if (isSetupSurface(pathname)) {
+      if (bootstrapTokenMatches(presentedToken(request), process.env.SETUP_BOOTSTRAP_TOKEN)) {
+        return NextResponse.next();
+      }
+      return pathname.startsWith("/api/")
+        ? NextResponse.json({ error: "Setup requires the one-time token printed by the installer." }, { status: 401 })
+        : new NextResponse("Setup requires the one-time token printed by the installer.", {
+            status: 401, headers: { "content-type": "text/plain" },
+          });
+    }
     if (pathname.startsWith("/api/")) {
       return NextResponse.json(
         { error: "Unavailable until sign-in is configured. Complete setup first." },
