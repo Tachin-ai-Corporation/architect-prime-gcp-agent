@@ -2,8 +2,8 @@
   "_generated": "corekit/system/install-surface.mjs — do not edit; regenerate when the installed surface intentionally changes",
   "bundles": {
     "prime": {
-      "digest": "sha256:c225fa7d712c9f2cff9d75745e8dece8ebb9366ca89f65c161834b88708750d5",
-      "contentDigest": "sha256:9b8d45e9480660fdc2adf6d99165bdea604bcf11c1a2125eb5d1d2cd48398b77",
+      "digest": "sha256:3c9d1a978359c6b9a39dfd05a665ef04db285e18fe50e6fd3b2435bb2e5d0465",
+      "contentDigest": "sha256:94b01b70417189696b950e71718e2400acb7b971d786da1194ffbd6101484929",
       "fileCount": 242,
       "conflicts": [
         {
@@ -15,92 +15,92 @@
       "missing": []
     },
     "fleet": {
-      "digest": "sha256:a324ed63a8897de6b6f4fd46eaf3acf2c2c38fb5e3d5ff6cf32f0dcdb46e7942",
-      "contentDigest": "sha256:b5d8d384604d0ab3b9025efa503809a5251ec1ffefce2b5f76f261f13c73e6a3",
+      "digest": "sha256:bbe8ce136fa09f404c034ef1a32597f61711660ef57cdc817e2cbfd0f7a7aadd",
+      "contentDigest": "sha256:107b9d1168ae82be23290880890b7ede7963be01a2d6203940877430fcc535e1",
       "fileCount": 213,
       "conflicts": [],
       "missing": []
     },
     "fleet+assistant": {
-      "digest": "sha256:c9e9c9de5174fefbb64fd265dd1c711dc27e3075302efe117ed360e8e30dc9ac",
-      "contentDigest": "sha256:3c189b15c377b1fdafbd650cd688d4caf30977d6ab70eeab5afaa93428ef6c4e",
+      "digest": "sha256:25c4c513d41189cf4d5518b6cccf8fb46f5fe756ae5f1c4400ae31863c97bbda",
+      "contentDigest": "sha256:1956854df2f47f40fec00d4dd646f4fddf3208bef32c79c26c7bd83634d506f1",
       "fileCount": 278,
       "conflicts": [],
       "missing": []
     },
     "fleet+data": {
-      "digest": "sha256:734cd1f8a55c17e85d72bbeb8723c6e2eb359cf2f5625f00227c429eaee3c8b0",
-      "contentDigest": "sha256:1e720139a9aef08c4d2466181eb8fc0aa88e37259abee84b011c40fbe26f0fc8",
+      "digest": "sha256:359c2e706cef94803225ae982db344398cb12609ce62b4b9ede781711bddfb1f",
+      "contentDigest": "sha256:c53b7471abe111943d57d1a213afd939b4f7b3cd88144a9bd95a6835b8d5676f",
       "fileCount": 229,
       "conflicts": [],
       "missing": []
     },
     "fleet+designer": {
-      "digest": "sha256:ad7599e686fca8fd4a62f8921d1489ff432610853b38909ea32e962b28bdda6a",
-      "contentDigest": "sha256:242c78f3f6a1b3336748d565dd6b0eec8e0028f23a0fd00e2eff46403ae33cab",
+      "digest": "sha256:efd20fe0ac78b203ee92c09fa3e27e81e7351aaa4e23da85311a409ff174cb58",
+      "contentDigest": "sha256:b88f0001b9ac0b61f1b834469e29d3a4f8fcdcb09048e728be00eefa21d22d45",
       "fileCount": 264,
       "conflicts": [],
       "missing": []
     },
     "fleet+devops": {
-      "digest": "sha256:020d4de36a5aab5407ce1e867f0b43ffc9607e84ab33fb577ce2cf6ca1bdbdd4",
-      "contentDigest": "sha256:6b3e109e77df0e1a347b4e84a4ce6cf1672fe2e15af4d50bfc2c33391f8cff51",
+      "digest": "sha256:4a4f717fdb0ac4e6f2dc4188a734ccebda79e431e896fbc77909b631487bd6f7",
+      "contentDigest": "sha256:33b0936f118ed88df320d2af96bc8972ee6cef29b24c380b9b018b8aa47621bb",
       "fileCount": 226,
       "conflicts": [],
       "missing": []
     },
     "fleet+engineer": {
-      "digest": "sha256:f82c23ff86ebcf4d7bbcc8b28b148c82f0d814a4f3804fe091b970eb3793372c",
-      "contentDigest": "sha256:848c73eb3595479acde13b47d78fc16b5e6945b5d2bd99d131416bbda82d12ed",
+      "digest": "sha256:5338220aadb8f77dbed4b679a53c63ad478d27ff3eac95127d794aab0cb6e1ff",
+      "contentDigest": "sha256:0a92325f039ad58050400b2fc4ceca70b97aa00307ae33ac6d6ea985a7919e95",
       "fileCount": 222,
       "conflicts": [],
       "missing": []
     },
     "fleet+finance": {
-      "digest": "sha256:d194096a9200b9451f02906eb0cb0c0e097d491759e41ff88ef5cdf8a1530d68",
-      "contentDigest": "sha256:9ec30d7689d55185423ee7c57997add3e094e830720b34cbfec29a90f7ce6b72",
+      "digest": "sha256:59a0e7f5f767357abd152dcc89dc7bf41aea08aa9c2b64760b21c78e755a9f20",
+      "contentDigest": "sha256:25d47cc3f7cb3b3c0bba3f93a81a0a2d964dfb5593a88e767a4bc9cb76d72ae8",
       "fileCount": 233,
       "conflicts": [],
       "missing": []
     },
     "fleet+legal-advisor": {
-      "digest": "sha256:7c6bb04adcaad215590cc21dd5c4f10a63c249255af705d9e4a55d32ccc6c3dc",
-      "contentDigest": "sha256:f5869d8fd276264174759b3abb6930a9fa65c916e18c861c97ecbd38bcb21d68",
+      "digest": "sha256:d679150a8eff0c48dbb951f6f3a378c8a50cd9858278468055d6262513ef2c7a",
+      "contentDigest": "sha256:010bedb85345914422be0247c2686d7f8a401119be33179cffa1e8bc074909f4",
       "fileCount": 264,
       "conflicts": [],
       "missing": []
     },
     "fleet+pm": {
-      "digest": "sha256:e578ff1125de25122d660e619d91e818e382c44edee38f9deb0c41b461c42c57",
-      "contentDigest": "sha256:549ae1d3b07ceea9b33bef1aae1b2a56baa9dea30c55257bd67f2900022cc37f",
+      "digest": "sha256:6d013cc82de2d8f60e47218a280653e1d95b470440f831d69be28967825cde4e",
+      "contentDigest": "sha256:567be0bbca94e624828986ef6b8a5fc6ea5f156e9d69084a7ab0809532889bcd",
       "fileCount": 263,
       "conflicts": [],
       "missing": []
     },
     "fleet+product-architect": {
-      "digest": "sha256:4d9630b8eb628eef320fdd6167d687bd9c393c85411d8dc8a17da78017c1a66e",
-      "contentDigest": "sha256:cc68c8d4324b0cf629f4479956c6257b9ffcb9867c59b0d6d26d05c7592964a0",
+      "digest": "sha256:9165255dcd4bf4bb02178b3bc37f2ca40a0419cf74007956b31086ed25968f41",
+      "contentDigest": "sha256:bf27eeb7a05df23cc5b7632a1b8c891e5fbe03d6732feecfa82188ad62d73a71",
       "fileCount": 252,
       "conflicts": [],
       "missing": []
     },
     "fleet+qa": {
-      "digest": "sha256:06bd89dd89654f5014313f8d0433d61ad1d7bc9c8b1b8f7f2363183c130a8359",
-      "contentDigest": "sha256:2648ba04fdc0419474af979011fbe6075150f02a8fbe5b603b6ad72a551c601d",
+      "digest": "sha256:8ac6955427c8ea1c50c46873628970b1c256fc21d2c9c6bf9f573e3cfcd47230",
+      "contentDigest": "sha256:8b41285471d66d0f11e147dae79ec0add0ee61bfea167d6c816f426ab5459511",
       "fileCount": 220,
       "conflicts": [],
       "missing": []
     },
     "fleet+security": {
-      "digest": "sha256:e53793c2e66507d43794fe3abfb4e61c31b43d65a180fa79acd761ff94540bb8",
-      "contentDigest": "sha256:8b67e8a273ee29f9e9b70d788714d9d7aed33b6cccd9d24308a4766c2ba861b0",
+      "digest": "sha256:245bed9ede46b46282ecfccc5f07cf6b215ddf3eb803512c001879b61e79911e",
+      "contentDigest": "sha256:04344944fbd775609b0a74baad62b209b2498f492d981b22de79345836d3898d",
       "fileCount": 224,
       "conflicts": [],
       "missing": []
     },
     "fleet+web-master": {
-      "digest": "sha256:682ef8b5b97077081960dc9f0c148aef43109f71988c9ea4b1905152483ab5c7",
-      "contentDigest": "sha256:15d2548dc4fddb7a41c575c0d12146cc7913519f0a4f471e058229acfd837a06",
+      "digest": "sha256:72d5fd04931698f3d194eeda5dc4fffcff8b4e08492e6e3196318806cba34f94",
+      "contentDigest": "sha256:d218ba1a2223fd31fb5373ad4304abcd49918ffabb9ae1f2cecd3bb0c9b511f3",
       "fileCount": 239,
       "conflicts": [],
       "missing": []

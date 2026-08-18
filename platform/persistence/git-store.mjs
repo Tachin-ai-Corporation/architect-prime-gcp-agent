@@ -547,6 +547,46 @@ export async function cloneRepo(repoId, branch, destDir) {
   return { repoId, branch, sha, dir: resolvedDir };
 }
 
+/** A git object name. Full SHAs only — an abbreviation can become ambiguous as a repo grows. */
+const COMMIT_RE = /^[0-9a-f]{40}$/;
+
+/**
+ * Pin an existing working tree to an exact commit, detached.
+ *
+ * `cloneRepo` always lands on the BRANCH TIP, which is the right default and the
+ * wrong thing for reading a release: a release records the commit its content was
+ * cut from, and reading the tip instead means an agent assigned to release A can
+ * receive whatever the branch says later while the result is still stamped A.
+ *
+ * Detached on purpose — nothing may commit onto a release read. Verifies HEAD
+ * afterwards rather than trusting the checkout to have done what it was asked,
+ * and throws if the commit is not present, because a release whose bytes cannot
+ * be produced must fail rather than degrade to "close enough".
+ *
+ * @param {string} gitDir - an existing working tree, already fetched
+ * @param {string} commit - full 40-hex commit
+ * @returns {{commit: string, dir: string}}
+ */
+export function checkoutCommit(gitDir, commit) {
+  if (!COMMIT_RE.test(String(commit || ''))) {
+    throw new Error(`checkoutCommit: '${commit}' is not a full 40-hex commit`);
+  }
+  const dir = resolve(gitDir);
+  if (!existsSync(join(dir, '.git'))) {
+    throw new Error(`checkoutCommit: ${dir} is not a git working tree`);
+  }
+  try {
+    git(`checkout --detach --force ${commit}`, { cwd: dir });
+  } catch (e) {
+    throw new Error(`checkoutCommit: commit ${commit.slice(0, 12)} is not present in ${dir} (${String(e.message).slice(0, 120)})`);
+  }
+  const head = git('rev-parse HEAD', { cwd: dir });
+  if (head !== commit) {
+    throw new Error(`checkoutCommit: asked for ${commit.slice(0, 12)}, HEAD is ${head.slice(0, 12)}`);
+  }
+  return { commit, dir };
+}
+
 /**
  * Push local commits to the ether. Objects-before-ref ordering.
  * Returns NON_FAST_FORWARD if the ref was advanced by another agent.

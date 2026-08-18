@@ -93,7 +93,9 @@ These cost nothing to remove and are currently lies about what the system does:
 
 - `policy`, `projectTemplate`, `evalSuite` as authorable kinds — advertised, no complete
   import/compile/activation path. Remove from the surface until something consumes them.
-- `platform/deployment/packages.mjs` — describes a generator that is not implemented.
+- ~~`platform/deployment/packages.mjs`~~ — **the audit was wrong and so was this list.** It is 76
+  live lines consumed by `importer.mjs` and a test, and it is the natural home for the capability-set
+  concept in §3. Copied from the audit without checking; corrected on the way to using it.
 - Dashboard `501` endpoints — dead compatibility stubs.
 - Migration scripts importing deleted `corekit/lib` paths — broken, outside CI, and mistakable for
   supported tooling. Archive or delete.

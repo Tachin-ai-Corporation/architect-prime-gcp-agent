@@ -166,10 +166,21 @@ async function onePass() {
 
   // Compile locally from the release's content. Compiling here rather than
   // trusting a pushed bundle is what lets step 3 be a real check.
+  //
+  // This read is pinned to the ASSIGNED RELEASE's commit. It used to call
+  // readDefinitions(), which reads the mutable branch tip — so an agent assigned
+  // to release A compiled whatever the branch said at that moment and then
+  // stamped the result `desired_release: A`. Approve a skill change, let the
+  // branch move, and the fleet quietly diverges from the thing that was approved
+  // while every coordinate still reads correct. Canary attribution, holdback,
+  // evaluation and rollback all rest on a release id meaning one set of bytes.
+  //
+  // readReleaseDefinitions also fails closed on a tampered revision or a digest
+  // mismatch, so a release that cannot be reproduced is never applied.
   let spec = null;
   let files = {};
   try {
-    const { definitions } = await registry.readDefinitions();
+    const { definitions } = await registry.readReleaseDefinitions(assignment.desired_release);
     const role = definitions.get(`role/${assignment.role_id}`);
     if (!role) throw new Error(`role '${assignment.role_id}' is not in the release`);
 

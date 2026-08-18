@@ -101,6 +101,90 @@ export function createRegistry(config) {
     return { definitions, corrupt, empty: false };
   }
 
+  /**
+   * Read the definition set a release was cut from — the EXACT bytes, or nothing.
+   *
+   * `readDefinitions()` reads a mutable branch tip. That is correct for authoring
+   * and wrong for everything downstream of a release: an agent assigned to
+   * release A could be handed whatever the branch said later, with the result
+   * still stamped A. Canary attribution, holdback, evaluation and rollback all
+   * rest on a release id meaning one thing, and it did not.
+   *
+   * Three ways this differs from readDefinitions, all of them deliberate:
+   *
+   * 1. It pins `content_ref.commit`, detached, and verifies HEAD.
+   * 2. **A corrupt revision throws.** readDefinitions collects `corrupt` and
+   *    continues, which is right while authoring — you want to see the damage.
+   *    A release is a unit: a partially-readable one must never be compiled,
+   *    evaluated or applied, so there is no partial success to return.
+   * 3. **It recomputes the release digest and compares.** createRelease derives
+   *    `digest` from the definition digests at the commit, so recomputing it here
+   *    proves the tree really is the tree the release was made from, rather than
+   *    trusting that the commit pointer alone was enough.
+   *
+   * A clone failure also throws rather than reporting an empty registry — "the
+   * store is unreachable" and "this release has no content" are different facts,
+   * and this repo has already been bitten by treating one as the other.
+   *
+   * @param {string} releaseId
+   * @returns {Promise<{definitions: Map, release: object, commit: string}>}
+   */
+  async function readReleaseDefinitions(releaseId) {
+    const release = await db.read(pathFor('fleetRelease', releaseId));
+    if (!release) throw new Error(`readRelease: unknown release '${releaseId}'`);
+
+    const commit = release.content_ref?.commit;
+    if (!commit) {
+      throw new Error(
+        `readRelease: release '${releaseId}' records no content commit — its bytes cannot be reproduced`
+      );
+    }
+    const branch = release.content_ref?.branch || FLEET_CONFIG_BRANCH;
+
+    await ensureRepo();
+    const dir = workDir('release');
+    try {
+      // Clone the branch to bring the objects local, then pin to the commit. The
+      // release commit is an ancestor of the branch unless history was rewritten,
+      // in which case the pin fails — which is the correct outcome.
+      await git.cloneRepo(FLEET_CONFIG_REPO, branch, dir);
+      git.checkoutCommit(dir, commit);
+
+      const definitions = new Map();
+      for (const kind of DEFINITION_KINDS) {
+        for (const { id, file } of listKind(dir, kind)) {
+          let record;
+          try {
+            record = JSON.parse(readFileSync(file, 'utf8'));
+          } catch (e) {
+            throw new Error(`readRelease: ${releaseId} has unparseable ${kind}/${id}: ${e.message}`);
+          }
+          const verdict = verifyRevision(kind, record);
+          if (!verdict.ok) {
+            throw new Error(`readRelease: ${releaseId} has tampered ${kind}/${id}: ${verdict.reason}`);
+          }
+          definitions.set(`${kind}/${id}`, record);
+        }
+      }
+
+      // Same formula createRelease used. A mismatch means the commit does not
+      // hold the content the release claims, whatever the pointer says.
+      const recomputed = contentDigest({
+        contents: [...definitions.entries()].sort().map(([k, v]) => [k, v.digest]),
+      });
+      if (release.digest && recomputed !== release.digest) {
+        throw new Error(
+          `readRelease: ${releaseId} digest mismatch at ${String(commit).slice(0, 12)} — ` +
+          `recorded ${release.digest.slice(0, 19)}, tree yields ${recomputed.slice(0, 19)}`
+        );
+      }
+
+      return { definitions, release, commit };
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  }
+
   /** Enumerate the files of one aggregate kind inside a working tree. */
   function listKind(root, kind) {
     const entry = CATALOG[kind];
@@ -626,6 +710,7 @@ export function createRegistry(config) {
   return {
     ensureRepo,
     readDefinitions,
+    readReleaseDefinitions,
     createChange,
     recordValidation,
     createRelease,
