@@ -297,3 +297,43 @@ test('managedFromRecord accepts both record shapes', () => {
   // Junk entries in an array form are dropped rather than becoming empty paths.
   assert.deepEqual(managedFromRecord(JSON.stringify({ managed: ['a', '', null, 3] })), ['a']);
 });
+
+// ---- --dry-run must change nothing --------------------------------------
+//
+// Pinned because it was violated immediately. The .content-previous retirement
+// was added at the top of onePass, above the DRY_RUN branch, so `--dry-run`
+// deleted a directory. An operator reaching for --dry-run on a suspect VM is
+// diagnosing, and a diagnostic that mutates the tree destroys the evidence it
+// was run to look at.
+//
+// Structural rather than behavioural: the daemon runs on import, so it cannot be
+// exercised in-process. That is a weaker check than executing it, and it is
+// named as such — it catches an unguarded mutation added above the decision
+// point, which is the mistake that actually happened.
+test('every filesystem mutation before the decision is DRY_RUN-guarded', async () => {
+  const { readFileSync } = await import('node:fs');
+  const { join, dirname } = await import('node:path');
+  const { fileURLToPath } = await import('node:url');
+  const repo = join(dirname(fileURLToPath(import.meta.url)), '..');
+  const src = readFileSync(join(repo, 'platform', 'runtime', 'agent-content-sync.mjs'), 'utf8');
+
+  // Scan onePass's own body only. Helper DEFINITIONS above it (writeRecord holds
+  // a writeFileSync and a renameSync) are declarations, not executions — the
+  // first version of this check flagged all three and was measuring the wrong
+  // thing.
+  const bodyAt = src.indexOf('async function onePass()');
+  const decisionAt = src.indexOf('const decision = reconcile(');
+  assert.ok(bodyAt > 0 && decisionAt > bodyAt,
+    'onePass and the reconcile call must both be findable for this check to mean anything');
+
+  const preamble = src.slice(bodyAt, decisionAt);
+  const mutators = /\b(rmSync|writeFileSync|renameSync|mkdirSync|writeRecord)\s*\(/g;
+  const unguarded = [];
+  for (const m of preamble.matchAll(mutators)) {
+    // Look back a couple of lines for a DRY_RUN guard on the same branch.
+    const context = preamble.slice(Math.max(0, m.index - 240), m.index);
+    if (!/DRY_RUN/.test(context)) unguarded.push(m[1]);
+  }
+  assert.deepEqual(unguarded, [],
+    `these mutate the filesystem before the decision with no DRY_RUN guard: ${unguarded.join(', ')}`);
+});

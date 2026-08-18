@@ -197,8 +197,13 @@ async function onePass() {
   // Idempotent (C-18) and self-deleting: the branch stops firing once it has run,
   // and it costs one existsSync on a pass that is usually a no-op anyway. Disposal
   // belongs to the code that created the mess, not to an operator runbook.
+  //
+  // Not under --dry-run. That flag is documented as "decide and report, change
+  // nothing", and a cleanup is still a change — an operator inspecting a suspect
+  // VM with --dry-run must get the same tree back, or the diagnostic destroys the
+  // evidence it was run to look at.
   const retired = join(CORE_DIR, '.content-previous');
-  if (existsSync(retired)) {
+  if (!DRY_RUN && existsSync(retired)) {
     rmSync(retired, { recursive: true, force: true });
     log('INFO', 'removed .content-previous — it was written by every apply and read by nothing; '
       + 'rollback is registry.rollback() re-rendering from the predecessor release\'s pinned commit');
