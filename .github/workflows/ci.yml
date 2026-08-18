@@ -202,6 +202,15 @@ jobs:
       - name: Evaluation compares two real runs
         run: node --test test/evaluation-compares-two-runs.test.mjs
 
+      # The one verb the system exists for. The registry could release, assign,
+      # evaluate and roll back content it had no way to WRITE — every definition
+      # arrived through a one-time catalog import, so improving the fleet bottomed
+      # out in a human editing repo files. Prime pipes a body in; the command
+      # resolves the base revision and createChange seals it. The shell never
+      # writes a definition.
+      - name: Prime can author a definition
+        run: node --test test/authoring-verb.test.mjs
+
   codeowners:
     name: CODEOWNERS Resolves
     runs-on: ubuntu-latest

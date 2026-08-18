@@ -36,7 +36,7 @@ import {
 } from '../../platform/deployment/importer.mjs';
 import { compileAgentSpec } from '../../platform/deployment/compiler.mjs';
 import { validateSet, VALIDATOR_NAMES } from '../../platform/deployment/validators.mjs';
-import { diffSets, renderDiff, impactedAgents } from '../../platform/deployment/diff.mjs';
+import { diffSets, diffRevision, renderDiff, impactedAgents } from '../../platform/deployment/diff.mjs';
 import { deriveMetrics, groupBySpec } from '../../platform/deployment/metrics.mjs';
 import { evaluateRollout, renderDecision } from '../../platform/deployment/rollout.mjs';
 import { runSuite, compareRuns, regressions, evaluationRecord, renderEvaluation } from '../../platform/deployment/evals.mjs';
@@ -213,6 +213,122 @@ async function cmdImport(registry, args) {
   if (!result.ok) die(`import failed:\n${JSON.stringify(result.conflicts, null, 2)}`);
 
   emit({ change: result.change.id, counts: byKind, total: edits.length, notes });
+}
+
+/**
+ * Author a definition — the verb this system exists for and did not have.
+ *
+ * Prime could `release`, `assign`, `evaluate` and `rollback` content it had no
+ * way to WRITE. Every definition in the registry got there through `import`, a
+ * one-time seed of the catalog shipped with the platform, so "Prime improves the
+ * fleet" bottomed out in a human editing repo files.
+ *
+ * **Prime's shell never writes a definition.** The body arrives on stdin as JSON;
+ * this command resolves the base revision, and registry.createChange() seals,
+ * validates and commits it. That is the whole point of routing authorship through
+ * a verb rather than a file write: an agent with a shell could otherwise put
+ * anything in the registry, unsealed and unattributed.
+ *
+ * Almost nothing here is new. createChange already does the hard part — CAS on
+ * baseRevision, revision sealing, schema validation, conflict detection, refusing
+ * a no-op — and diff.mjs already computes the field-level diff. The gap was a
+ * caller.
+ *
+ * Usage:
+ *   fleet-config change create <kind>      --title T [--rationale R] [--risk r]
+ *   fleet-config change update <kind>      --title T [--rationale R] [--risk r]
+ *   fleet-config change deprecate <kind>/<id> --title T [--rationale R]
+ *
+ * The definition body is read from stdin (or --file <path>) and may be one
+ * object or an array of them. deprecate needs no body.
+ */
+async function cmdChange(registry, args) {
+  const OPS = ['create', 'update', 'deprecate'];
+  const positional = args.filter((a) => !a.startsWith('--'));
+  const [op, target] = positional;
+  if (!OPS.includes(op) || !target) {
+    die('usage: fleet-config change create|update <kind> --title T   |   change deprecate <kind>/<id> --title T');
+  }
+
+  const title = argValue(args, '--title');
+  if (!title) die('--title is required: a change nobody can describe is a change nobody can review');
+  const rationale = argValue(args, '--rationale') || '';
+  const risk = argValue(args, '--risk') || 'medium';
+
+  const { definitions } = await registry.readDefinitions();
+  const edits = [];
+  const diff = [];
+
+  if (op === 'deprecate') {
+    const [kind, id] = target.split('/');
+    if (!kind || !id) die('usage: fleet-config change deprecate <kind>/<id> --title T');
+    const existing = definitions.get(`${kind}/${id}`);
+    if (!existing) die(`no such definition '${kind}/${id}' — nothing to deprecate`);
+    if (existing.status === 'deprecated') die(`'${kind}/${id}' is already deprecated`);
+
+    // Deprecation is an ordinary edit that sets one field. It is NOT a delete:
+    // the schema keeps a deprecated definition so a rollback still has something
+    // to roll back to, and the compiler is what stops shipping it.
+    const { digest, revision, ...body } = existing;
+    const draft = { ...body, status: 'deprecated' };
+    edits.push({ kind, draft, baseRevision: revision });
+    // diffRevision returns ONE entry or null, not a list. The Change schema
+    // wants the diffSets() shape, so the kind/id/op/revisions are added here.
+    const d = diffRevision(kind, existing, draft);
+    if (d) diff.push({ kind, id, op: 'deprecate', from_revision: revision, to_revision: null, summary: d.summary, fields: d.fields });
+  } else {
+    const kind = target;
+    const raw = argValue(args, '--file')
+      ? readFileSync(argValue(args, '--file'), 'utf8')
+      : readFileSync(0, 'utf8');
+    if (!raw.trim()) die('no definition body on stdin (or pass --file <path>)');
+
+    let parsed;
+    try { parsed = JSON.parse(raw); }
+    catch (e) { die(`the definition body is not valid JSON: ${e.message}`); }
+    const drafts = Array.isArray(parsed) ? parsed : [parsed];
+    if (!drafts.length) die('the definition body is an empty array');
+
+    for (const draft of drafts) {
+      if (!draft?.id) die('every definition needs an id');
+      const existing = definitions.get(`${kind}/${draft.id}`);
+
+      // create and update differ ONLY in which precondition they assert. Both
+      // then take the same path, so there is no second way to write a definition.
+      if (op === 'create' && existing) {
+        die(`${kind}/${draft.id} already exists at revision ${existing.revision} — use "change update"`);
+      }
+      if (op === 'update' && !existing) {
+        die(`no such definition '${kind}/${draft.id}' — use \`change create\``);
+      }
+
+      edits.push({ kind, draft, baseRevision: existing?.revision ?? null });
+      const d = diffRevision(kind, existing || null, draft);
+      if (d) {
+        diff.push({
+          kind, id: draft.id,
+          op: existing ? 'update' : 'add',
+          from_revision: existing?.revision ?? null,
+          to_revision: null,   // sealed by createChange; unknown until it returns
+          summary: d.summary, fields: d.fields,
+        });
+      }
+    }
+  }
+
+  // Seal locally first so a schema failure aborts before anything is pushed —
+  // the same discipline `import` uses. The sealed value is DISCARDED: its
+  // revision would differ from the one createChange computes (a different
+  // created_at digests differently), and publishing a revision id that is not
+  // the one on the branch would be worse than publishing none.
+  for (const e of edits) sealRevision(e.kind, e.draft, { actor: actorId() });
+
+  const result = await registry.createChange({ title, rationale, edits, diff, risk });
+  if (!result.ok) {
+    emit({ ok: false, conflicts: result.conflicts });
+    process.exit(3);
+  }
+  emit({ change: result.change.id, branch: result.branch, revisions: result.change.revisions, diff: result.change.diff, rendered: renderDiff(diff) });
 }
 
 async function cmdList(registry, args) {
@@ -777,6 +893,7 @@ process.env.GCP_PROJECT_ID = process.env.GCP_PROJECT_ID || PROJECT_ID;
 const registry = createRegistry({ projectId: PROJECT_ID, actor: actorId(), logger: (lvl, m) => note(`${lvl}: ${m}`) });
 
 const COMMANDS = {
+  change: cmdChange,
   import: cmdImport, list: cmdList, get: cmdGet, diff: cmdDiff, validate: cmdValidate,
   release: cmdRelease, assign: cmdAssign, rollback: cmdRollback, compile: cmdCompile, status: cmdStatus,
   observe: cmdObserve, evaluate: cmdEvaluate, finding: cmdFinding,
