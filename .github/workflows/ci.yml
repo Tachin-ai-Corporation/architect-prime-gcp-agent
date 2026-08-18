@@ -135,6 +135,12 @@ jobs:
       - name: A release resolves to fixed bytes
         run: node --test test/release-bytes.test.mjs
 
+      # A release that drops a skill must remove it. The planner was correct and
+      # fed a desired-only inventory, so its removal set was structurally empty
+      # and a retired skill stayed installed while the sync reported success.
+      - name: Retired content is retired
+        run: node --test test/retired-content.test.mjs
+
   codeowners:
     name: CODEOWNERS Resolves
     runs-on: ubuntu-latest

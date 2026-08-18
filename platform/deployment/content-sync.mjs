@@ -102,6 +102,14 @@ export function bundleMatches(installed, spec) {
   for (const [path, digest] of Object.entries(expected)) {
     if (installed[path] !== digest) return false;
   }
+  // An EXTRA managed file means not converged. This loop was absent, so a bundle
+  // that had dropped a skill reported "already converged" while the skill was
+  // still installed and still in the agent's runtime index — the agent kept a
+  // capability the release removed. Only paths this agent MANAGES appear in
+  // `installed`, so an extra here is genuinely ours to remove, not a stray file.
+  for (const path of Object.keys(installed)) {
+    if (!(path in expected)) return false;
+  }
   return true;
 }
 

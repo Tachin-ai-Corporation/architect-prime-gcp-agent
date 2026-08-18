@@ -88,14 +88,50 @@ function agentId() {
     || 'unknown';
 }
 
-/** Digests of the content currently installed, so a no-op is recognizable. */
-function currentDigests(files) {
+/**
+ * Digests of the managed content currently installed, so a no-op is recognizable
+ * AND a retired file is visible.
+ *
+ * The caller used to pass `Object.keys(files)` — the DESIRED paths — so `current`
+ * could never hold a key `desired` lacked, and planApply's removal set was
+ * structurally empty. The pure planner was always correct; it was fed an
+ * inventory that made removal impossible. A skill dropped from a release stayed
+ * installed, stayed in the runtime index, and the sync reported success.
+ *
+ * The inventory must be the UNION of what the new bundle wants and what this
+ * agent managed last time.
+ */
+function currentDigests(inventory) {
   const out = {};
-  for (const bundlePath of files) {
+  for (const bundlePath of inventory) {
     const live = join(CORE_DIR, installPath(bundlePath));
     if (existsSync(live)) out[bundlePath] = bytesDigest(readFileSync(live));
   }
   return out;
+}
+
+/** Where the applied-content record lives. */
+const CONTENT_RECORD = () => join(CORE_DIR, 'corekit', 'CONTENT.json');
+
+/**
+ * The path set this agent managed on its last apply, or null if unknowable.
+ *
+ * `null` is not `[]`, and that difference is the point: an older record stored
+ * only a file COUNT, so the previous path set cannot be recovered from it.
+ * Returning an empty set would silently reproduce the bug — no previous paths
+ * means no removals — while looking like a clean answer. The caller says so out
+ * loud instead.
+ */
+function previouslyManaged() {
+  try {
+    const rec = JSON.parse(readFileSync(CONTENT_RECORD(), 'utf8'));
+    const managed = rec?.managed;
+    if (Array.isArray(managed)) return managed.slice();
+    if (managed && typeof managed === 'object') return Object.keys(managed);
+    return null;
+  } catch {
+    return null;
+  }
 }
 
 /** Work this agent owns, for the idle-boundary check. */
@@ -228,7 +264,13 @@ async function onePass() {
   }
 
   const envelopes = await inFlight(db, agentEmail);
-  const installed = currentDigests(Object.keys(files));
+  const prior = previouslyManaged();
+  if (prior === null) {
+    log('WARN',
+      'no managed-path manifest in CONTENT.json (pre-manifest record) — retired files cannot be '
+      + 'identified on THIS pass; this apply writes one, and removals work from the next apply on');
+  }
+  const installed = currentDigests(new Set([...Object.keys(files), ...(prior || [])]));
   const decision = reconcile({ assignment, spec, envelopes, agentEmail, installed, emergency: EMERGENCY });
 
   log('INFO', `${decision.action}: ${decision.reason}`);
@@ -296,6 +338,10 @@ async function onePass() {
     agent, release: assignment.desired_release, spec_digest: spec.digest,
     tree_digest: spec.bundle.tree_digest, applied_at: new Date().toISOString(),
     files: Object.keys(files).length,
+    // The managed path set, path -> digest. `files` above is a COUNT and was the
+    // only record kept, which is why the previous path set was unrecoverable and
+    // nothing could ever be retired. Kept alongside for readers that use it.
+    managed: spec.bundle.files || {},
   }, null, 2) + '\n', 'utf8');
 
   await registry.reportApplied({ agentId: agent, releaseId: assignment.desired_release, specDigest: spec.digest });
