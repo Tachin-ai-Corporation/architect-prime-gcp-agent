@@ -24,6 +24,7 @@ import * as gitStore from '../persistence/git-store.mjs';
 import { createClient } from '../persistence/firestore.mjs';
 import { contentDigest } from '../contracts/digest.mjs';
 import { sealRevision, verifyRevision, DEFINITION_KINDS, CATALOG } from '../contracts/index.mjs';
+import { canTransition } from '../contracts/change-transitions.mjs';
 import { FLEET_CONFIG_REPO, FLEET_CONFIG_BRANCH, pathFor } from '../contracts/ids.mjs';
 
 const nowIso = () => new Date().toISOString();
@@ -363,9 +364,47 @@ export function createRegistry(config) {
     const path = pathFor('fleetChange', changeId);
     const change = await db.read(path, { strict: true });
     if (!change) throw new Error(`unknown change '${changeId}'`);
+
+    const next = passed ? 'validated' : 'draft';
+    const move = canTransition(change.status, next, change);
+    if (!move.ok) throw new Error(`change ${changeId}: ${move.reason}`);
+
     const validation = { at: nowIso(), passed, errors: errors || [], checks: checks || [] };
-    await db.write(path, { ...change, validation, status: passed ? 'validated' : 'draft' }, { strict: true });
+    await db.write(path, { ...change, validation, status: next }, { strict: true });
     return validation;
+  }
+
+  /**
+   * Attach an evaluation to a change, and move it to `evaluated`.
+   *
+   * The change schema has carried an `evaluation_ids` array since it was
+   * written, and NOTHING EVER APPENDED TO IT. createRelease then flat-mapped
+   * that array into the release's evidence, so every release recorded zero
+   * evaluations while its own comment said a release carries its evidence
+   * (C-31). Structurally empty, exactly like the removal set in Finding D: the
+   * code downstream was correct and was fed a list that could not be non-empty.
+   *
+   * Idempotent (C-18): attaching the same evaluation twice is a no-op, so a
+   * retry after a partial failure does not duplicate evidence or fail.
+   */
+  async function attachEvaluation(changeId, evaluationId) {
+    if (!evaluationId) throw new Error('attachEvaluation needs an evaluation id');
+    const path = pathFor('fleetChange', changeId);
+    const change = await db.read(path, { strict: true });
+    if (!change) throw new Error(`unknown change '${changeId}'`);
+
+    const ids = change.evaluation_ids || [];
+    const evaluation_ids = ids.includes(evaluationId) ? ids : [...ids, evaluationId];
+
+    // The requirement for `evaluated` is that an evaluation is attached, so the
+    // check runs against the change as it WILL be, not as it was.
+    const move = canTransition(change.status, 'evaluated', { ...change, evaluation_ids });
+    if (!move.ok) throw new Error(`change ${changeId}: ${move.reason}`);
+
+    const next = { ...change, evaluation_ids, status: 'evaluated' };
+    await db.write(path, next, { strict: true });
+    log('INFO', `change ${changeId}: evaluation ${evaluationId} attached (${evaluation_ids.length} total)`);
+    return next;
   }
 
   /**
@@ -709,6 +748,7 @@ export function createRegistry(config) {
 
   return {
     ensureRepo,
+    attachEvaluation,
     readDefinitions,
     readReleaseDefinitions,
     createChange,

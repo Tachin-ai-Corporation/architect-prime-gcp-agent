@@ -624,6 +624,19 @@ async function cmdEvaluate(registry, args) {
   if (args.includes('--save')) {
     await registry._db.write(pathFor('fleetEvaluation', record.id), record, { strict: true });
     note(`saved ${record.id}`);
+
+    // Attach it to the change, or the evidence trail stops here. The record
+    // was written and then referenced by nothing: change.evaluation_ids stayed
+    // empty, and createRelease flat-mapped that empty array into the release's
+    // evidence. A saved evaluation nobody can find from the change it grades is
+    // a file, not evidence.
+    const changeId = argValue(args, '--change');
+    if (changeId) {
+      await registry.attachEvaluation(changeId, record.id);
+      note(`attached ${record.id} to change ${changeId}`);
+    } else {
+      note('no --change given — this evaluation grades a candidate but is attached to nothing');
+    }
   }
   emit(record);
   if (regressions(results).length) process.exit(4);

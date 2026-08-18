@@ -328,12 +328,45 @@ track of what the agent manages.
    never writes a definition.** *(Finding C.)*
 6. **Real baseline-vs-candidate evaluation** — resolve two exact commits, compile both under identical
    firmware/model/suite, run both, compare. A planted regression must fail the gate. *(Finding B.)*
-7. **A minimal lifecycle**: `draft → validated → evaluated → approved → released → canary → promoted |
+7. **A minimal lifecycle** — *DONE, and smaller than written, because most of it already existed.*
+
+   The Release side was already there and already enforced: `released → canary → active →
+   superseded | rolled-back`, with `canary` set by `assign --pin`. The **Change** side was the gap,
+   and it was implicit across three writers — `createChange` stamped `draft`, `recordValidation`
+   flipped `validated`/`draft`, `createRelease` stamped `released`. *May a released change go back
+   to draft?* had nowhere to be asked.
+
+   [`platform/contracts/change-transitions.mjs`](../../platform/contracts/change-transitions.mjs) is
+   that answer as one pure table, in the shape
+   [`work-transitions.mjs`](../../platform/contracts/work-transitions.mjs) already established —
+   reusing a precedent rather than inventing a second convention for the same job.
+
+   **Two objects, two lifecycles.** The chain written below spans both, and folding them into one
+   table would invent states neither object has: a Change is never `canary`, a Release is never
+   `validated`. There is a test asserting exactly that, because the tidier-looking mistake is the
+   easy one to make later.
+
+   **Evaluation is evidence, not a gate**, and that is a decision rather than an omission. `import`
+   produces a change nobody *can* evaluate — there is no baseline to evaluate it against — so a
+   mandatory evaluation gate would have blocked the seed path on day one, which is how a gate gets
+   switched off. What a release does require, and always did, is passing validation.
+
+   **The defect found on the way in:** `change.evaluation_ids` was initialised to `[]` and *nothing
+   ever appended to it*. `createRelease` then flat-mapped that array into the release's evidence, so
+   every release recorded zero evaluations while the code around it said a release carries its
+   evidence (C-31). Structurally empty — the same shape as the removal set in Finding D, where the
+   consumer was correct and was fed a list that could not be non-empty. `attachEvaluation` closes
+   it, idempotently, and `evaluate --save --change <id>` calls it.
+
+   *The original item read:*
+
+~~7. **A minimal lifecycle**~~: `draft → validated → evaluated → approved → released → canary → promoted |
    rolled_back`. Idempotent, CAS-protected, schema-valid. **Canary is one agent** — no cohorts, no
    observation windows, no rollout scheduler. Those are Phase D *if the simple version proves
    insufficient*, which is the only honest reason to build them.
 
-**Exit:** from dashboard chat, Prime turns a stated need into a typed proposal with a semantic diff,
+**Exit — the CLI half is MET; the dashboard-chat half is not yet wired.** Prime turns a stated need
+into a typed proposal with a semantic diff,
 evaluates it against a real baseline, canaries it on one agent, and promotes or rolls back — touching
 no repo file.
 

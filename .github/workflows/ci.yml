@@ -211,6 +211,14 @@ jobs:
       - name: Prime can author a definition
         run: node --test test/authoring-verb.test.mjs
 
+      # The Change lifecycle was implicit across three writers, and
+      # change.evaluation_ids was initialised to [] with nothing ever appending to
+      # it — so createRelease flat-mapped an array that could not be non-empty into
+      # the evidence a release claims to carry. Structurally empty, same class as
+      # the removal set in Finding D.
+      - name: The change lifecycle is a table, and evidence is attached
+        run: node --test test/change-lifecycle.test.mjs
+
   codeowners:
     name: CODEOWNERS Resolves
     runs-on: ubuntu-latest
