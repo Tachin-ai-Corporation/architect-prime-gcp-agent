@@ -12,8 +12,8 @@
 //   2. compile the spec locally       from the release's pinned content commit
 //   3. verify digest == assigned      or refuse — see below
 //   4. render to staging, verify      a partial render never reaches the live tree
-//   5. wait for an idle boundary      definitions never change under running work
-//   6. swap, keeping the previous     so a bad apply can be undone locally
+//   5. wait for an idle boundary      unless a previous apply was interrupted
+//   6. swap, then record what we manage   atomically, before the evidence is dropped
 //   7. report actual back             closing the desired/actual loop
 //
 // Step 3 is the one that matters most: if the spec this VM compiles differs from
@@ -26,13 +26,13 @@
 //   agent-content-sync --dry-run    decide and report, change nothing
 //   agent-content-sync --emergency  apply without waiting for an idle boundary
 
-import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, readdirSync, statSync, renameSync } from 'node:fs';
+import { readFileSync, writeFileSync, mkdirSync, rmSync, existsSync, renameSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 
 import { createRegistry } from '../deployment/registry.mjs';
 import { compileAgentSpec } from '../deployment/compiler.mjs';
 import {
-  reconcile, planApply, verifyStaged, installPath, firmwarePath, STAGING_DIR, PREVIOUS_DIR,
+  reconcile, planApply, verifyStaged, installPath, firmwarePath, managedFromRecord, STAGING_DIR,
 } from '../deployment/content-sync.mjs';
 import { bytesDigest } from '../contracts/digest.mjs';
 import { createClient } from '../persistence/firestore.mjs';
@@ -114,21 +114,29 @@ function currentDigests(inventory) {
 const CONTENT_RECORD = () => join(CORE_DIR, 'corekit', 'CONTENT.json');
 
 /**
+ * Write a JSON record so a reader sees it wholly old or wholly new.
+ *
+ * writeFileSync truncates and then writes, so a crash inside it leaves a
+ * TRUNCATED file — valid-looking, unparseable, and indistinguishable from a
+ * record that legitimately lacks a field. Temp-plus-rename cannot produce that
+ * state: rename(2) within a directory is atomic.
+ */
+function writeRecord(path, value) {
+  const tmp = path + '.tmp';
+  writeFileSync(tmp, JSON.stringify(value, null, 2) + '\n', 'utf8');
+  renameSync(tmp, path);
+}
+
+/**
  * The path set this agent managed on its last apply, or null if unknowable.
  *
- * `null` is not `[]`, and that difference is the point: an older record stored
- * only a file COUNT, so the previous path set cannot be recovered from it.
- * Returning an empty set would silently reproduce the bug — no previous paths
- * means no removals — while looking like a clean answer. The caller says so out
- * loud instead.
+ * The read is here; the decision is in managedFromRecord (B-19), because the case
+ * that matters is a CORRUPT record and that case cannot be reached in a test
+ * through a daemon that runs on import. `null` is not `[]` — see there.
  */
 function previouslyManaged() {
   try {
-    const rec = JSON.parse(readFileSync(CONTENT_RECORD(), 'utf8'));
-    const managed = rec?.managed;
-    if (Array.isArray(managed)) return managed.slice();
-    if (managed && typeof managed === 'object') return Object.keys(managed);
-    return null;
+    return managedFromRecord(readFileSync(CONTENT_RECORD(), 'utf8'));
   } catch {
     return null;
   }
@@ -263,6 +271,16 @@ async function onePass() {
     return { action: 'fail', reason: e.message };
   }
 
+  // A staging tree at the top of a pass means the previous apply died between the
+  // render and the end of the swap, so the live tree may be half of one generation
+  // and half of another. That is the one state in which waiting for an idle
+  // boundary makes things worse rather than safer — see isIdle().
+  const staging = join(CORE_DIR, STAGING_DIR);
+  const interrupted = existsSync(staging);
+  if (interrupted) {
+    log('WARN', 'a staging tree is present — the previous apply did not finish; the live tree may be mixed');
+  }
+
   const envelopes = await inFlight(db, agentEmail);
   const prior = previouslyManaged();
   if (prior === null) {
@@ -271,7 +289,9 @@ async function onePass() {
       + 'identified on THIS pass; this apply writes one, and removals work from the next apply on');
   }
   const installed = currentDigests(new Set([...Object.keys(files), ...(prior || [])]));
-  const decision = reconcile({ assignment, spec, envelopes, agentEmail, installed, emergency: EMERGENCY });
+  const decision = reconcile({
+    assignment, spec, envelopes, agentEmail, installed, emergency: EMERGENCY, interrupted,
+  });
 
   log('INFO', `${decision.action}: ${decision.reason}`);
   if (DRY_RUN) {
@@ -283,10 +303,19 @@ async function onePass() {
     await registry.reportApplied({ agentId: agent, releaseId: assignment.desired_release, specDigest: null, error: decision.reason });
     return decision;
   }
-  if (decision.action !== 'apply') return decision;
+  if (decision.action !== 'apply') {
+    // Clear the marker on the way out. A render is never worth keeping — the next
+    // apply recomputes it from the release's pinned commit — and leaving it makes
+    // `interrupted` latch true forever, which would quietly repeal the idle gate on
+    // every later pass. A flag that cannot go back to false is not a flag.
+    if (interrupted) {
+      rmSync(staging, { recursive: true, force: true });
+      log('INFO', 'cleared the stale staging tree; the next apply re-renders from the pinned commit');
+    }
+    return decision;
+  }
 
   // ---- Render to staging and verify there ----
-  const staging = join(CORE_DIR, STAGING_DIR);
   rmSync(staging, { recursive: true, force: true });
   for (const [path, content] of Object.entries(files)) {
     const target = join(staging, path);
@@ -305,18 +334,26 @@ async function onePass() {
     return { action: 'fail', reason: verdict.reason };
   }
 
-  // ---- Swap, keeping the previous bundle ----
+  // ---- Swap ----
+  //
+  // Per-file rename, and that is as atomic as this gets here. A single-pointer
+  // generation switch was designed and rejected: it needs the live paths to be
+  // symlinks into a content store, and three existing writers break that on every
+  // platform upgrade — install.sh's flagless `cp` writes THROUGH a symlinked dest
+  // into the store (corrupting the content-addressed bytes), while its `sed -i`
+  // template pass and assemble-persona's `mv -f` each replace the link with a
+  // regular file. Nothing would notice, because drift detection hashes content
+  // THROUGH the link and never lstats it. It would also buy an invariant no
+  // reader can observe: the brain builds its skill index once at module load and
+  // caches souls for 60s, so the generation boundary a reader actually sees is
+  // already smeared across a process lifetime.
+  //
+  // What is worth having is below — a record that cannot be torn, written before
+  // the evidence of an unfinished apply is dropped.
   const plan = planApply(installed, files);
-  const previous = join(CORE_DIR, PREVIOUS_DIR);
-  rmSync(previous, { recursive: true, force: true });
 
   for (const bundlePath of plan.write) {
     const live = join(CORE_DIR, installPath(bundlePath));
-    if (existsSync(live)) {
-      const backup = join(previous, bundlePath);
-      mkdirSync(dirname(backup), { recursive: true });
-      writeFileSync(backup, readFileSync(live));
-    }
     mkdirSync(dirname(live), { recursive: true });
     // Rename within the same filesystem is atomic, so a reader never sees a
     // half-written SOUL — and organ config is read fresh per call, so the next
@@ -326,15 +363,26 @@ async function onePass() {
 
   for (const bundlePath of plan.remove) {
     const live = join(CORE_DIR, installPath(bundlePath));
-    if (!existsSync(live)) continue;
-    const backup = join(previous, bundlePath);
-    mkdirSync(dirname(backup), { recursive: true });
-    writeFileSync(backup, readFileSync(live));
-    rmSync(live, { force: true });
+    if (existsSync(live)) rmSync(live, { force: true });
   }
 
-  rmSync(staging, { recursive: true, force: true });
-  writeFileSync(join(CORE_DIR, 'corekit', 'CONTENT.json'), JSON.stringify({
+  // The managed-path record, written atomically and BEFORE the staging tree goes.
+  //
+  // Both halves are load-bearing. This file is the ONLY record of which paths
+  // this agent manages, so a torn write is not a cosmetic loss: a record that
+  // will not parse makes previouslyManaged() return null, the next pass cannot
+  // see a path the new release dropped, and the following apply rewrites
+  // `managed` without it — the retired file becomes permanently invisible and the
+  // agent keeps a capability the release removed. That is Finding D reintroduced
+  // by a crash instead of by a bug, and it is the one failure on this path that
+  // does not self-heal. The record also feeds the coordinate stamp every work
+  // envelope carries (agent-brain reads spec_digest from here), so tearing it
+  // mislabels provenance as well as losing it.
+  //
+  // Ordering: the record lands while the staging tree still exists, so there is
+  // no window in which the apply is finished, unrecorded, and no longer
+  // detectable as unfinished.
+  writeRecord(join(CORE_DIR, 'corekit', 'CONTENT.json'), {
     agent, release: assignment.desired_release, spec_digest: spec.digest,
     tree_digest: spec.bundle.tree_digest, applied_at: new Date().toISOString(),
     files: Object.keys(files).length,
@@ -342,7 +390,9 @@ async function onePass() {
     // only record kept, which is why the previous path set was unrecoverable and
     // nothing could ever be retired. Kept alongside for readers that use it.
     managed: spec.bundle.files || {},
-  }, null, 2) + '\n', 'utf8');
+  });
+
+  rmSync(staging, { recursive: true, force: true });
 
   await registry.reportApplied({ agentId: agent, releaseId: assignment.desired_release, specDigest: spec.digest });
   log('INFO', `applied ${assignment.desired_release} (${spec.digest.slice(0, 19)}…): ${plan.write.length} written, ${plan.remove.length} removed, ${plan.unchanged.length} unchanged`);

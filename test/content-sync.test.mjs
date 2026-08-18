@@ -16,7 +16,7 @@ import assert from 'node:assert/strict';
 
 import {
   planApply, verifyStaged, isIdle, reconcile, installPath, installPaths,
-  STAGING_DIR, PREVIOUS_DIR,
+  managedFromRecord, STAGING_DIR,
 } from '../platform/deployment/content-sync.mjs';
 import { bytesDigest, treeDigest } from '../platform/contracts/digest.mjs';
 
@@ -206,8 +206,94 @@ test('the daemon and its timer ship together', async () => {
   }
 });
 
-test('staging and previous directories are distinct and dotted', () => {
-  assert.notEqual(STAGING_DIR, PREVIOUS_DIR);
-  assert.ok(STAGING_DIR.startsWith('.') && PREVIOUS_DIR.startsWith('.'),
-    'neither should be mistaken for installed content');
+test('the staging directory is dotted, so it is never mistaken for installed content', () => {
+  assert.ok(STAGING_DIR.startsWith('.'));
+  // It is also the interrupted-apply marker, so it must not collide with a
+  // bundle path — a managed file named the same would make every pass look
+  // interrupted.
+  assert.ok(!installPaths(files).some((p) => p.startsWith(STAGING_DIR)));
+});
+
+// ---- The interrupted-apply marker (P0-6, narrowed) --------------------------
+//
+// After an apply dies mid-swap the live tree is already mixed. Waiting for an
+// idle boundary then prolongs exactly the harm C-32 names, and inFlight() fails
+// closed to "busy", so under a Firestore error the wait never ends.
+
+test('an interrupted apply converges even while work is in flight', () => {
+  const r = reconcile({
+    assignment: assignment(), spec: specFor(files),
+    envelopes: [{ status: 'active', owner: 'm@x', type: 'M' }], agentEmail: 'm@x',
+    interrupted: true,
+  });
+  assert.equal(r.action, 'apply');
+  assert.match(r.reason, /already mixed/);
+});
+
+// The negative half. Without this the escape hatch has quietly repealed C-32 and
+// nothing would say so — every guard needs the case where it must NOT fire
+// (R-10), and an override is the guard most likely to be tested only one way.
+test('work in flight still waits when nothing was interrupted', () => {
+  const r = reconcile({
+    assignment: assignment(), spec: specFor(files),
+    envelopes: [{ status: 'active', owner: 'm@x', type: 'M' }], agentEmail: 'm@x',
+    interrupted: false,
+  });
+  assert.equal(r.action, 'wait');
+});
+
+test('interrupted does not override a digest mismatch', () => {
+  // Refusing content that was not approved outranks converging a mixed tree:
+  // finishing an apply of the wrong bytes is not a repair.
+  const spec = { ...specFor(files), digest: 'sha256:' + '9'.repeat(64) };
+  const r = reconcile({
+    assignment: assignment(), spec, envelopes: [], agentEmail: 'm@x', interrupted: true,
+  });
+  assert.equal(r.action, 'fail');
+});
+
+test('interrupted does not resurrect an already-converged agent', () => {
+  // A stale staging tree left by a crash on a pass that changed nothing must not
+  // manufacture work forever. Convergence is judged on the disk, not the marker.
+  const spec = specFor(files);
+  const installed = {};
+  for (const [path, content] of Object.entries(files)) installed[path] = bytesDigest(content);
+  const r = reconcile({
+    assignment: assignment({ actual_spec_digest: spec.digest, actual_release: 'fr-1' }),
+    spec, envelopes: [], agentEmail: 'm@x', installed, interrupted: true,
+  });
+  assert.equal(r.action, 'skip');
+});
+
+// ---- managedFromRecord: null is not empty ----------------------------------
+//
+// The whole reason this is a pure function: the interesting input is a CORRUPT
+// record, and that is unreachable through a daemon that runs on import.
+
+test('a torn CONTENT.json yields null, never an empty managed set', () => {
+  const good = JSON.stringify({ managed: { 'skills/a/SKILL.md': 'sha256:aa' } }, null, 2);
+  assert.deepEqual(managedFromRecord(good), ['skills/a/SKILL.md']);
+
+  // Truncated exactly the way an interrupted writeFileSync leaves it.
+  const torn = good.slice(0, Math.floor(good.length / 2));
+  assert.equal(managedFromRecord(torn), null,
+    'a half-written record must not read as "this agent manages nothing" — that is '
+    + 'how a retired file becomes permanently invisible (Finding D by crash)');
+
+  assert.equal(managedFromRecord(''), null);
+  assert.equal(managedFromRecord(null), null);
+  assert.equal(managedFromRecord(undefined), null);
+});
+
+test('a pre-manifest record yields null, not an empty set', () => {
+  // The old record stored only a COUNT. There is no path set to recover, and
+  // saying so is the difference between "unknown" and "nothing".
+  assert.equal(managedFromRecord(JSON.stringify({ files: 27 })), null);
+});
+
+test('managedFromRecord accepts both record shapes', () => {
+  assert.deepEqual(managedFromRecord(JSON.stringify({ managed: ['a', 'b'] })), ['a', 'b']);
+  assert.deepEqual(managedFromRecord(JSON.stringify({ managed: { a: 'x', b: 'y' } })), ['a', 'b']);
+  // Junk entries in an array form are dropped rather than becoming empty paths.
+  assert.deepEqual(managedFromRecord(JSON.stringify({ managed: ['a', '', null, 3] })), ['a']);
 });

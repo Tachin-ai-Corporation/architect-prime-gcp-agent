@@ -366,6 +366,75 @@ fi
 info "Installing ${#pairs[@]} file pairs..."
 declare -A file_hashes
 declare -A noclobber_dests   # dests seeded no-clobber (?) — runtime-owned, never pruned
+declare -A content_managed   # dests owned by the CONTENT plane — never ours to prune
+content_record_unreadable=0
+
+# ---- Content-plane ownership (C-36) ----
+#
+# The installer owns Foundation. A Fleet content release owns composition, and
+# since agent-content-sync shipped it writes real files into paths this script
+# also walks: skills/<id>/SKILL.md and skills/<id>/skill.json for every skill a
+# RELEASE adds, plus the rendered organ souls.
+#
+# That makes the prune loops below dangerous in a way their comments did not
+# anticipate. Both decide ownership by asking "is this in the manifest?", and
+# the orphan sweep justified itself with "skills/ holds nothing but
+# manifest-managed product content — exhaustively manifest-owned by
+# construction". That was TRUE before the Fleet Definition plane existed and is
+# FALSE now: a skill Prime adds through a release appears in no manifest, so the
+# sweep classified it as an orphan and deleted it on the next platform upgrade.
+#
+# The consequence was precise, latent, and fatal to the point of the system:
+# Prime could add a skill, and the next upgrade would silently remove it.
+# Content sync re-applies within its timer period, but the brain builds its
+# skill index once at process start — so the agent comes up from the upgrade
+# without the skill and does not see it again until something restarts it.
+#
+# corekit/CONTENT.json is the content plane's declaration of what it manages
+# (path -> digest), written atomically by the daemon. Reading it here IS the
+# whole cross-plane contract: THE INSTALLER DOES NOT DELETE WHAT THE CONTENT
+# PLANE CLAIMS. No new file format, no new coordination step.
+#
+# Fails closed. An absent record means no release has ever applied here, so
+# there is nothing to protect and the sweep is correct as it stands. A record
+# that is PRESENT but yields no managed set means we cannot tell what the
+# content plane owns — and deleting files we cannot prove are unowned is the
+# destructive choice, so the sweeps stand down instead.
+load_content_managed() {
+  local record="${INSTALL_ROOT}/corekit/CONTENT.json"
+  if ! run test -f "$record" 2>/dev/null; then
+    echo "  [content] no CONTENT.json — no release has applied here; nothing to protect"
+    return 0
+  fi
+  local path count=0
+  # The record is machine-written by JSON.stringify(value, null, 2), so the
+  # managed block is a flat object of "path": "sha256:..." pairs. Isolate that
+  # block FIRST: spec_digest and tree_digest are also sha256 values and would
+  # otherwise be read as if they were paths.
+  #
+  # The value must be a QUOTED STRING to count as an entry. Without that the
+  # range's own opening line ("managed": {) matched the key pattern and the
+  # literal word `managed` was collected as a managed path — which also made an
+  # EMPTY managed map look like a set of size one, defeating the stand-down.
+  while IFS= read -r path; do
+    [[ -z "$path" ]] && continue
+    content_managed["$path"]=1
+    count=$((count + 1))
+    # The cortex soul is the one bundle path that installs elsewhere; mirror
+    # installPath() from platform/deployment/content-sync.mjs so the protected
+    # set is expressed in INSTALLED paths like every other array here.
+    if [[ "$path" == "workspace-cortex/SOUL.md" ]]; then
+      content_managed["workspace/SOUL.md"]=1
+    fi
+  done < <(run sed -n '/"managed"[[:space:]]*:[[:space:]]*{/,/^[[:space:]]*}/p' "$record" 2>/dev/null \
+             | sed -n 's/^[[:space:]]*"\([^"]*\)"[[:space:]]*:[[:space:]]*".*/\1/p')
+  if [[ $count -eq 0 ]]; then
+    content_record_unreadable=1
+    warn "CONTENT.json is present but declares no managed paths. Standing down the prune and orphan sweep: content-plane ownership cannot be established, and deleting files that may be release-owned is worse than leaving an orphan."
+    return 0
+  fi
+  echo "  [content] ${count} path(s) declared by the content plane — protected from prune"
+}
 installed=0
 
 for pair in "${pairs[@]}"; do
@@ -453,6 +522,10 @@ run find "${INSTALL_ROOT}" -type f -name 'setup.sh' -exec chmod 755 {} \; 2>/dev
 # (defensive against SCP from Windows, git autocrlf, etc.)
 run find "${INSTALL_ROOT}/bin" -type f -exec sed -i 's/\r$//' {} \; 2>/dev/null || true
 
+# ---- 4.4 Learn what the content plane owns, so neither prune deletes it ----
+info "Reading content-plane ownership (CONTENT.json)..."
+load_content_managed
+
 # ---- 4.5 Prune decommissioned files (C-9 removal discipline, C-18-safe) ----
 # Remove files that were manifest-managed on the PREVIOUS install (recorded in
 # STATE.json fileHashes) but are ABSENT from the CURRENT manifest. This is what
@@ -482,6 +555,10 @@ if [[ -f "$STATE_FILE" && ${#file_hashes[@]} -gt 0 ]]; then
     # manifest edit drops the seed line (its old STATE.json key would otherwise
     # make it a false stale candidate). Prune only decommissioned product files.
     if [[ -n "${noclobber_dests[$old_dest]+x}" ]]; then continue; fi
+    # Owned by the content plane → not ours. A path can be dropped from a manifest
+    # and still be live because a RELEASE now provides it; that is a handoff
+    # between planes, not a decommission.
+    if [[ -n "${content_managed[$old_dest]+x}" ]]; then continue; fi
     case "$old_dest" in
       agents/*|workspace/*|workspace-*/*|*/MEMORY.md|*/progress.json|corekit/fleet-registry.json|corekit/chat-config.json) continue ;;
     esac
@@ -518,17 +595,22 @@ fi
 # switched. Every one reported `in_STATE=0`.
 #
 # This pass reconciles against the CURRENT manifest instead of the previous one:
-# under the two directories that hold nothing but manifest-managed product content,
-# any file the freshly-built manifest does not own is an orphan and is removed.
-# Both scopes are exhaustively manifest-owned by construction — skills/ holds
-# SKILL.md + skill.json, corekit/specialties/ holds specialty SOUL appends and
-# skill bundles. Runtime state lives elsewhere (workspace*/, agents/, shared/) and
-# is never scanned. custom-skills/ is excluded so agent-authored skills survive.
+# under the two scanned directories, any file that neither the freshly-built
+# manifest nor the CONTENT PLANE owns is an orphan and is removed. Runtime state
+# lives elsewhere (workspace*/, agents/, shared/) and is never scanned.
+# custom-skills/ is excluded so agent-authored skills survive.
+#
+# This comment used to read "both scopes are exhaustively manifest-owned by
+# construction". That was the premise, and the Fleet Definition plane falsified
+# it: skills/<id>/SKILL.md can be owned by a RELEASE that appears in no
+# manifest. A stale premise is worse than no comment, because the sweep kept
+# behaving exactly as its justification described while the justification had
+# quietly stopped being true. See load_content_managed above.
 #
 # NOT extended to bin/: agents legitimately write helper scripts there mid-mission,
 # and skill-setup installs dependencies into it. Deleting those would violate C-18.
 # Guarded on a non-empty manifest so a partial fetch cannot sweep the tree.
-if [[ ${#file_hashes[@]} -gt 0 ]]; then
+if [[ ${#file_hashes[@]} -gt 0 && $content_record_unreadable -eq 0 ]]; then
   info "Reconciling against current manifest (orphan sweep)..."
   orphaned=0
   for scan_dir in skills corekit/specialties; do
@@ -541,6 +623,8 @@ if [[ ${#file_hashes[@]} -gt 0 ]]; then
       if [[ -n "${file_hashes[$rel]+x}" ]]; then continue; fi
       # Runtime-owned seeds (?) and live agent state are never orphans.
       if [[ -n "${noclobber_dests[$rel]+x}" ]]; then continue; fi
+      # Neither is content the release plane declares it manages (C-36).
+      if [[ -n "${content_managed[$rel]+x}" ]]; then continue; fi
       case "$rel" in
         */MEMORY.md|*/progress.json) continue ;;
       esac

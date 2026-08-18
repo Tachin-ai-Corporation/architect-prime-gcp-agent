@@ -162,6 +162,13 @@ jobs:
       - name: Retired content is retired
         run: node --test test/retired-content.test.mjs
 
+      # The installer must not delete what a release owns. install.sh's orphan
+      # sweep called any file under skills/ that no MANIFEST owns an orphan —
+      # true before the Fleet Definition plane existed, and after it the sweep
+      # deleted precisely the skills Prime is for, on every platform upgrade.
+      - name: The installer respects content-plane ownership
+        run: node --test test/content-plane-ownership.test.mjs
+
   codeowners:
     name: CODEOWNERS Resolves
     runs-on: ubuntu-latest

@@ -46,6 +46,13 @@ Not accepted from the snapshot. Checked:
 | **C** | No authoring verb | ✅ `COMMANDS` has import/list/get/diff/validate/release/assign/rollback/compile/status/observe/evaluate/finding — no create/update/deprecate | **The one thing Prime is for is the one verb missing.** It can *release* content it cannot *write*. |
 | **D** | Retired content never removed | ✅ `currentDigests(Object.keys(files))` hashes only desired paths, so `plan.remove` is structurally empty | **A deprecated skill never leaves the VM.** Prime can add but not subtract. |
 | **E** | CI red on a stale contracts digest | ❌ **already fixed** — regenerated 2026-08-17, `contract-planes` 12/12 | Audit Phase 0 item, done. |
+| **F** | **The platform installer deletes content the release plane owns** | ✅ `install.sh` orphan sweep removes any file under `skills/` the *manifest* does not own; a release-added skill is in no manifest | **Prime cannot add a skill that survives a platform upgrade.** Found by verifying P0-6, not in the audit. |
+| **G** | A released skill does not reach the brain until it restarts | ✅ `agent-brain.mjs:417` `let SKILL_INDEX = buildSkillIndex()` — module load, single call site, never rebuilt; content-sync signals nothing | **An applied release is not a live release.** Compounds F: the agent boots post-upgrade without the skill. |
+
+F and G are the two most consequential findings in this document and **neither came from the
+audit**. Both surfaced while checking whether P0-6 (apply atomicity) was worth building — which is
+the argument for the "verify before the phase that touches each" rule, stated one section up and
+nearly skipped here.
 
 Also taken on the audit's word, unverified here, and worth confirming before the phase that touches
 each: rollback digest semantics (P0-2), merge-failure-as-release (P0-3), apply atomicity (P0-6),
@@ -156,14 +163,79 @@ Without this, every later phase produces unfalsifiable results.
    *(Finding A.)*
 2. **Retired paths actually retire** — persist the full managed path→digest manifest, inventory the
    union of previous and desired, assert no managed extras survive. *(Finding D.)*
-3. **Atomic generation switch** — stage a complete generation, verify it, switch one pointer. A crash
-   leaves complete A or complete B, never a mix. *(P0-6.)*
+3. **~~Atomic generation switch~~ → a record that cannot be torn, and recovery that cannot stall.**
+   *(P0-6, narrowed on evidence — see below.)*
+
+   The original item said: *stage a complete generation, verify it, switch one pointer; a crash
+   leaves complete A or complete B, never a mix.* That was designed in full and **rejected**, for
+   three verified reasons rather than on cost:
+
+   - **A co-writer breaks it every upgrade.** A single-pointer switch needs the live paths to be
+     symlinks into a content store. `install.sh:417` copies with a flagless `cp`, which follows a
+     symlinked destination and writes *through* it — corrupting the content-addressed bytes, so
+     `gen-<digest>` stops meaning those bytes. Its `sed -i` template pass and
+     `assemble-persona`'s `mv -f` each *replace* the link with a regular file. Nothing would
+     notice: drift detection hashes content through the link and never `lstat`s it.
+   - **The switch cannot contain the changes that matter.** A skill *added* needs `mkdir` plus two
+     `symlink` calls, and a skill *retired* needs an `unlink` — all outside the one atomic rename.
+     Those are exactly the capability changes Prime makes. Worse, a dangling link reads as
+     *absent* to `currentDigests`, which would silently defeat the retirement check shipped in
+     `9488f11`.
+   - **No reader could observe it.** The brain builds its skill index once at module load and
+     caches souls for 60 s (Finding G), so the generation boundary a reader sees is already
+     smeared across a process lifetime. Compressing a ~10 ms filesystem window inside a 60,000 ms
+     reader window is a rounding error dressed as an invariant.
+
+   What is worth having, and what shipped instead:
+
+   - **`CONTENT.json` written atomically** (temp + rename). It is the *only* record of which paths
+     this agent manages, and the one failure on this path that does **not** self-heal: a torn write
+     makes `previouslyManaged()` return `null`, the next pass cannot see a path the release
+     dropped, and the following apply rewrites `managed` without it. The retired file becomes
+     permanently invisible — Finding D reintroduced by a crash instead of by a bug. It also feeds
+     the coordinate stamp on every work envelope, so tearing it mislabels provenance too.
+   - **Interrupted recovery is not idle-gated.** A staging tree at the top of a pass means the
+     previous apply died mid-swap, so the tree is *already* mixed. Waiting then protects nothing
+     and prolongs the harm C-32 names — and because `inFlight()` fails closed to "busy", a
+     Firestore error pinned it there without bound. C-32 forbids changing definitions *under*
+     running work; it does not require leaving a half-changed tree in place.
+   - **`.content-previous` deleted.** It promised "a bad apply can be undone locally" and nothing
+     ever read it — while being wiped at the start of every apply and filled incrementally during
+     one, so at the only moment it was wanted it held a partial bundle. Rollback already works
+     correctly one plane up: `registry.rollback()` repoints `desired_release` and the next pass
+     re-renders from the predecessor's pinned commit. Re-derivation from an immutable source beats
+     a local copy, because a copy can rot and a pinned commit cannot.
+
+3b. **The installer must not delete what a release owns** *(Finding F — new, and the most urgent
+    item in Phase A).* `corekit/CONTENT.json`'s managed map becomes the cross-plane contract: both
+    of `install.sh`'s prune loops consult it and skip what the content plane declares. Fails
+    closed — an *absent* record means no release has applied and the sweep is correct as-is, but a
+    record that is present and unreadable stands the sweep down, because deleting files that may
+    be release-owned is worse than leaving an orphan.
 4. **Typed storage errors** — a 404 is not an outage; an outage is not an empty world. Lifecycle reads
    and writes fail closed. *(P0-7 — and note this repo has already been bitten twice by a query
    against the wrong store reading as an empty result.)*
 
-**Exit:** the same release id produces byte-identical content twice, a dropped skill is gone from the
-VM and the runtime index, and crash injection cannot produce a mixed generation.
+5. **An applied release must be a live release** *(Finding G — new).* `SKILL_INDEX` is built once at
+   module load and never rebuilt, and content-sync restarts nothing, so a skill a release adds is
+   invisible to the brain until something else restarts it. Every other correctness property in this
+   phase is upstream of a delivery step that does not happen. The fix is a boundary rebuild, not a
+   restart: the brain already has an idle boundary between missions and already re-reads souls on a
+   TTL — the index should follow the same rule. **Not** a signalling protocol between daemons; that
+   would be a new cross-daemon contract to carry one bit.
+
+**Exit:** the same release id produces byte-identical content twice; a dropped skill is gone from the
+VM and the runtime index; **a platform upgrade does not remove release-owned content**; and a crash
+converges in one pass without operator action, never silently losing track of what the agent
+manages.
+
+> The last clause replaces *"crash injection cannot produce a mixed generation"*. That criterion is
+> unachievable here at any price and, more to the point, is not the property that matters: a mixed
+> generation **in effect** is the normal state after every successful apply, because the readers are
+> not atomic (Finding G) and a second writer co-owns every managed path (Finding F). Keeping an
+> impossible criterion would have meant either failing this phase forever or quietly declaring it
+> met — and this program has a rule about criteria that cannot be satisfied by the artifact they
+> name (`skills/plan-structuring` v12).
 
 ### Phase B — Give Prime the missing verb (~1 week)
 

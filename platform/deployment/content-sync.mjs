@@ -20,11 +20,32 @@
 
 import { bytesDigest, treeDigest } from '../contracts/digest.mjs';
 
-/** Where a render is assembled before it is trusted. */
+/**
+ * Where a render is assembled before it is trusted.
+ *
+ * It doubles as the interrupted-apply marker, and that is not a coincidence
+ * worth hiding: this directory exists ONLY between the start of a render and
+ * the end of an apply, so finding it at the top of a pass means the previous
+ * pass died in between. See `interrupted` in isIdle() — distinguishing
+ * "half-applied" from "not yet applied" needs a record of intent, and this is
+ * one we were already keeping by accident.
+ */
 export const STAGING_DIR = '.content-staging';
 
-/** Where the previous bundle is kept so a bad apply can be undone locally. */
-export const PREVIOUS_DIR = '.content-previous';
+// PREVIOUS_DIR is GONE, and its absence is the fix.
+//
+// It claimed "the previous bundle is kept so a bad apply can be undone
+// locally". Nothing ever read it — not the daemon, not the registry, not an
+// operator tool; the only references repo-wide were the constant, the write,
+// and a test asserting its name differed from staging's. It was also wiped at
+// the START of every apply and filled incrementally DURING one, so at the only
+// moment a local undo would be wanted it held a partial bundle.
+//
+// Rollback already works, correctly, one plane up: registry.rollback() repoints
+// desired_release and the next pass re-renders from the predecessor release's
+// pinned commit (readReleaseDefinitions). That is re-derivation from an
+// immutable source, which beats a local copy — a copy can rot, a pinned commit
+// cannot. Two mechanisms for one job, and the redundant one was fiction.
 
 /**
  * Decide what applying a bundle would change.
@@ -122,11 +143,29 @@ export function bundleMatches(installed, spec) {
  * the one case that does not wait — a regressive candidate should stop being
  * live as fast as possible.
  *
+ * `interrupted` is the second such case, and it is the more important one
+ * because it fires without an operator. After an apply dies mid-swap the live
+ * tree is ALREADY half of one generation and half of another. Waiting then
+ * protects nothing and prolongs exactly the harm C-32 names: the agent keeps
+ * executing an incoherent tree, for a minimum of one timer period and — since
+ * inFlight() fails closed to "busy" on a Firestore error — potentially without
+ * bound. C-32 forbids changing definitions UNDER running work; it does not
+ * require leaving a half-changed tree in place. Finishing the generation the
+ * agent is already partly running is the smaller violation, and the only one
+ * that terminates.
+ *
  * @param {Array<{status:string, owner:string, type:string}>} envelopes
- * @param {{ emergency?: boolean, owner?: string }} opts
+ * @param {{ emergency?: boolean, owner?: string, interrupted?: boolean }} opts
  */
 export function isIdle(envelopes, opts = {}) {
   if (opts.emergency) return { idle: true, reason: 'emergency rollback does not wait for a boundary' };
+  if (opts.interrupted) {
+    return {
+      idle: true,
+      reason: 'a previous apply was interrupted — the live tree is already mixed, so converging it '
+        + 'now is strictly safer than continuing to run it (C-32)',
+    };
+  }
 
   const busy = (envelopes || []).filter((e) => {
     if (opts.owner && e.owner !== opts.owner) return false;
@@ -154,10 +193,15 @@ export function isIdle(envelopes, opts = {}) {
  *   is live. Supplied by the daemon; when absent the convergence check falls
  *   back to the registry's own record, which cannot see drift on disk.
  * @param {boolean} [input.emergency]
+ * @param {boolean} [input.interrupted] - a staging tree was found at the start of
+ *   this pass, meaning the previous apply died between render and completion.
  * @returns {{ action: 'apply'|'skip'|'wait'|'fail', reason: string, detail?: object }}
  */
 export function reconcile(input) {
-  const { assignment, spec, envelopes, agentEmail, installed, emergency = false } = input;
+  const {
+    assignment, spec, envelopes, agentEmail, installed,
+    emergency = false, interrupted = false,
+  } = input;
 
   if (!assignment) {
     return { action: 'skip', reason: 'no assignment — this agent is not managed by a fleet release yet' };
@@ -197,7 +241,7 @@ export function reconcile(input) {
   // Drift is not an emergency: repairing it still waits for an idle boundary,
   // because swapping content under a running mission is the thing C-32 forbids
   // regardless of why we are swapping.
-  const idle = isIdle(envelopes, { emergency, owner: agentEmail });
+  const idle = isIdle(envelopes, { emergency, owner: agentEmail, interrupted });
   if (!idle.idle) return { action: 'wait', reason: idle.reason };
 
   const reason = drift
@@ -209,6 +253,36 @@ export function reconcile(input) {
     reason,
     detail: { release: assignment.desired_release, digest: spec.digest, ...(drift ? { drift: true } : {}) },
   };
+}
+
+/**
+ * The path set an applied-content record says this agent manages.
+ *
+ * Pure, and separated from the file read for one reason: the interesting case is
+ * a CORRUPT record, and that case is unreachable in a test while the parsing
+ * lives inside a daemon that runs on import (B-19).
+ *
+ * Returns `null`, never `[]`, when the answer is unknown. The difference is the
+ * whole point. An empty set means "this agent manages nothing", from which
+ * planApply derives no removals — so a truncated record would silently
+ * reintroduce Finding D (a retired skill stays installed forever) while looking
+ * like a clean answer. `null` forces the caller to say out loud that it cannot
+ * tell, which is what the daemon does.
+ *
+ * @param {string|null|undefined} raw - the bytes of CONTENT.json
+ * @returns {string[]|null}
+ */
+export function managedFromRecord(raw) {
+  let rec;
+  try {
+    rec = JSON.parse(String(raw ?? ''));
+  } catch {
+    return null;
+  }
+  const managed = rec?.managed;
+  if (Array.isArray(managed)) return managed.filter((p) => typeof p === 'string' && p).slice();
+  if (managed && typeof managed === 'object') return Object.keys(managed);
+  return null;
 }
 
 /**
