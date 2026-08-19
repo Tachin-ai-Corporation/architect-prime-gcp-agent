@@ -50,7 +50,7 @@ export {
 
 import {
   ROLE_SCHEMA, PERSONA_SCHEMA, SKILL_SCHEMA, PROCESS_SCHEMA,
-  RESPONSIBILITY_SCHEMA, POLICY_SCHEMA, PROJECT_TEMPLATE_SCHEMA, EVAL_SUITE_SCHEMA,
+  RESPONSIBILITY_SCHEMA,
   PROVENANCE_FIELDS, SCOPE_SPEC,
 } from './schemas/definition.mjs';
 
@@ -74,7 +74,7 @@ import { assertValid, coerce } from './validate.mjs';
 
 export {
   ROLE_SCHEMA, PERSONA_SCHEMA, SKILL_SCHEMA, PROCESS_SCHEMA,
-  RESPONSIBILITY_SCHEMA, POLICY_SCHEMA, PROJECT_TEMPLATE_SCHEMA, EVAL_SUITE_SCHEMA,
+  RESPONSIBILITY_SCHEMA,
   CHANGE_SCHEMA, RELEASE_SCHEMA, EVALUATION_SCHEMA,
   ASSIGNMENT_SCHEMA, ROLLOUT_SCHEMA, PLATFORM_FINDING_SCHEMA,
   WORK_SCHEMA, APPROVAL_SCHEMA, PROJECT_SCHEMA,
@@ -91,9 +91,6 @@ export const SCHEMAS = {
   skill: SKILL_SCHEMA,
   process: PROCESS_SCHEMA,
   responsibility: RESPONSIBILITY_SCHEMA,
-  policy: POLICY_SCHEMA,
-  projectTemplate: PROJECT_TEMPLATE_SCHEMA,
-  evalSuite: EVAL_SUITE_SCHEMA,
   // Fleet Definition lifecycle
   fleetChange: CHANGE_SCHEMA,
   fleetRelease: RELEASE_SCHEMA,
@@ -116,7 +113,7 @@ export const COMPILED_SCHEMAS = {
 /** The aggregate kinds that are Fleet Definition *content* (authorable by Prime). */
 export const DEFINITION_KINDS = [
   'role', 'persona', 'skill', 'process',
-  'responsibility', 'policy', 'projectTemplate', 'evalSuite',
+  'responsibility',
 ];
 
 export function schemaFor(kind) {

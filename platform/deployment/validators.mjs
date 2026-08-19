@@ -37,9 +37,6 @@ const TEXT_FIELDS = {
   skill: ['summary', 'procedure'],
   process: ['description', 'narrative'],
   responsibility: ['instruction', 'success_criteria'],
-  policy: [],
-  projectTemplate: ['goal_hint'],
-  evalSuite: [],
 };
 
 function textOf(kind, def) {
@@ -47,9 +44,6 @@ function textOf(kind, def) {
   const parts = fields.map((f) => String(def[f] || ''));
   if (kind === 'skill') {
     for (const r of def.recovery || []) parts.push(r.symptom, r.cause || '', r.action);
-  }
-  if (kind === 'evalSuite') {
-    for (const c of def.cases || []) parts.push(c.instruction, c.expect, JSON.stringify(c.fixtures || {}));
   }
   return parts.join('\n');
 }
@@ -100,15 +94,9 @@ export function validateReferences(definitions, available) {
           findings.push(finding('warning', 'ref:role', `role '${def.id}' delegates to unknown role '${peer}'`, `role/${def.id}`));
         }
       }
-      if (def.model_policy && !has('policy', def.model_policy)) {
-        findings.push(finding('error', 'ref:policy', `role '${def.id}' names unknown model policy '${def.model_policy}'`, `role/${def.id}`));
-      }
     }
     if (kind === 'persona' && !has('role', def.role_id)) {
       findings.push(finding('error', 'ref:role', `persona '${def.id}' overlays unknown role '${def.role_id}'`, `persona/${def.id}`));
-    }
-    if (kind === 'skill' && def.eval_suite && !has('evalSuite', def.eval_suite)) {
-      findings.push(finding('warning', 'ref:eval', `skill '${def.id}' names unknown eval suite '${def.eval_suite}'`, `skill/${def.id}`));
     }
   }
   return findings;

@@ -17,8 +17,6 @@ const SALIENT = {
   process: ['name', 'description', 'narrative', 'intent_keywords'],
   responsibility: ['name', 'trigger', 'instruction', 'success_criteria', 'target_agent', 'enabled'],
   policy: ['name', 'domain', 'settings'],
-  projectTemplate: ['name', 'goal_hint', 'default_team_roles', 'standard_processes'],
-  evalSuite: ['name', 'target', 'cases', 'thresholds'],
 };
 
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -139,10 +137,9 @@ export function impactedAgents(diff, roles, assignments) {
       if (entry.kind === 'skill' && (role.default_skills || []).includes(entry.id)) touchedRoles.add(roleId);
       if (entry.kind === 'responsibility' && (role.responsibilities || []).includes(entry.id)) touchedRoles.add(roleId);
       if (entry.kind === 'persona' && entry.id.startsWith(`${roleId}-`)) touchedRoles.add(roleId);
-      if (entry.kind === 'policy' && (role.model_policy === entry.id || role.memory_policy === entry.id)) touchedRoles.add(roleId);
     }
-    // A process or project template is fleet-wide know-how — it reaches everyone.
-    if (entry.kind === 'process' || entry.kind === 'projectTemplate') {
+    // A process is fleet-wide know-how — it reaches everyone.
+    if (entry.kind === 'process') {
       for (const roleId of roles.keys()) touchedRoles.add(roleId);
     }
   }

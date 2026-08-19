@@ -131,25 +131,6 @@ export const CATALOG = {
     path: (id) => `responsibilities/${id}.json`,
     describe: 'Schedule or event rule with its instruction and success criteria',
   },
-  policy: {
-    plane: 'fleet-definition',
-    store: 'git-store',
-    path: (id) => `policies/${id}.json`,
-    describe: 'Model, memory, cost, rollout and approval policy within platform bounds',
-  },
-  projectTemplate: {
-    plane: 'fleet-definition',
-    store: 'git-store',
-    path: (id) => `project-templates/${id}.json`,
-    describe: 'Deployment conventions for new projects',
-  },
-  evalSuite: {
-    plane: 'fleet-definition',
-    store: 'git-store',
-    path: (id) => `evals/${id}/suite.json`,
-    describe: 'Regression cases and rollout thresholds for a role or skill',
-  },
-
   // ---- Fleet Definition: transactional metadata and active pointers ----
   fleetChange: {
     plane: 'fleet-definition',

@@ -234,8 +234,6 @@ test('the imported catalog passes every validator', () => {
     role: new Set(IMPORTED_ROLES.keys()),
     skill: new Set(SKILL_JSONS.keys()),
     responsibility: new Set(),
-    policy: new Set(),
-    evalSuite: new Set(),
   };
   const result = validateSet({ definitions, available, platformVersion: 'v2026.08.15.3.1' });
   assert.deepEqual(result.errors, [], JSON.stringify(result.errors, null, 2));
