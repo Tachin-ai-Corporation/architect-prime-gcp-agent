@@ -13,5 +13,39 @@ RestartSec=10
 StandardOutput=journal
 StandardError=journal
 
+# ---- Motor cannot write Foundation (C-33 blast radius, plan Phase C item 8) ----
+#
+# Motor's tools execute INSIDE this process, and its tool set includes `exec`,
+# `shell`, `python3` and `gcloud`. So a path check inside the write tool is not a
+# denial — `python3 -c "open('/opt/corekit/platform/x','w')"` walks straight past
+# it. Only a mount-namespace restriction binds a process that already has a shell.
+#
+# ReadOnlyPaths keeps these READABLE and EXECUTABLE, which is required: node loads
+# every runtime module out of platform/, and a scheduled responsibility runs
+# `node platform/persistence/git-store.mjs gc`.
+#
+# Mode bits were considered and ruled out: validate-contracts asserts bin/ is
+# exactly 0755 and FAILS the agent otherwise, so tightening permissions would
+# trade one broken invariant for another.
+#
+# What stays writable, because a healthy agent genuinely writes there: shared/
+# (mission trees), workspace*/ (souls, MEMORY.md, blackboard, custom-skills),
+# corekit/ (CONTENT.json, contracts.json, responsibilities*.json,
+# fleet-registry.json), .content-staging/, /tmp and /var.
+ReadOnlyPaths=/opt/corekit/platform /opt/corekit/bin /opt/corekit/corekit/brain /etc/systemd/system
+
+# CAP_SYS_ADMIN is what would let a root process remount the paths above
+# read-write, so without dropping it ReadOnlyPaths is advice rather than
+# enforcement. NoNewPrivileges stops it being regained through a setuid binary.
+# The brain mounts nothing, so it has no legitimate use for either.
+CapabilityBoundingSet=~CAP_SYS_ADMIN
+NoNewPrivileges=yes
+
+# NOT set, deliberately: ProtectSystem=strict (would make the whole tree
+# read-only, including the content root the release plane must write) and
+# PrivateTmp (motor's documented helper-script location is /tmp, and the git-store
+# and registry work dirs live there too — a private namespace would hide them
+# from tools invoked outside this unit).
+
 [Install]
 WantedBy=multi-user.target

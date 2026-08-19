@@ -227,6 +227,14 @@ jobs:
       - name: A storage failure is not a mission verdict
         run: node --test test/storage-failure-is-not-a-verdict.test.mjs
 
+      # Motor runs inside the brain and holds exec/shell/python3, as root. A path
+      # check in the write tool would not be a denial — python3 -c open() bypasses
+      # it. Enforcement is a mount-namespace restriction in the unit, so this
+      # guards the unit CONTENTS; a dropped directive fails open and nothing else
+      # would notice. The live both-directions proof is in scripts/rollout-gate.sh.
+      - name: Motor cannot write Foundation
+        run: node --test test/motor-cannot-write-foundation.test.mjs
+
   codeowners:
     name: CODEOWNERS Resolves
     runs-on: ubuntu-latest

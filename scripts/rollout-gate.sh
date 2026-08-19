@@ -103,6 +103,35 @@ NR2=$(systemctl show agent-brain -p NRestarts --value 2>/dev/null || echo 0)
 NSK=$(ls "$R/skills" 2>/dev/null | wc -l)
 [[ "$NSK" -ge 10 ]]; chk "skills installed" $? "$NSK packages"
 
+# 8. Motor cannot write Foundation, and CAN still write its workspace.
+#
+#    Both directions, because either alone is meaningless: a denial that also
+#    blocks legitimate work is an outage, and an allowed write proves nothing
+#    about the denial.
+#
+#    Run INSIDE the brain's mount namespace. This is the whole reason the check
+#    is shaped this way: ReadOnlyPaths applies to the unit's namespace, not to
+#    this SSH shell, so testing from here would report "denied" for a completely
+#    unprotected agent — a check that passes without measuring anything.
+BRAIN_PID="$(systemctl show agent-brain -p MainPID --value 2>/dev/null || echo 0)"
+if [[ "${BRAIN_PID:-0}" -gt 0 ]] && command -v nsenter >/dev/null 2>&1; then
+  # Denied: a Foundation path.
+  nsenter --target "$BRAIN_PID" --mount -- sh -c 'touch /opt/corekit/platform/.deny-probe' 2>/dev/null
+  denied=$?
+  nsenter --target "$BRAIN_PID" --mount -- sh -c 'rm -f /opt/corekit/platform/.deny-probe' 2>/dev/null || true
+  [[ "$denied" -ne 0 ]]; chk "motor DENIED writing platform/" $? "exit $denied (non-zero = denied)"
+
+  # Allowed: the mission working root. If this fails the sandbox is too tight
+  # and every mission breaks.
+  nsenter --target "$BRAIN_PID" --mount -- sh -c 'touch /opt/corekit/shared/.allow-probe' 2>/dev/null
+  allowed=$?
+  nsenter --target "$BRAIN_PID" --mount -- sh -c 'rm -f /opt/corekit/shared/.allow-probe' 2>/dev/null || true
+  [[ "$allowed" -eq 0 ]]; chk "motor ALLOWED writing shared/" $? "exit $allowed (zero = allowed)"
+else
+  # Not skipped silently: an unmeasurable claim is not a passing one.
+  chk "motor Foundation deny (namespace probe)" 1 "brain MainPID=${BRAIN_PID:-0}, nsenter present=$(command -v nsenter >/dev/null 2>&1 && echo yes || echo no)"
+fi
+
 echo
 if [[ $fails -eq 0 ]]; then echo "GATE PASS  ref=${REF:0:12} services=$A2/5 skills=$NSK"; exit 0
 else echo "GATE FAIL  ($fails check(s) failed)"; exit 1; fi

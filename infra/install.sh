@@ -607,8 +607,23 @@ fi
 # behaving exactly as its justification described while the justification had
 # quietly stopped being true. See load_content_managed above.
 #
-# NOT extended to bin/: agents legitimately write helper scripts there mid-mission,
-# and skill-setup installs dependencies into it. Deleting those would violate C-18.
+# NOT extended to bin/ — but NOT for the two reasons this comment used to give,
+# both of which were checked and are false:
+#
+#   "skill-setup installs dependencies into it" — it does not. skill-setup defines
+#   no BIN_DIR at all; it installs apt/npm/pip into system paths and symlinks into
+#   skills/. bin/ appears in it only as a `command -v` existence check.
+#
+#   "agents legitimately write helper scripts there mid-mission" — the documented
+#   location is /tmp (skills/system-shell/SKILL.md), and no product instruction
+#   anywhere sends an agent to bin/. Every file in bin/ is manifest-owned.
+#
+# The real reason to leave bin/ alone here is narrower: fleet-upgrade curls
+# upgrade-corekit into bin/ over SSH, so a file can legitimately appear between
+# manifest generations. That happens OUTSIDE any agent process, which is why the
+# brain unit can deny bin/ writes (Phase C item 8) without breaking the upgrade
+# path. A stale justification is worse than none: it argued for an exemption that
+# the code had stopped needing, and would have argued against the deny.
 # Guarded on a non-empty manifest so a partial fetch cannot sweep the tree.
 if [[ ${#file_hashes[@]} -gt 0 && $content_record_unreadable -eq 0 ]]; then
   info "Reconciling against current manifest (orphan sweep)..."
