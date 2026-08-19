@@ -390,6 +390,38 @@ taken over.
 10. Responsibility schema ↔ scheduler convergence *(P0-8)*; process definitions resolved from the
     pinned release only *(P0-9)*. Both are configurable items the operator explicitly wants Prime to
     own, and both currently have two authorities.
+
+    **Both VERIFIED — and this is the first entry on the unverified list that was right.** P0-6 was
+    unbuildable as written, P0-7 was worse than described, and the `evalSuite` deletion premise was
+    backwards. These two are real, and P0-8 is worse than "drift":
+
+    **P0-8 — a registry-authored responsibility silently never fires.** `responsibilityRecord`
+    (`compiler.mjs:295`) emits `{ id, name, revision, trigger, instruction, success_criteria,
+    target_agent, project_id, enabled }`. The scheduler reads a different shape:
+
+    | scheduler reads | compiler emits | consequence |
+    |---|---|---|
+    | `resp.schedule` (`:248`, `:377`, `:399`) | *nothing* | `enabled && schedule` is false, so it is **never scheduled** |
+    | `resp.context?.success_criteria` (`:206`, `:238`, `:272`) | `success_criteria` at top level | the mission gets **no accept criteria** |
+    | `r.trigger === eventType` (`:503-504`) | `trigger` | fires only if `trigger` happens to equal an event name |
+
+    So the release plane can author a responsibility that validates, releases, reaches the agent —
+    and does nothing. "Prime owns responsibilities" is false today, quietly.
+
+    **The design fork is a decision, not a lookup, and it belongs to the operator:** `trigger`
+    currently does double duty as both a cron expression and an event name. Converging the two
+    authorities means picking which one the contract means, and one of these is a schema change:
+      - *the schema is the contract* — the scheduler is changed to read the compiled record
+        (`trigger` as cron when it parses as one, `success_criteria` at top level). No contract
+        change; the scheduler stops being a second authority.
+      - *split the field* — `schedule` and `event` become separate, explicit fields. Clearer
+        forever, but it is a schema version bump and every existing responsibility migrates.
+
+    **P0-9 — process definitions come from two places, neither of them a release.**
+    `process-registry.mjs:48` loads local `corekit/processes/*.json`; `:81` loads the tenant-global
+    Firestore `processes` collection, which **overrides local by id**. The module has zero references
+    to `readReleaseDefinitions`, so a pinned release has no say in which process an agent follows —
+    the one plane that can answer "which release produced this" is not consulted.
 11. Seed an initial Fleet release from the legacy sources, assign every deployed agent, **prove
     parity**, switch readers, freeze legacy writes, **delete them** (§4).
 12. Deliver Prime's own role/skill/soul overlays through the same release path — Prime is a normal
