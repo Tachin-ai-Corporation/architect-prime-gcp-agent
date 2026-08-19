@@ -40,7 +40,6 @@ platform/runtime/mouth-health-check bin/mouth-health-check
 skills/web-search/web-search bin/web-search
 corekit/brain/web-fetch bin/web-fetch
 corekit/brain/agent-status bin/agent-status
-corekit/brain/skill-author bin/skill-author
 corekit/brain/brain-telemetry-write bin/brain-telemetry-write
 corekit/brain/brain-telemetry-read bin/brain-telemetry-read
 corekit/brain/work-log-read bin/work-log-read

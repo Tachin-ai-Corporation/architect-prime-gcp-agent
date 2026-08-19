@@ -146,7 +146,9 @@ Each example is a complete task→tool-sequence→output trace. Include at least
 2. **Write Layer 3 first.** The procedures are the highest-value content. Write the step-by-step workflow before filling in the command reference — the reference falls out of the procedures naturally.
 3. **Test the procedure manually.** Run the commands in the procedure on a real system. Capture the actual output. Use that output in your Layer 5 examples — real output is better than fabricated output.
 4. **Add error recovery from experience.** The first version of a skill won't have a complete error table. Add entries as motor encounters failures — each failure is a row in the table.
-5. **Use `skill-authoring` for the package.** The `skill-author create` command generates `skill.json` + `SKILL.md` scaffolding. Fill in the layers.
+5. **Author the skill as a Fleet Definition, not as files.** `fleet-config change create skill --title "…"` with the body on stdin: the service derives the revision, validates it against the skill schema, computes the semantic diff and commits an immutable change. It then goes through the normal lifecycle — validate, evaluate, release, canary, promote — so a skill arrives on an agent the same way every other definition does, with a release id that says which bytes it is.
+
+   *This replaced `skill-author`, which is deleted.* That tool wrote a `skill.json` shape the current schema rejects (it emitted `agent_part`/`when_to_use`/`commands` where the schema requires `summary`/`triggers`/`procedure`, and none of the provenance envelope), then ended by telling the agent to "submit for approval via Firestore skill-registry" — a collection that never existed. It produced a file nothing could accept and pointed at a step nobody could take.
 6. **Grade against this standard by reading it**, and run `validate-contracts --repo` before committing — Check 14b/14c hard-fail if any declared command is undocumented (there is no separate `validate-skills` tool). Target ≥ 3 for new skills, ≥ 4 for high-traffic skills.
 
 ---
