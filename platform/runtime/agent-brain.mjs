@@ -939,6 +939,35 @@ async function firestoreQuery(collection, filters, opts) {
   return _db.query(collectionParent(collection), collection, filters, opts);
 }
 
+/**
+ * Read and query that REFUSE TO ANSWER when the store is unreachable.
+ *
+ * The permissive pair above returns null / [] on any failure, which is correct
+ * for the ~100 call sites where "nothing there" and "could not look" lead to the
+ * same harmless no-op. It is catastrophic at the handful of sites that read the
+ * absence as a FACT and act on it — those are the ones that use these.
+ *
+ * Opt-in rather than default for the reason the client itself is opt-in: about
+ * forty caller catch sites already convert exceptions back into null/[], so
+ * flipping the default would relocate the defect rather than remove it.
+ *
+ * The dual-read fallback also becomes correct here for free. It fires on `!result`,
+ * so with the permissive read an OUTAGE triggered a second read against the legacy
+ * path for every deployment-rooted collection — doubling load at the moment the
+ * backend was already degraded. Under strict, only a genuine 404 gets that far.
+ */
+async function firestoreReadStrict(collection, docId) {
+  const result = await _db.read(pathFor(collection, docId), { strict: true });
+  if (!result && DEPLOYMENT_ROOTED.has(collection)) {
+    return _db.read(`primes/${PRIME_ID}/${collection}/${docId}`, { strict: true });
+  }
+  return result;
+}
+
+async function firestoreQueryStrict(collection, filters, opts) {
+  return _db.query(collectionParent(collection), collection, filters, { ...opts, strict: true });
+}
+
 // ---- Envelope helpers ----
 function generateId(prefix = 'w') {
   return `${prefix}-${Date.now()}-${randomBytes(4).toString('hex')}`;
@@ -995,8 +1024,13 @@ async function recordStep(envelope, stepKey, result) {
 async function claimEnvelope(envelopeId) {
   const claimId = `${AGENT_ID}-${Date.now()}`;
   try {
-    const env = await firestoreRead('work', envelopeId);
-    if (!env) return claimId; // New or missing envelope — claim freely
+    // Strict: a 404 means the envelope genuinely is not there yet (the normal
+    // path for a new one), and claiming freely is right. Any OTHER failure means
+    // we could not tell — and the permissive read returned null for both, so a
+    // flaky store made every processor claim freely and the durable cross-restart
+    // lock evaporated exactly when it was most needed.
+    const env = await firestoreReadStrict('work', envelopeId);
+    if (!env) return claimId; // Genuinely absent — claim freely
     if (env.claimed_by) {
       // Check if the existing claim is stale
       const claimAge = Date.now() - (env.claimed_at_ms || 0);
@@ -1013,6 +1047,21 @@ async function claimEnvelope(envelopeId) {
     });
     return claimId;
   } catch (e) {
+    // A STORAGE failure is the one error that must not proceed, and this catch
+    // used to swallow every error and claim anyway — which would have made the
+    // strict read above completely inert. A guard one line below can disarm is
+    // not a guard.
+    //
+    // The distinction: if we could not READ the envelope we cannot know whether
+    // another processor already holds the claim, and claiming regardless is how
+    // two agents run the same mission. The local guard the old comment relied on
+    // does not span instances or restarts, which is the whole reason this claim
+    // is durable. Declining costs one poll interval; proceeding costs a duplicate.
+    if (e?.name === 'StoreUnavailable') {
+      log('WARN', `Claim declined for ${envelopeId}: the store is unreachable (${e.message}), so `
+        + `whether another processor holds this claim is unknown`);
+      return null;
+    }
     log('WARN', `Claim attempt failed for ${envelopeId}: ${e.message}`);
     return claimId; // Proceed anyway — belt-and-suspenders with local guard
   }
@@ -4821,7 +4870,12 @@ async function materializeDelegationMission(p) {
   // than risk a duplicate (the reconciler retries next poll; the ears path
   // re-fires on the next intake).
   try {
-    const existing = await firestoreQuery('work', [
+    // STRICT, and that is what makes the catch below reachable. It said "on a
+    // query failure, SKIP rather than risk a duplicate" — and query() returned []
+    // instead of throwing, so the catch was dead code and the guard it documented
+    // did not exist. An outage produced two live missions and two acknowledgements
+    // for one delegation.
+    const existing = await firestoreQueryStrict('work', [
       { field: 'source_meta.delegation_ref', op: 'EQUAL', value: { stringValue: p.ref } },
     ], { noOrderBy: true });
     if (existing.some(e => e.type === 'M' && e.owner === meOwner)) return null;
@@ -5083,8 +5137,29 @@ async function checkWaitingEnvelopes() {
       let allChildrenDone = true;
       let childResults = [];
 
+      // UNREADABLE IS NOT FAILED.
+      //
+      // The comment below — "null child = deleted from Firestore" — is a sound
+      // inference ONLY if null means absent. The permissive read returned null for
+      // a 500 and a 403 too, so during a read outage every healthy in-flight
+      // delegate was pushed as a synthetic FAILED result. That verdict is then
+      // acted on irreversibly: the checkpoint is stamped `failed`, the parent is
+      // re-queued around a failure that never happened, the re-delegation counter
+      // is bumped, and at the cap a human is told "the delegate could not do it".
+      // Firestore recovering undoes none of it.
+      //
+      // So a store failure now abandons THIS parent's check for this pass and
+      // concludes nothing. The next tick re-reads. Deferring a verdict costs one
+      // poll interval; inventing one costs a mission and a human's trust.
+      let unreadable = null;
       for (const childId of children) {
-        const child = await firestoreRead('work', childId);
+        let child;
+        try {
+          child = await firestoreReadStrict('work', childId);
+        } catch (e) {
+          unreadable = `${childId}: ${e.message}`;
+          break;
+        }
 
         // Null child = deleted from Firestore (treat as failed)
         if (!child) {
@@ -5112,6 +5187,14 @@ async function checkWaitingEnvelopes() {
         }
       }
 
+      // A store failure mid-scan leaves childResults PARTIAL, and a partial list is
+      // more dangerous than no list: the remaining children look absent, so
+      // allChildrenDone stays true and the parent concludes on a subset. Defer.
+      if (unreadable) {
+        log('WARN', `waiting envelope ${waiting.id}: cannot read a child (${unreadable}) — deferring `
+          + `the verdict to the next tick rather than reading an outage as a failure`);
+        continue;
+      }
       if (!allChildrenDone || childResults.length === 0) continue;
 
       // All delegated children are done — re-queue the waiting envelope
@@ -5221,8 +5304,16 @@ async function checkWaitingEnvelopes() {
 
           let allDone = true;
           let cpResults = [];
+          // Same rule as Phase A: unreadable is not failed. See the note there.
+          let cpUnreadable = null;
           for (const tcId of cpChildren) {
-            const tc = await firestoreRead('work', tcId);
+            let tc;
+            try {
+              tc = await firestoreReadStrict('work', tcId);
+            } catch (e) {
+              cpUnreadable = `${tcId}: ${e.message}`;
+              break;
+            }
             if (!tc) {
               cpResults.push({ agent: 'unknown', task: tcId, result: '[FAILED] Envelope deleted', success: false });
               continue;
@@ -5238,6 +5329,11 @@ async function checkWaitingEnvelopes() {
             }
           }
 
+          if (cpUnreadable) {
+            log('WARN', `checkpoint ${child.id}: cannot read a task (${cpUnreadable}) — deferring `
+              + `rather than stamping the checkpoint failed`);
+            continue;
+          }
           if (!allDone || cpResults.length === 0) continue;
 
           log('INFO', `Re-queuing active mission ${active.id}: checkpoint ${childId} delegations complete (${cpResults.length} results)`);

@@ -219,6 +219,14 @@ jobs:
       - name: The change lifecycle is a table, and evidence is attached
         run: node --test test/change-lifecycle.test.mjs
 
+      # A storage failure is not a mission verdict. agent-brain read an unreadable
+      # child as a FAILED one and escalated fabricated failures to humans; the
+      # delegation dedup guard could never fire because query returned [] rather
+      # than throwing; the durable claim failed OPEN. Comments documented
+      # null == absent and the client silently violated it.
+      - name: A storage failure is not a mission verdict
+        run: node --test test/storage-failure-is-not-a-verdict.test.mjs
+
   codeowners:
     name: CODEOWNERS Resolves
     runs-on: ubuntu-latest
