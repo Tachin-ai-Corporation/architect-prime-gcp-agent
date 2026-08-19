@@ -64,8 +64,15 @@ NRESTART=$(systemctl show agent-brain -p NRestarts --value 2>/dev/null || echo 0
 [[ "$A1" == "5" && "$A2" == "5" ]]; chk "5/5 services active (2 samples)" $? "$A1 then $A2"
 
 # 5. Contract validation, as the VM itself sees it (C-19).
-sudo CORE_ROOT="$R" "$R/bin/validate-contracts" --runtime >/tmp/vc.log 2>&1
-chk "validate-contracts --runtime" $? "$(tail -1 /tmp/vc.log | cut -c1-70)"
+# Per-run temp file. A fixed name here is owned by whoever ran this gate first,
+# and the SHELL opens the redirect target, not sudo — so every later run by
+# another user dies with EACCES and the check reports FAIL while its own subject
+# printed a clean pass. That is exactly what happened mid-roll on archie: a red
+# gate on a healthy agent, which is the most expensive kind of false alarm.
+VC_LOG="$(mktemp -t rollout-vc.XXXXXX)"
+trap 'rm -f "$VC_LOG"' EXIT
+sudo CORE_ROOT="$R" "$R/bin/validate-contracts" --runtime >"$VC_LOG" 2>&1
+chk "validate-contracts --runtime" $? "$(tail -1 "$VC_LOG" | cut -c1-70)"
 
 # 6. The brain actually loaded its modules and restarted AFTER this install.
 #

@@ -221,8 +221,14 @@ write_deploy_step "nodejs" "Node.js installed" "done" "$(node --version 2>/dev/n
 # ---- 4) Install CoreKit via manifest (base + prime) ----
 info "Installing CoreKit..."
 mkdir -p "${CORE_DIR}"
-curl -sfL "${CORE_BASE}/infra/install.sh" -o /tmp/install.sh
-chmod +x /tmp/install.sh
+# Per-run temp file. A fixed /tmp name is owned by whoever ran the bootstrap
+# first, so a re-run under a different user fails to overwrite it and installs
+# whatever the previous run left there — silently, and at the one moment the
+# machine has no other source of truth.
+INSTALLER="$(mktemp -t corekit-install.XXXXXX)"
+trap 'rm -f "$INSTALLER"' EXIT
+curl -sfL "${CORE_BASE}/infra/install.sh" -o "$INSTALLER"
+chmod +x "$INSTALLER"
 # INSTALL_VALIDATE=defer: on first boot the runtime is not assembled yet
 # (no workspaces, no chat-config), so runtime contract checks legitimately fail
 # here. The bootstrap runs the same validation as a hard gate at the end (step 15).
@@ -231,7 +237,7 @@ CORE_REF="${CORE_REF}" \
   GH_REPO="${GH_REPO}" \
   CORE_ROOT="${CORE_ROOT}" \
   INSTALL_VALIDATE="defer" \
-  bash /tmp/install.sh --role prime
+  bash "$INSTALLER" --role prime
 
 write_deploy_step "corekit" "CoreKit installed" "done"
 

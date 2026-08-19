@@ -97,14 +97,20 @@ fi
 # ---- 3) Install CoreKit via manifest ----
 info "Installing CoreKit..."
 mkdir -p "${CORE_DIR}"
-curl -sfL "${CORE_BASE}/infra/install.sh" -o /tmp/install.sh
-chmod +x /tmp/install.sh
+# Per-run temp file. A fixed /tmp name is owned by whoever ran the bootstrap
+# first, so a re-run under a different user fails to overwrite it and installs
+# whatever the previous run left there — silently, and at the one moment the
+# machine has no other source of truth.
+INSTALLER="$(mktemp -t corekit-install.XXXXXX)"
+trap 'rm -f "$INSTALLER"' EXIT
+curl -sfL "${CORE_BASE}/infra/install.sh" -o "$INSTALLER"
+chmod +x "$INSTALLER"
 # Export the CoreKit source so install.sh (a CHILD process) inherits it. Without `export`
 # these are unexported shell variables — install.sh then silently falls back to its
 # `GH_OWNER=YOUR_GITHUB_ORG` / `CORE_REF=main` defaults and 404s on the very first manifest
 # fetch. (Only JOB_FLAGS is safe as a plain var: it is expanded by THIS shell on the bash line
 # below, not read from install.sh's environment.) A missing trailing `\` on the JOB_FLAGS line
-# had detached these assignments from the `bash /tmp/install.sh` invocation, so they applied to
+# had detached these assignments from the `bash "$INSTALLER"` invocation, so they applied to
 # nothing.
 export CORE_REF GH_OWNER GH_REPO CORE_ROOT
 JOB_FLAGS="--job ${SPECIALTY}"
@@ -119,7 +125,7 @@ fi
 # INSTALL_VALIDATE=defer: on first boot the runtime is not assembled yet
 # (no workspaces, no chat-config), so runtime contract checks legitimately fail
 # here. The bootstrap runs the same validation as a hard gate at the end (step 13b).
-INSTALL_VALIDATE="defer" bash /tmp/install.sh --role fleet $JOB_FLAGS
+INSTALL_VALIDATE="defer" bash "$INSTALLER" --role fleet $JOB_FLAGS
 
 # ---- 4) Read contracts.json for cross-cutting values ----
 CONTRACTS="${CORE_DIR}/corekit/contracts.json"

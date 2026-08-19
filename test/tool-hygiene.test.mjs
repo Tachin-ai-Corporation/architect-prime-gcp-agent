@@ -22,9 +22,21 @@ import { dirname, join } from 'node:path';
 
 const repoRoot = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-/** Tracked bash tools under the content trees, by shebang rather than by suffix. */
+/**
+ * Every tracked bash tool, by shebang rather than by suffix.
+ *
+ * This walked `skills specialties corekit` — an allow-list, and therefore R-1 for
+ * the seventh time in this repo. scripts/, infra/ and platform/ sat outside it,
+ * and scripts/rollout-gate.sh promptly grew the exact defect this file exists to
+ * catch: `sudo cmd >/tmp/vc.log` fails with EACCES for the second user to run it,
+ * because the SHELL opens the redirect target, not sudo. It cost a false FAIL in
+ * the middle of a fleet roll, on a check whose own subject printed a clean pass.
+ *
+ * A test whose scope excludes the place a defect appears does not report reduced
+ * coverage; it reports success.
+ */
 function bashTools() {
-  const listed = execFileSync('git', ['ls-files', 'skills', 'specialties', 'corekit'],
+  const listed = execFileSync('git', ['ls-files'],
     { cwd: repoRoot, encoding: 'utf8' }).split('\n').map((s) => s.trim()).filter(Boolean);
   const out = [];
   for (const rel of listed) {
@@ -68,8 +80,24 @@ export function withoutHeredocs(source) {
  * `${__DT}/x.json` and `$(mktemp)` are per-run and therefore fine; this matches
  * only the constant form, which is the one that collides.
  */
+/** Shell comment lines, which are prose and cannot open a file. */
+function withoutComments(source) {
+  return String(source)
+    .split('\n')
+    .filter((l) => !/^\s*#/.test(l))
+    .join('\n');
+}
+
+/**
+ * A fix that EXPLAINS the fixed path it replaced would otherwise trip this — the
+ * check fired on scripts/rollout-gate.sh after that file was already corrected,
+ * because the comment names the old /tmp/vc.log. A check a comment can fool is
+ * weak; one a comment can FALSELY fail is worse, because the cheapest way to
+ * silence it is to delete the explanation.
+ */
 export function fixedTempPaths(source) {
-  return [...withoutHeredocs(source).matchAll(/(?<![}$\w])\/tmp\/([a-z][a-z0-9._-]*\.[a-z]+)/g)].map((m) => m[0]);
+  const code = withoutHeredocs(withoutComments(source));
+  return [...code.matchAll(/(?<![}$\w])\/tmp\/([a-z][a-z0-9._-]*\.[a-z]+)/g)].map((m) => m[0]);
 }
 
 describe('shipped shell tools — temp files are per-run', () => {
