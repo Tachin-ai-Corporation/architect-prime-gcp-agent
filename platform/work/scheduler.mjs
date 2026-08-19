@@ -203,7 +203,7 @@ export function createScheduler(deps) {
     if (resp.context?.reference_files?.length) {
       contextParts.push(`REFERENCE FILES: ${resp.context.reference_files.join(', ')}`);
     }
-    if (resp.context?.success_criteria) {
+    if ((resp.success_criteria ?? resp.context?.success_criteria)) {
       contextParts.push(`SUCCESS CRITERIA: ${resp.context.success_criteria}`);
     }
     // SESSION_CONTEXT_PLAN Phase 3b: merge machine-fed learnings from the
@@ -235,7 +235,7 @@ export function createScheduler(deps) {
       intent: 'responsibility',
       title: resp.name || resp.id,
       instruction: resp.instruction,
-      accept_criteria: resp.context?.success_criteria || null,
+      accept_criteria: (resp.success_criteria ?? resp.context?.success_criteria) || null,
       context_summary: contextSummary,
       output: `Responsibility ${resp.id} fired at ${now()}`,
       children: [],
@@ -269,7 +269,7 @@ export function createScheduler(deps) {
       intent: 'execute',
       title: `Execute: ${resp.name || resp.id}`,
       instruction: resp.instruction,
-      accept_criteria: resp.context?.success_criteria || null,
+      accept_criteria: (resp.success_criteria ?? resp.context?.success_criteria) || null,
       context_summary: contextSummary,
       output: null,
       children: [],
@@ -500,8 +500,11 @@ export function createScheduler(deps) {
 
     const matching = eventResps.filter(r => {
       if (!r.enabled) return false;
-      if (!r.trigger) return false;
-      return r.trigger === eventType;
+      // v2: `event` is a name. This compared `trigger` — an OBJECT in the v1
+      // schema — to an event-name string, so it was never true for a
+      // registry-authored responsibility.
+      if (!r.event) return false;
+      return r.event === eventType;
     });
 
     if (matching.length === 0) return;

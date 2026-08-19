@@ -112,11 +112,22 @@ test('assertValid throws with every error in one message', () => {
 });
 
 test('coerce applies defaults without mutating its input', () => {
-  const draft = { id: 'r-x', name: 'X', trigger: { kind: 'event', event: 'push' }, instruction: 'do the thing', success_criteria: 'the thing is done' };
+  // `evidence: {}` is supplied deliberately. coerce fills a nested default only
+  // inside a parent that is PRESENT — it does not conjure an absent object. The v1
+  // version of this test satisfied the nested case by supplying `trigger: {...}`,
+  // so the behaviour was always this; flattening the trigger just made it visible.
+  const draft = {
+    id: 'r-x', name: 'X', event: 'push',
+    instruction: 'do the thing', success_criteria: 'the thing is done',
+    evidence: {},
+  };
   const out = coerce(RESPONSIBILITY_SCHEMA, draft);
-  assert.equal(out.enabled, true, 'default applied');
-  assert.equal(out.trigger.timezone, 'UTC', 'nested default applied');
+  assert.equal(out.enabled, true, 'top-level default applied');
+  assert.equal(out.timezone, 'UTC', 'timezone is top-level in v2 — the trigger object it lived in is gone');
+  assert.equal(out.catch_up, 'once');
+  assert.deepEqual(out.evidence.evaluation_ids, [], 'nested default applied inside a present parent');
   assert.equal(draft.enabled, undefined, 'input untouched');
+  assert.deepEqual(draft.evidence, {}, 'and the nested input object is untouched too');
 });
 
 test('validate never mutates the record it judges', () => {
@@ -128,8 +139,11 @@ test('validate never mutates the record it judges', () => {
 
 test('fieldPaths enumerates nested and array-of-object paths', () => {
   const paths = fieldPaths(RESPONSIBILITY_SCHEMA.spec);
-  assert.ok(paths.includes('trigger'));
-  assert.ok(paths.includes('trigger.cron'));
+  // Was trigger / trigger.cron before v2 flattened the trigger. scope is the
+  // nested object every definition carries, so this keeps testing enumeration
+  // rather than testing one schema shape.
+  assert.ok(paths.includes('scope'));
+  assert.ok(paths.includes('scope.project_ids'));
   const skillPaths = fieldPaths(SKILL_SCHEMA.spec);
   assert.ok(skillPaths.includes('recovery[].symptom'));
 });
@@ -253,10 +267,14 @@ test('a sandbox package declaring host egress must name its hosts (C-33)', () =>
   assert.throws(() => sealRevision('skill', bad, SEAL), /names no hosts/);
 });
 
-test('a schedule trigger without cron, and an event trigger without an event, are rejected', () => {
+test('a responsibility with no way to fire, or two, is rejected', () => {
+  // v1 asked whether a trigger object was internally consistent. v2 asks the
+  // question that actually mattered: can this thing ever fire, and unambiguously?
+  // A responsibility with neither validated happily in v1 and then sat inert.
   const base = { id: 'r-x', name: 'X', instruction: 'do the thing', success_criteria: 'the thing is done' };
-  assert.throws(() => sealRevision('responsibility', { ...base, trigger: { kind: 'schedule' } }, SEAL), /requires a cron/);
-  assert.throws(() => sealRevision('responsibility', { ...base, trigger: { kind: 'event' } }, SEAL), /requires an event/);
+  assert.throws(() => sealRevision('responsibility', base, SEAL), /never fire/);
+  assert.throws(() => sealRevision('responsibility', { ...base, schedule: '0 9 * * 1', event: 'push' }, SEAL), /not both/);
+  assert.throws(() => sealRevision('responsibility', { ...base, schedule: 'every monday' }, SEAL), /five-field cron/);
 });
 
 test('an evaluation comparing across different models is rejected', () => {

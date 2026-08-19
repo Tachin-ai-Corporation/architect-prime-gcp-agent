@@ -292,14 +292,28 @@ function skillMetadata(skill) {
   };
 }
 
+/**
+ * The runtime shape of a responsibility.
+ *
+ * This emitted `trigger` — an object — while the scheduler read a top-level
+ * `schedule` string and compared `trigger` itself to an event NAME. Neither path
+ * could ever match, so every registry-authored responsibility was inert. The
+ * fields below are exactly what platform/work/scheduler.mjs reads.
+ */
 function responsibilityRecord(r) {
   return {
     id: r.id,
     name: r.name,
     revision: r.revision,
-    trigger: r.trigger,
+    schedule: r.schedule ?? null,
+    event: r.event ?? null,
+    timezone: r.timezone ?? 'UTC',
+    catch_up: r.catch_up ?? 'once',
     instruction: r.instruction,
     success_criteria: r.success_criteria,
+    singleton: r.singleton === true,
+    min_spacing_minutes: r.min_spacing_minutes ?? null,
+    context: r.context ?? {},
     target_agent: r.target_agent ?? null,
     project_id: r.project_id ?? null,
     enabled: r.enabled !== false,

@@ -234,28 +234,66 @@ export const PROCESS_SCHEMA = definitionSchema('process', 1, {
 
 // ── Responsibility ─────────────────────────────────────────────────────
 
-export const RESPONSIBILITY_SCHEMA = definitionSchema('responsibility', 1, {
+// ── Responsibility ─────────────────────────────────────────────────────
+//
+// v2 SPLIT THE TRIGGER. v1 nested it as `trigger: { kind, cron, event, ... }`,
+// and the scheduler read `resp.schedule` — a field the compiler never emitted.
+// So a responsibility could be authored, validated, released and delivered, and
+// then never fire: `enabled && schedule` was false because `schedule` did not
+// exist. Its event path was equally dead, comparing an OBJECT to an event-name
+// string (`r.trigger === eventType`), which is never true.
+//
+// The flat shape is what the scheduler and every legacy responsibility file
+// already use, so the contract now describes the thing that actually runs. One
+// field, one meaning: `schedule` is time, `event` is an occurrence, and exactly
+// one of them is set.
+export const RESPONSIBILITY_SCHEMA = definitionSchema('responsibility', 2, {
   name: { type: 'string', required: true, minLength: 1, maxLength: 80 },
-  trigger: {
-    type: 'object', required: true,
-    properties: {
-      kind: { type: 'string', required: true, enum: ['schedule', 'event'] },
-      cron: { type: 'string', nullable: true, describe: 'Five-field cron; required when kind is schedule' },
-      timezone: { type: 'string', default: 'UTC', describe: 'IANA zone — explicit, because DST silently shifts a fire time' },
-      event: { type: 'string', nullable: true },
-      catch_up: {
-        type: 'string', enum: ['skip', 'once', 'all'], default: 'once',
-        describe: 'What to do about fires missed while the agent was down',
-      },
-    },
+
+  // Exactly one of these. The refinement below enforces it, because a
+  // responsibility with neither can never fire and one with both is ambiguous —
+  // and both states validate happily if nobody checks.
+  schedule: {
+    type: 'string', nullable: true,
+    describe: 'Five-field cron. The scheduler reads THIS field — see the v2 note above.',
   },
+  event: { type: 'string', nullable: true, describe: 'Event name that fires this instead of a clock' },
+
+  timezone: {
+    type: 'string', default: 'UTC',
+    describe: 'IANA zone — explicit, because DST silently shifts a fire time',
+  },
+  catch_up: {
+    type: 'string', enum: ['skip', 'once', 'all'], default: 'once',
+    describe: 'What to do about fires missed while the agent was down',
+  },
+
   instruction: { type: 'string', required: true, minLength: 10, describe: 'The goal handed to the agent when this fires' },
   success_criteria: { type: 'string', required: true, minLength: 10, describe: 'How the agent knows the firing succeeded' },
+
+  // Read by the scheduler and absent from v1, which is why a registry-authored
+  // responsibility could not express "only one at a time" or a minimum gap.
+  singleton: {
+    type: 'boolean', default: false,
+    describe: 'Refuse to fire while a previous firing of this responsibility is still active',
+  },
+  min_spacing_minutes: {
+    type: 'integer', nullable: true, min: 0,
+    describe: 'Floor between firings, independent of the cron — a guard against a tight schedule',
+  },
+  context: {
+    type: 'object', open: true, default: {},
+    describe: 'Extra guidance carried into the mission. NOT the place for success_criteria — that is a top-level field, and reading it from here is the bug v2 fixes.',
+  },
+
   target_agent: { type: 'string', nullable: true, describe: 'Agent id, or null to run on whichever agent holds the role' },
   project_id: { type: 'string', nullable: true, pattern: ID_PATTERN },
   enabled: { type: 'boolean', default: true },
 }, (r) => {
-  if (r.trigger?.kind === 'schedule' && !r.trigger.cron) return 'a schedule trigger requires a cron expression';
-  if (r.trigger?.kind === 'event' && !r.trigger.event) return 'an event trigger requires an event name';
+  const hasSchedule = Boolean(r.schedule);
+  const hasEvent = Boolean(r.event);
+  if (!hasSchedule && !hasEvent) return 'a responsibility needs either a schedule or an event — with neither it can never fire';
+  if (hasSchedule && hasEvent) return 'a responsibility takes a schedule OR an event, not both — which one wins would be undefined';
+  if (hasSchedule && r.schedule.trim().split(/\s+/).length !== 5) return 'schedule must be a five-field cron expression';
   return null;
 });
