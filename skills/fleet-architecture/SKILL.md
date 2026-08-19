@@ -57,6 +57,31 @@ A change carries a title, a rationale, and one or more definition edits. The rat
 thing an operator reads on a proposal card — write the *why*, not the *what*; the diff already
 shows the what.
 
+```bash
+# Author a NEW definition. The body is JSON on stdin; the kind is the argument.
+echo '{"id":"legal-review","name":"Legal Review","summary":"...","triggers":["..."],"procedure":"..."}' \
+  | fleet-config change create skill --title "Add legal-review" --rationale "why this is needed"
+
+# Edit an existing one. Same shape; the base revision is resolved for you, so a
+# concurrent edit by someone else is caught instead of silently overwriting them.
+cat updated-skill.json | fleet-config change update skill --title "Broaden legal-review triggers"
+
+# Retire one. This is an EDIT, not a delete — the definition survives so a
+# rollback still has something to roll back to.
+fleet-config change deprecate skill/legal-review --title "Superseded by contract-review"
+```
+
+`create` refuses a definition that already exists and `update` refuses one that does not, so the
+verb you pick states your assumption and the command checks it.
+
+**You never write a definition file yourself.** There is no path where an agent edits the registry
+directly: the body goes in on stdin, and the service derives the revision, validates it against the
+schema, computes the diff and commits it. If you find yourself reaching for a file write to change
+fleet content, you are in the wrong plane — see *The first question* above.
+
+A body that fails schema validation is refused **before** anything is pushed, so a bad draft leaves
+no branch and no record behind.
+
 ### Validate
 
 ```bash
