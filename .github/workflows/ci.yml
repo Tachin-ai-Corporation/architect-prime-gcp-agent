@@ -247,6 +247,13 @@ jobs:
       - name: A release delivers its processes
         run: node --test test/process-delivery.test.mjs
 
+      # The gate on Phase D item 11. Every legacy authority is deleted on the
+      # strength of "the release produces the same thing"; this is where that is
+      # checked. Its own worst failure would be reporting MATCH when the release
+      # delivered nothing — the shape this program keeps finding.
+      - name: Parity gates the migration
+        run: node --test test/parity.test.mjs
+
   codeowners:
     name: CODEOWNERS Resolves
     runs-on: ubuntu-latest

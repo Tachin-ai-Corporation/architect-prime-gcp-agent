@@ -138,6 +138,7 @@ platform/deployment/validators.mjs platform/deployment/validators.mjs
 platform/deployment/importer.mjs platform/deployment/importer.mjs
 platform/deployment/packages.mjs platform/deployment/packages.mjs
 platform/deployment/diff.mjs platform/deployment/diff.mjs
+platform/deployment/parity.mjs platform/deployment/parity.mjs
 platform/deployment/content-sync.mjs platform/deployment/content-sync.mjs
 platform/deployment/metrics.mjs platform/deployment/metrics.mjs
 platform/deployment/rollout.mjs platform/deployment/rollout.mjs

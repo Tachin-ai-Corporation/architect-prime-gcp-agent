@@ -37,6 +37,7 @@ import {
 import { compileAgentSpec } from '../../platform/deployment/compiler.mjs';
 import { validateSet, VALIDATOR_NAMES } from '../../platform/deployment/validators.mjs';
 import { diffSets, diffRevision, renderDiff, impactedAgents } from '../../platform/deployment/diff.mjs';
+import { compareSets, parityVerdict, renderParity, PARITY_FIELDS } from '../../platform/deployment/parity.mjs';
 import { deriveMetrics, groupBySpec } from '../../platform/deployment/metrics.mjs';
 import { evaluateRollout, renderDecision } from '../../platform/deployment/rollout.mjs';
 import { runSuite, compareRuns, regressions, evaluationRecord, renderEvaluation } from '../../platform/deployment/evals.mjs';
@@ -329,6 +330,84 @@ async function cmdChange(registry, args) {
     process.exit(3);
   }
   emit({ change: result.change.id, branch: result.branch, revisions: result.change.revisions, diff: result.change.diff, rendered: renderDiff(diff) });
+}
+
+/**
+ * Does a release reproduce what this agent actually runs?
+ *
+ * The gate on Phase D item 11. agent-types.json, static kit.json persona
+ * assembly, the composition half of job-*.txt, local process JSON and the
+ * top-level Firestore process library are all deleted on the strength of "the
+ * release produces the same thing". This is where that claim is checked instead
+ * of assumed.
+ *
+ * Run it ON the agent, because the legacy side IS the installed state — the
+ * files the runtime reads today, not the repo they were built from. A parity
+ * check against the repo would prove the seed matches its own source and say
+ * nothing about the machine.
+ *
+ * Usage: fleet-config parity <agentId> [--release <releaseId>]
+ */
+async function cmdParity(registry, args) {
+  const [agentId] = args.filter((a) => !a.startsWith('--'));
+  if (!agentId) die('usage: fleet-config parity <agentId> [--release <releaseId>]');
+
+  const assignment = await registry._db.read(`fleet_assignments/${agentId}`, { strict: true });
+  const releaseId = argValue(args, '--release') || assignment?.desired_release;
+  if (!releaseId) {
+    die(`no release for '${agentId}' — assign one, or pass --release <releaseId>`);
+  }
+
+  // The RELEASED side, read at its pinned commit. Anything less and parity
+  // would be measured against a moving branch.
+  const { definitions } = await registry.readReleaseDefinitions(releaseId);
+
+  const categories = {};
+
+  // ---- processes ----
+  // Legacy side: the files the runtime reads today. loadLocalProcesses() keys
+  // by id and skips deprecated, so this mirrors it rather than re-deciding.
+  const procDir = join(CORE_DIR, 'corekit', 'processes');
+  const legacyProcs = {};
+  if (existsSync(procDir)) {
+    for (const f of readdirSync(procDir).filter((x) => x.endsWith('.json'))) {
+      try {
+        const proc = JSON.parse(readFileSync(join(procDir, f), 'utf8'));
+        if (proc.id && proc.status !== 'deprecated') legacyProcs[proc.id] = proc;
+      } catch (e) { note(`local process ${f} is unreadable: ${e.message}`); }
+    }
+  }
+  const releasedProcs = {};
+  for (const d of definitions.values()) {
+    if (d.kind === 'process' && d.status !== 'deprecated') releasedProcs[d.id] = d;
+  }
+  categories.process = compareSets(legacyProcs, releasedProcs, PARITY_FIELDS.process);
+
+  // ---- responsibilities ----
+  const respPath = join(CORE_DIR, 'corekit', 'responsibilities-job.json');
+  const legacyResps = {};
+  if (existsSync(respPath)) {
+    try {
+      for (const r of (JSON.parse(readFileSync(respPath, 'utf8')).responsibilities || [])) {
+        if (r.id) legacyResps[r.id] = r;
+      }
+    } catch (e) { note(`installed responsibilities are unreadable: ${e.message}`); }
+  }
+  const role = definitions.get(`role/${assignment?.role_id}`);
+  const releasedResps = {};
+  for (const id of (role?.responsibilities || [])) {
+    const d = definitions.get(`responsibility/${id}`);
+    if (d && d.status !== 'deprecated') releasedResps[d.id] = d;
+  }
+  categories.responsibility = compareSets(legacyResps, releasedResps, PARITY_FIELDS.responsibility);
+
+  const verdict = parityVerdict(categories);
+  note(renderParity(verdict));
+  emit({ agent: agentId, release: releaseId, ok: verdict.ok, reason: verdict.reason, categories });
+
+  // Non-zero on failure, so a migration script cannot proceed past a red parity
+  // check by ignoring stdout.
+  if (!verdict.ok) process.exit(5);
 }
 
 async function cmdList(registry, args) {
@@ -906,7 +985,7 @@ process.env.GCP_PROJECT_ID = process.env.GCP_PROJECT_ID || PROJECT_ID;
 const registry = createRegistry({ projectId: PROJECT_ID, actor: actorId(), logger: (lvl, m) => note(`${lvl}: ${m}`) });
 
 const COMMANDS = {
-  change: cmdChange,
+  change: cmdChange, parity: cmdParity,
   import: cmdImport, list: cmdList, get: cmdGet, diff: cmdDiff, validate: cmdValidate,
   release: cmdRelease, assign: cmdAssign, rollback: cmdRollback, compile: cmdCompile, status: cmdStatus,
   observe: cmdObserve, evaluate: cmdEvaluate, finding: cmdFinding,
