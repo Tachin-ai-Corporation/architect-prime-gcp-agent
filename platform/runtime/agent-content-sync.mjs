@@ -256,6 +256,11 @@ async function onePass() {
     const skills = (role.default_skills || []).map((id) => definitions.get(`skill/${id}`)).filter(Boolean);
     const responsibilities = (role.responsibilities || []).map((id) => definitions.get(`responsibility/${id}`)).filter(Boolean);
 
+    // Every process in the release. Unlike skills and responsibilities these are
+    // not selected by the role: a process is fleet-wide know-how, which is why
+    // diff.mjs already treats a process change as reaching every agent.
+    const processes = [...definitions.values()].filter((d) => d.kind === 'process' && d.status !== 'deprecated');
+
     const firmware = {};
     for (const organ of new Set(personas.map((p) => p.organ))) {
       // Base firmware is Foundation and stays manifest-installed; the overlay is
@@ -283,7 +288,7 @@ async function onePass() {
       agentId: agent,
       platformVersion: platformVersion(),
       fleetRelease: assignment.desired_release,
-      role, personas, skills, responsibilities, firmware,
+      role, personas, skills, responsibilities, processes, firmware,
       compiledAt: new Date().toISOString(),
     });
     spec = compiled.spec;

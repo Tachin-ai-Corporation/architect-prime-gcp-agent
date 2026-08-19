@@ -235,6 +235,18 @@ jobs:
       - name: Motor cannot write Foundation
         run: node --test test/motor-cannot-write-foundation.test.mjs
 
+      # A responsibility authored through the registry used to validate, release,
+      # reach the agent and never fire — the compiler emitted a trigger OBJECT while
+      # the scheduler read a schedule STRING nothing produced. v2 splits the field.
+      - name: A registry-authored responsibility can fire
+        run: node --test test/responsibility-convergence.test.mjs
+
+      # And a process reached the agent through no path at all: compileAgentSpec
+      # never took processes and emitted no process file, while the runtime read
+      # local files plus a Firestore collection that overrides by id.
+      - name: A release delivers its processes
+        run: node --test test/process-delivery.test.mjs
+
   codeowners:
     name: CODEOWNERS Resolves
     runs-on: ubuntu-latest

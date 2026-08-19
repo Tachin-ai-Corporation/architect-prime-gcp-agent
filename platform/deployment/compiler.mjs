@@ -140,7 +140,7 @@ export function resolveEgress(base, overlays) {
 export function compileAgentSpec(input) {
   const {
     agentId, platformVersion, fleetRelease,
-    role, personas = [], skills = [], responsibilities = [],
+    role, personas = [], skills = [], responsibilities = [], processes = [],
     firmware = {}, deploymentDefaults = {}, projectOverlay = {}, agentOverlay = {},
     compiledAt,
   } = input;
@@ -206,6 +206,25 @@ export function compileAgentSpec(input) {
   if (responsibilities.length) {
     files['corekit/responsibilities-job.json'] =
       JSON.stringify({ version: 2, responsibilities: responsibilities.map(responsibilityRecord) }, null, 2) + '\n';
+  }
+
+  // Processes reach the agent through the RELEASE (P0-9, first half).
+  //
+  // They did not before: compileAgentSpec never took a `processes` argument and
+  // emitted no process file, so a process authored into the registry was not
+  // merely misread — it was never delivered anywhere. Meanwhile the runtime read
+  // processes from local CoreKit files plus a tenant-global Firestore collection
+  // that overrides local by id, so the one plane that can answer "which release
+  // produced this" had no say at all.
+  //
+  // This half is deliberately ADDITIVE: the bundle now carries the processes so
+  // parity against the legacy sources can be measured. Switching
+  // process-registry.mjs to read this file is Phase D item 11 and is gated on
+  // that parity — flipping the reader first would leave every agent with no
+  // processes at all, because no release has ever contained one.
+  if (processes.length) {
+    files['corekit/processes-job.json'] =
+      JSON.stringify({ version: 2, processes: processes.map(processRecord) }, null, 2) + '\n';
   }
 
   const fileDigests = {};
@@ -300,6 +319,25 @@ function skillMetadata(skill) {
  * could ever match, so every registry-authored responsibility was inert. The
  * fields below are exactly what platform/work/scheduler.mjs reads.
  */
+/**
+ * The runtime shape of a process.
+ *
+ * Matches what process-registry.mjs's loader reads from a local file: it keys by
+ * `id` and skips anything whose `status` is `deprecated`, so both fields must
+ * survive compilation or a retired process would come back to life.
+ */
+function processRecord(p) {
+  return {
+    id: p.id,
+    name: p.name,
+    revision: p.revision,
+    status: p.status ?? 'active',
+    description: p.description ?? '',
+    narrative: p.narrative,
+    intent_keywords: p.intent_keywords ?? [],
+  };
+}
+
 function responsibilityRecord(r) {
   return {
     id: r.id,
