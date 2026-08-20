@@ -248,12 +248,83 @@ async function cmdImport(registry, args) {
  * The definition body is read from stdin (or --file <path>) and may be one
  * object or an array of them. deprecate needs no body.
  */
+/**
+ * Surgical edit of ONE definition body by find/replace — the authoring path for a
+ * large skill/process/responsibility body.
+ *
+ * Why this exists: `change update` takes the WHOLE definition body on stdin. When
+ * an agent's motor authors that body, it holds a 40k-char procedure in context and
+ * reliably drops most of it — the first autonomous run collapsed workspace-docs to
+ * a 166-char stub that then validated and released. This verb keeps the body on the
+ * registry side: the caller supplies only a unique anchor and its replacement, so
+ * there is no large body to lose. The anchor must match EXACTLY ONCE (like the docs
+ * surgical verbs), so a change either lands where intended or refuses — never
+ * silently half-applies.
+ *
+ * Usage: fleet-config change edit <kind>/<id> --find "STR" --replace "STR"
+ *          [--field procedure] --title T [--rationale R] [--risk r]
+ */
+async function cmdChangeEdit(registry, args, target) {
+  const [kind, id] = String(target || '').split('/');
+  if (!kind || !id) die('usage: fleet-config change edit <kind>/<id> --find "STR" --replace "STR" --title T');
+
+  const title = argValue(args, '--title');
+  if (!title) die('--title is required: a change nobody can describe is a change nobody can review');
+  const find = argValue(args, '--find');
+  if (!find) die('--find is required and non-empty (the exact text to replace)');
+  const replace = argValue(args, '--replace');
+  if (replace === null || replace === undefined) die('--replace is required (may be an empty string to delete the anchor)');
+
+  const { definitions } = await registry.readDefinitions();
+  const existing = definitions.get(`${kind}/${id}`);
+  if (!existing) die(`no such definition '${kind}/${id}' — nothing to edit`);
+
+  // The field to edit: an explicit --field, else the kind's substantial body.
+  const DEFAULT_FIELD = { skill: 'procedure', process: 'narrative', responsibility: 'instruction' };
+  const field = argValue(args, '--field') || DEFAULT_FIELD[kind];
+  if (!field) die(`pass --field for a ${kind} (no default body field)`);
+  const body = existing[field];
+  if (typeof body !== 'string') die(`${kind}/${id} has no string field '${field}' to edit`);
+
+  // Exactly one occurrence, or refuse — the docs-surgical-verb discipline. Zero
+  // means the anchor is wrong; more than one means the edit is ambiguous and would
+  // change a place the author did not name.
+  const occurrences = body.split(find).length - 1;
+  if (occurrences === 0) die(`--find text does not appear in ${kind}/${id} '${field}'. Read the current body (fleet-config get ${kind} ${id}) and copy the anchor verbatim.`);
+  if (occurrences > 1) die(`--find text appears ${occurrences}× in ${kind}/${id} '${field}' — not unique. Lengthen the anchor so it names exactly one place.`);
+
+  const nextBody = body.replace(find, replace);
+
+  // Rebuild the draft from the existing body: strip the seal/provenance so the
+  // service re-derives them, keep everything else, change only the one field.
+  const { digest, revision, kind: _k, schema_version, created_at, created_by, parent_revision, ...bodyFields } = existing;
+  const draft = { ...bodyFields, [field]: nextBody };
+
+  const d = diffRevision(kind, existing, draft);
+  const diff = d ? [{ kind, id, op: 'update', from_revision: existing.revision, to_revision: null, summary: d.summary, fields: d.fields }] : [];
+
+  // Seal locally first so a schema failure aborts before anything is pushed.
+  sealRevision(kind, draft, { actor: actorId() });
+
+  const result = await registry.createChange({
+    title,
+    rationale: argValue(args, '--rationale') || '',
+    edits: [{ kind, draft, baseRevision: existing.revision }],
+    diff,
+    risk: argValue(args, '--risk') || 'low',
+    allowShrink: args.includes('--allow-shrink'),
+  });
+  if (!result.ok) { emit({ ok: false, conflicts: result.conflicts }); process.exit(3); }
+  emit({ change: result.change.id, field, occurrences: 1, before_chars: body.length, after_chars: nextBody.length, diff: result.change.diff });
+}
+
 async function cmdChange(registry, args) {
   const OPS = ['create', 'update', 'deprecate'];
   const positional = args.filter((a) => !a.startsWith('--'));
   const [op, target] = positional;
+  if (op === 'edit') return cmdChangeEdit(registry, args, target);
   if (!OPS.includes(op) || !target) {
-    die('usage: fleet-config change create|update <kind> --title T   |   change deprecate <kind>/<id> --title T');
+    die('usage: fleet-config change edit <kind>/<id> --find S --replace S --title T  |  change create|update <kind> --title T  |  change deprecate <kind>/<id> --title T');
   }
 
   const title = argValue(args, '--title');

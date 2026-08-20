@@ -62,9 +62,19 @@ shows the what.
 echo '{"id":"legal-review","name":"Legal Review","summary":"...","triggers":["..."],"procedure":"..."}' \
   | fleet-config change create skill --title "Add legal-review" --rationale "why this is needed"
 
-# Edit an existing one. Same shape; the base revision is resolved for you, so a
-# concurrent edit by someone else is caught instead of silently overwriting them.
+# Edit an existing one, WHOLE-BODY. Same shape; the base revision is resolved for
+# you, so a concurrent edit by someone else is caught instead of silently
+# overwriting them. Only use this for a SMALL definition you can reproduce exactly.
 cat updated-skill.json | fleet-config change update skill --title "Broaden legal-review triggers"
+
+# Edit a LARGE body surgically — the safe way to change a skill's procedure, a
+# process's narrative, a responsibility's instruction. You supply only a UNIQUE
+# anchor and its replacement; the registry holds the body. The anchor must match
+# exactly once or the command refuses (0 = wrong anchor, >1 = ambiguous).
+fleet-config change edit skill/workspace-docs \
+  --find "the exact sentence to change, copied verbatim" \
+  --replace "the corrected sentence" \
+  --title "Fix the read-first step" --rationale "why"
 
 # Retire one. This is an EDIT, not a delete — the definition survives so a
 # rollback still has something to roll back to.
@@ -73,6 +83,14 @@ fleet-config change deprecate skill/legal-review --title "Superseded by contract
 
 `create` refuses a definition that already exists and `update` refuses one that does not, so the
 verb you pick states your assumption and the command checks it.
+
+**For any large body, use `change edit`, not `change update`.** A skill's `procedure` can be tens of
+thousands of characters. `change update` requires you to resubmit the ENTIRE body, and reproducing a
+huge body from memory reliably drops most of it — an edit that "improves one step" silently ships a
+stub, which then validates and releases because the shape is still valid. `change edit` never puts
+the whole body in your hands: you name the one place to change. As a backstop, `change update`
+refuses an edit that collapses a substantial body to a fraction of its length (pass `--allow-shrink`
+only when a near-total deletion is genuinely intended).
 
 **You never write a definition file yourself.** There is no path where an agent edits the registry
 directly: the body goes in on stdin, and the service derives the revision, validates it against the

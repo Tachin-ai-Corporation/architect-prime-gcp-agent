@@ -30,6 +30,37 @@ import { FLEET_CONFIG_REPO, FLEET_CONFIG_BRANCH, pathFor } from '../contracts/id
 const nowIso = () => new Date().toISOString();
 
 /**
+ * The substantial prose field per kind — the one a body-collapse would destroy.
+ * A skill IS its procedure; a process its narrative; a responsibility its
+ * instruction. Only these are guarded, because they are the fields large enough
+ * that a near-total loss means "the body was dropped", not "the text was tightened".
+ */
+const PRESERVED_BODY = Object.freeze({
+  skill: 'procedure',
+  process: 'narrative',
+  responsibility: 'instruction',
+});
+
+/**
+ * Did an edit collapse a substantial body to a stub?
+ *
+ * Returns the offending field (or null). Guards only a body that was already
+ * substantial (>= 200 chars) and lost more than 85% of its length — a threshold
+ * that ignores ordinary tightening and even a large deliberate trim, but catches
+ * the full-body-resubmit failure (40,268 → 166 is a 99.6% loss). Pure, exported
+ * for its own test.
+ */
+export function catastrophicShrink(kind, existing, next) {
+  if (!existing) return null; // a brand-new definition has nothing to shrink from
+  const field = PRESERVED_BODY[kind];
+  if (!field) return null;
+  const before = String(existing[field] ?? '').length;
+  const after = String(next[field] ?? '').length;
+  if (before >= 200 && after < before * 0.15) return { field, before, after };
+  return null;
+}
+
+/**
  * Create a registry bound to one deployment.
  *
  * @param {object} config
@@ -236,7 +267,7 @@ export function createRegistry(config) {
    * @param {string} [input.risk]
    * @returns {Promise<{ ok:boolean, change?:object, conflicts?:object[] }>}
    */
-  async function createChange({ title, rationale, edits, diff = [], risk = 'medium' }) {
+  async function createChange({ title, rationale, edits, diff = [], risk = 'medium', allowShrink = false }) {
     if (!edits?.length) throw new Error('a change must carry at least one edit');
 
     const current = await readDefinitions();
@@ -268,6 +299,26 @@ export function createRegistry(config) {
       // Re-sealing identical content is a no-op, not a change. Recording it would
       // manufacture history and make a rollback target ambiguous.
       if (existing && existing.revision === revision.revision) continue;
+
+      // Body-preservation guard. The first autonomous authoring run collapsed a
+      // 40,268-char skill procedure to 166 chars: the motor was handed the whole
+      // body to "edit" and resubmitted a rewritten stub, silently deleting the
+      // skill — which then validated and released because nothing checked that the
+      // content survived. A near-total loss of a substantial prose field is almost
+      // never an intended edit; it is the full-body-resubmit failure. Refuse it
+      // here (fail closed at authoring, before validate/release), overridable with
+      // allowShrink for a genuine rewrite. See `change edit` for the surgical path
+      // that makes this failure structurally impossible.
+      const shrink = allowShrink ? null : catastrophicShrink(kind, existing, revision);
+      if (shrink) {
+        conflicts.push({
+          kind, id: draft.id,
+          reason: `refusing to shrink ${kind}/${draft.id} '${shrink.field}' from ${shrink.before} to ${shrink.after} chars ` +
+            `(${Math.round((1 - shrink.after / shrink.before) * 100)}% lost) — this is the full-body-resubmit failure. ` +
+            `Use \`change edit\` for a surgical find/replace, or pass --allow-shrink if the deletion is intended.`,
+        });
+        continue;
+      }
 
       sealed.push({ kind, revision, baseRevision: existing?.revision ?? null });
     }
