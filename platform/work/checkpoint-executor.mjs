@@ -1208,7 +1208,13 @@ export async function executeCheckpoints(checkpoints, opts) {
         const rText = toStr(result.output) || result.text || '';
         const toolLog = rText.match(/\[TOOL EXECUTION LOG\]([\s\S]*?)\[END TOOL LOG\]/)?.[1] || '';
         const toolCount = (toolLog.match(/\[TOOL\]/g) || []).length;
-        const hasWrites = /writeFile|drive-upload|drive-mkdir|git commit/i.test(toolLog);
+        // A "write" is any durable mutation, not only a workspace file write. A
+        // registry authoring verb (fleet-config change|release|assign|rollback)
+        // mutates the Fleet Definition store via git-store — real, durable work
+        // that leaves no workspace file, so without this it was flagged "no writes"
+        // and the cerebellum was handed an [EVIDENCE WARNING] doubting a clean
+        // authoring task. Same reason the fleet-* lifecycle tools are excluded below.
+        const hasWrites = /writeFile|drive-upload|drive-mkdir|git commit|fleet-config\s+(?:change|release|assign|rollback)/i.test(toolLog);
         const hasErrors = /ERROR:|No such file|command not found|Permission denied/i.test(toolLog);
         const durationMs = result.durationMs || 0;
 

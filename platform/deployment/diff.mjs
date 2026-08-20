@@ -21,6 +21,22 @@ const SALIENT = {
 
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 
+/**
+ * The size of the region that actually changed between two strings, ignoring the
+ * shared head and tail. A surgical find/replace of equal-length text has a net
+ * delta of zero but a non-zero changed span — reporting only the net delta made an
+ * equal-length edit read as "nothing changed", and a verifier (cerebellum) failed
+ * the milestone for it. Deterministic (C-4): common-prefix + common-suffix.
+ */
+export function changedSpan(a, b) {
+  const n = Math.min(a.length, b.length);
+  let p = 0;
+  while (p < n && a[p] === b[p]) p++;
+  let s = 0;
+  while (s < n - p && a[a.length - 1 - s] === b[b.length - 1 - s]) s++;
+  return { prefix: p, suffix: s, changed: Math.max(a.length - p - s, b.length - p - s) };
+}
+
 /** Describe a change to one field in domain terms rather than as a patch. */
 function describeField(kind, field, before, after) {
   if (Array.isArray(before) && Array.isArray(after)) {
@@ -35,8 +51,12 @@ function describeField(kind, field, before, after) {
     if (before === after) return null;
     // Prose fields are the ones an operator most wants summarized, not shown.
     if (before.length > 200 || after.length > 200) {
-      const delta = after.length - before.length;
-      return `${field}: rewritten (${delta >= 0 ? '+' : ''}${delta} chars)`;
+      // Report what actually CHANGED, plus the before→after length so a body
+      // collapse is visible (40268→166) and an equal-length surgical edit is not
+      // mistaken for a no-op. A bare net delta ("+0 chars") both misled operators
+      // and caused a verifier to fail a real change as "no actual change".
+      const { changed } = changedSpan(before, after);
+      return `${field}: rewritten (${changed} chars changed; length ${before.length}→${after.length})`;
     }
     return `${field}: "${before}" → "${after}"`;
   }
