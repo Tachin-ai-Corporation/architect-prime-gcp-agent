@@ -437,6 +437,18 @@ load_content_managed() {
 }
 installed=0
 
+# Learn what the content plane owns BEFORE the copy loop, not just before the
+# prune. C-36: once a release owns a path, a platform upgrade must neither delete
+# it (the prune already respected this) NOR overwrite it — which the download loop
+# below did, reverting an agent's authored skill/soul to the repo version every
+# upgrade, until content-sync noticed the drift ~5 min later and re-applied. The
+# guard belongs on the WRITE, so the flap never happens. Absent/unreadable
+# CONTENT.json leaves content_managed empty, so the guard is a no-op and Foundation
+# installs normally — uncertain ownership fails OPEN for writes (you get the repo
+# file, which self-heals) and CLOSED for deletes (handled in the prune).
+info "Reading content-plane ownership (CONTENT.json)..."
+load_content_managed
+
 for pair in "${pairs[@]}"; do
   # Split into source and destination
   read -r rel dest <<< "$pair"
@@ -466,6 +478,24 @@ for pair in "${pairs[@]}"; do
   if [[ $noclobber -eq 1 ]] && run test -f "$out_path" 2>/dev/null; then
     echo "  [skip] ${dest} (exists, no-clobber)"
     # Still include in STATE.json with existing file's hash
+    tmpexist="$(mktemp)"
+    run cat "$out_path" > "$tmpexist"
+    hash="$(compute_sha256 "$tmpexist")"
+    rm -f "$tmpexist"
+    file_hashes["$dest"]="sha256:${hash}"
+    installed=$((installed + 1))
+    continue
+  fi
+
+  # Content-plane ownership (C-36): if a release owns this path, the platform
+  # upgrade must not overwrite it. Skip the download and keep the release-written
+  # bytes, but still record the ON-DISK hash into STATE.json so the file stays a
+  # known manifest entry and the prune below never mistakes it for decommissioned.
+  # Only fires when CONTENT.json positively declared this dest (see the fail-open
+  # note above), and only when the file actually exists — a declared-but-absent
+  # managed path still needs the Foundation copy to bootstrap it.
+  if [[ -n "${content_managed[$dest]+x}" ]] && run test -f "$out_path" 2>/dev/null; then
+    echo "  [content] ${dest} (owned by a release — not overwriting)"
     tmpexist="$(mktemp)"
     run cat "$out_path" > "$tmpexist"
     hash="$(compute_sha256 "$tmpexist")"
@@ -522,9 +552,11 @@ run find "${INSTALL_ROOT}" -type f -name 'setup.sh' -exec chmod 755 {} \; 2>/dev
 # (defensive against SCP from Windows, git autocrlf, etc.)
 run find "${INSTALL_ROOT}/bin" -type f -exec sed -i 's/\r$//' {} \; 2>/dev/null || true
 
-# ---- 4.4 Learn what the content plane owns, so neither prune deletes it ----
-info "Reading content-plane ownership (CONTENT.json)..."
-load_content_managed
+# ---- 4.4 Content-plane ownership already read before the copy loop ----
+# load_content_managed ran up in section 3 so the download loop could refuse to
+# overwrite release-owned paths. content_managed and content_record_unreadable are
+# already populated here; the two prune loops below consume them. Re-reading would
+# only reprint the banner.
 
 # ---- 4.5 Prune decommissioned files (C-9 removal discipline, C-18-safe) ----
 # Remove files that were manifest-managed on the PREVIOUS install (recorded in

@@ -170,16 +170,25 @@ export function sealRevision(kind, draft, ctx) {
 export function verifyRevision(kind, record) {
   const schema = schemaFor(kind);
   const { valid, errors } = validateRecord(schema, record);
-  if (!valid) return { ok: false, reason: `schema: ${errors[0].path || '(root)'} ${errors[0].message}` };
+  if (!valid) {
+    // A schema failure on a sealed record is NOT tampering. The commonest cause is
+    // a schema that evolved after the record was sealed (a v1 responsibility read
+    // by v2 code) — the content is authentic, it just predates the field set.
+    // Carry a `code` so callers can say "re-author or migrate" instead of raising
+    // a false integrity alarm. The digest check below is what actually detects
+    // tampering, and it can only be trusted to mean tampering once schema is ruled
+    // out — so schema is checked, and reported, first.
+    return { ok: false, code: 'schema', reason: `schema: ${errors[0].path || '(root)'} ${errors[0].message}` };
+  }
 
   const recomputed = contentDigest(record);
   if (recomputed !== record.digest) {
-    return { ok: false, reason: `digest mismatch — content was modified outside the lifecycle (C-31)` };
+    return { ok: false, code: 'integrity', reason: `digest mismatch — content was modified outside the lifecycle (C-31)` };
   }
   if (record.revision !== revisionFromDigest(recomputed)) {
-    return { ok: false, reason: 'revision does not derive from the digest' };
+    return { ok: false, code: 'integrity', reason: 'revision does not derive from the digest' };
   }
-  return { ok: true, reason: 'content verified' };
+  return { ok: true, code: 'ok', reason: 'content verified' };
 }
 
 // Local alias so verifyRevision does not depend on the re-export above.

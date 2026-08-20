@@ -190,3 +190,40 @@ test('ownership is loaded before either loop reads it', () => {
   assert.ok(call < diffPrune && call < sweep,
     'a protected set that is populated after it is read protects nothing');
 });
+
+// ---- The download loop must not OVERWRITE what a release owns either -------
+
+test('the copy loop refuses to overwrite a release-owned path', () => {
+  // The other half of C-36, and the one that was missing: the prune stopped
+  // DELETING release-owned files, but the download loop kept WRITING the repo
+  // version over them every upgrade. The skip is conditional on content_managed
+  // membership AND on the file already existing — a declared-but-absent path must
+  // still get its Foundation copy to bootstrap (fail-open for writes).
+  assert.match(installSh,
+    /if \[\[ -n "\$\{content_managed\[\$dest\]\+x\}" \]\] && run test -f "\$out_path"[^\n]*; then\n\s*echo "  \[content\] \$\{dest\} \(owned by a release/,
+    'the download loop must skip a release-owned path that already exists on disk');
+});
+
+test('the overwrite guard runs BEFORE the download, not after', () => {
+  // A guard placed after `curl` would have already clobbered the file — the exact
+  // ordering theatre this program keeps finding. Anchor both and compare offsets.
+  const guard = installSh.indexOf('owned by a release — not overwriting');
+  const download = installSh.indexOf('curl -fsSL --retry 3 --retry-delay 2 "$src_url"');
+  assert.ok(guard > 0, 'the overwrite guard must exist');
+  assert.ok(download > 0, 'the download line must still exist');
+  assert.ok(guard < download,
+    'a guard after the download has already overwritten the file it was meant to protect');
+});
+
+test('a release-owned skip still records the on-disk hash into STATE.json', () => {
+  // If the skip did not record file_hashes[$dest], the path would look
+  // decommissioned to the very next prune and be deleted — trading an overwrite
+  // for a delete. The skip must mirror the no-clobber branch's bookkeeping.
+  const block = installSh.slice(
+    installSh.indexOf('owned by a release — not overwriting'),
+    installSh.indexOf('owned by a release — not overwriting') + 400,
+  );
+  assert.match(block, /file_hashes\["\$dest"\]="sha256:\$\{hash\}"/,
+    'a skipped-but-owned path must stay a known STATE.json entry');
+  assert.match(block, /installed=\$\(\(installed \+ 1\)\)/, 'and must count as installed, not missing');
+});

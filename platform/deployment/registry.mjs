@@ -93,7 +93,7 @@ export function createRegistry(config) {
           continue;
         }
         const verdict = verifyRevision(kind, record);
-        if (!verdict.ok) { corrupt.push({ kind, id, reason: verdict.reason }); continue; }
+        if (!verdict.ok) { corrupt.push({ kind, id, code: verdict.code, reason: verdict.reason }); continue; }
         definitions.set(`${kind}/${id}`, record);
       }
     }
@@ -162,7 +162,15 @@ export function createRegistry(config) {
           }
           const verdict = verifyRevision(kind, record);
           if (!verdict.ok) {
-            throw new Error(`readRelease: ${releaseId} has tampered ${kind}/${id}: ${verdict.reason}`);
+            // A schema failure is a stranded release, not a tamper. Wording it as
+            // "tampered" sent an operator hunting an integrity incident when the
+            // real cause was a schema that moved (v1 responsibility, v2 code) and
+            // left this sealed release unreadable — recoverable by re-authoring
+            // and cutting a new release, which "tampered" actively discourages.
+            const label = verdict.code === 'schema'
+              ? `was authored against an older schema and this build can no longer read it (re-author and cut a new release)`
+              : `failed integrity verification (content changed outside the lifecycle, C-31)`;
+            throw new Error(`readRelease: ${releaseId} ${kind}/${id} ${label}: ${verdict.reason}`);
           }
           definitions.set(`${kind}/${id}`, record);
         }
@@ -628,7 +636,14 @@ export function createRegistry(config) {
       await db.write(pathFor('fleetAssignment', a.id), {
         ...a,
         desired_release: target,
-        desired_spec_digest: prior.digest,
+        // NOT prior.digest. A release digest covers the whole definition set; the
+        // spec digest this field is checked against (content-sync.mjs, "compiled
+        // spec … does not match the assigned …") covers one agent's compiled
+        // bundle and depends on the firmware on that VM. Pinning the release digest
+        // here made every post-rollback apply refuse itself — the very bug assign()
+        // documents avoiding. Null means "recompile from the target release and
+        // attest what you got", which is exactly right for a rollback.
+        desired_spec_digest: null,
         drift: 'pending',
         last_error: `rolled back from ${releaseId}: ${reason}`,
         updated_at: nowIso(),

@@ -35,6 +35,11 @@ import {
   importRole, importPersona, importSkill, importProcess, importResponsibility,
 } from '../../platform/deployment/importer.mjs';
 import { compileAgentSpec } from '../../platform/deployment/compiler.mjs';
+// firmwarePath is the one place that knows the organ→workspace layout. readFirmware
+// calls it (below) to read each organ's BASE soul the way the sync daemon does; it
+// lives in content-sync because the daemon is its first caller. Without this import
+// `fleet-config compile` and `evaluate` both threw `firmwarePath is not defined`.
+import { firmwarePath } from '../../platform/deployment/content-sync.mjs';
 import { validateSet, VALIDATOR_NAMES } from '../../platform/deployment/validators.mjs';
 import { diffSets, diffRevision, renderDiff, impactedAgents } from '../../platform/deployment/diff.mjs';
 import { compareSets, parityVerdict, renderParity, PARITY_FIELDS } from '../../platform/deployment/parity.mjs';
@@ -488,7 +493,7 @@ async function cmdRelease(registry, args) {
 
 async function cmdAssign(registry, args) {
   const [releaseId] = args.filter((a) => !a.startsWith('--'));
-  if (!releaseId) die('usage: fleet-config assign <releaseId> --agents a,b [--role <id>] [--pin]');
+  if (!releaseId) die('usage: fleet-config assign <releaseId> --agents a,b [--role <id>] [--pin] [--override-pin]');
   const agents = (argValue(args, '--agents') || '').split(',').map((s) => s.trim()).filter(Boolean);
   if (!agents.length) die('--agents is required');
 
@@ -497,6 +502,7 @@ async function cmdAssign(registry, args) {
   // an explicit --role, else the agent's existing assignment, else refuse.
   const explicitRole = argValue(args, '--role');
   const specDigests = {};
+  const wouldMovePinned = [];
   for (const agentId of agents) {
     const existing = await registry._db.read(`fleet_assignments/${agentId}`, { strict: true });
     const roleId = explicitRole || existing?.role_id;
@@ -504,6 +510,21 @@ async function cmdAssign(registry, args) {
       die(`no role for agent '${agentId}' — pass --role <id>`);
     }
     specDigests[agentId] = { roleId };
+    // The documented pin property (fleet-architecture skill): a pinned agent is
+    // held to its release so a wider promotion does not move it. `pinned` was
+    // written but read by nothing here, so a canary pinned on release A was
+    // silently repointed — and unpinned, since assign() sets `pinned` uniformly
+    // from one flag — the moment someone assigned release B to a set including it.
+    // Refuse to move a pinned agent onto a different release without an explicit
+    // acknowledgement, so the canary a Prime pins actually stays put.
+    if (existing?.pinned && existing.desired_release && existing.desired_release !== releaseId) {
+      wouldMovePinned.push(`${agentId} (pinned to ${existing.desired_release})`);
+    }
+  }
+  if (wouldMovePinned.length && !args.includes('--override-pin')) {
+    die(`refusing to move pinned agent(s): ${wouldMovePinned.join(', ')}. ` +
+      `A pin is what holds a canary against a fleet-wide promotion. ` +
+      `Pass --override-pin to move them deliberately.`);
   }
 
   emit(await registry.assign({ releaseId, agents, specDigests, pinned: args.includes('--pin') }));
@@ -826,6 +847,49 @@ async function cmdStatus(registry) {
 }
 
 /**
+ * Can this build still read every release an agent is assigned to?
+ *
+ * The gate that was missing when RESPONSIBILITY_SCHEMA went v1→v2: a sealed
+ * release is immutable, so a schema migration can strand it — the content is
+ * authentic but the new code refuses it. Nothing noticed until an agent upgraded
+ * onto the new code and its content-sync began failing every pass. This is the
+ * pre-roll question asked deliberately and early: for each agent, attempt to read
+ * its desired release under the CURRENT schemas, and report which are stranded.
+ *
+ * It exits non-zero when any assigned release is unreadable, so an upgrade script
+ * (or a human about to click the button) is stopped before it moves an agent onto
+ * code that cannot read the agent's own assigned content. Rolled-back releases are
+ * not assigned to anyone, so they are correctly out of scope — a release becomes
+ * irrelevant, not stranded, once nothing points at it.
+ */
+async function cmdPreflight(registry) {
+  const assignments = await registry.listAssignments();
+  // Read each distinct release once, not once per agent that shares it.
+  const releaseIds = [...new Set(assignments.map((a) => a.desired_release).filter(Boolean))];
+  if (!releaseIds.length) die('no agent is assigned to any release — nothing to pre-flight', 4);
+
+  const results = [];
+  for (const releaseId of releaseIds) {
+    const agents = assignments.filter((a) => a.desired_release === releaseId).map((a) => a.id);
+    try {
+      const { definitions } = await registry.readReleaseDefinitions(releaseId);
+      results.push({ release: releaseId, readable: true, definitions: definitions.size, agents });
+    } catch (e) {
+      results.push({ release: releaseId, readable: false, reason: e.message, agents });
+    }
+  }
+
+  const stranded = results.filter((r) => !r.readable);
+  emit({ ok: !stranded.length, releases: results, stranded: stranded.map((r) => r.release) });
+  for (const r of stranded) {
+    note(`STRANDED ${r.release} (agents: ${r.agents.join(', ') || 'none'}) — ${r.reason}`);
+  }
+  // A preflight that checks nothing must not read as a pass (R-2): the empty case
+  // is already refused above, so reaching here means at least one release was read.
+  if (stranded.length) process.exit(6);
+}
+
+/**
  * Platform Findings — the only bridge out of this plane (C-34).
  *
  * A finding is filed when a need genuinely cannot be met by any definition: a
@@ -988,6 +1052,7 @@ const COMMANDS = {
   change: cmdChange, parity: cmdParity,
   import: cmdImport, list: cmdList, get: cmdGet, diff: cmdDiff, validate: cmdValidate,
   release: cmdRelease, assign: cmdAssign, rollback: cmdRollback, compile: cmdCompile, status: cmdStatus,
+  preflight: cmdPreflight,
   observe: cmdObserve, evaluate: cmdEvaluate, finding: cmdFinding,
 };
 

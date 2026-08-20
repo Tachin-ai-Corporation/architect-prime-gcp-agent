@@ -61,12 +61,22 @@ describe('readReleaseDefinitions fails closed', () => {
     assert.match(body, /checkoutCommit\(dir, commit\)/);
   });
 
-  it('THROWS on a tampered revision instead of collecting it', () => {
+  it('THROWS on an unreadable revision instead of collecting it', () => {
     // readDefinitions collects `corrupt` and continues — correct while authoring.
     // A release is a unit; a partially-readable one has no partial success.
-    assert.match(body, /has tampered/, 'a tampered revision must throw');
+    assert.match(body, /throw new Error\(`readRelease: \$\{releaseId\} \$\{kind\}\/\$\{id\}/,
+      'an unreadable revision must throw, per-definition');
     assert.match(body, /has unparseable/, 'an unparseable revision must throw');
     assert.doesNotMatch(body, /corrupt\.push/, 'a release read must not degrade to a corrupt list');
+  });
+
+  it('distinguishes a schema strand from an integrity failure at the throw', () => {
+    // A v1 record read by v2 code is authentic-but-stale, not tampered. Wording it
+    // as tampering sent the operator hunting a phantom incident. The throw must
+    // branch on verdict.code so the message names the real remedy.
+    assert.match(body, /verdict\.code === 'schema'/, 'the throw must read the verdict code');
+    assert.match(body, /re-author and cut a new release/, 'a schema strand is recoverable — say so');
+    assert.match(body, /failed integrity verification/, 'a real tamper keeps the integrity wording');
   });
 
   it('recomputes the release digest and compares it', () => {
