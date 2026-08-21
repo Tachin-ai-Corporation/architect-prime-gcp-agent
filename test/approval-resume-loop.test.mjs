@@ -60,3 +60,27 @@ test('a FAILED resumed plan still routes to failure handling, not silent retry',
   assert.match(block, /FAILED on resume/);
   assert.match(block, /synthesize_with_failure or needs_input/);
 });
+
+// ---- change edit must accept file-based anchors (backtick-safe) ----
+//
+// The first autonomous firebase-skill edit shipped corrupted: `change edit`
+// passed --find/--replace as SHELL args, and the skill procedure's backticked
+// literals (`.git/HEAD`, `curl`, `ignore`) triggered backquote substitution and
+// were eaten — the delivered text read "(e.g., , , ) with 000 ... fix the  rules".
+// Skill procedures are backtick-dense, so surgical editing needs an input path
+// that does not go through the shell: files.
+
+import { readFileSync as _rf } from 'node:fs';
+const fcSrc = _rf(join(repo, 'corekit', 'system', 'fleet-config'), 'utf8');
+const editBlock = fcSrc.slice(fcSrc.indexOf('async function cmdChangeEdit'), fcSrc.indexOf('async function cmdChangeEdit') + 1600);
+
+test('change edit reads anchors from files, not only shell args', () => {
+  assert.match(editBlock, /--find-file/, 'a backtick-dense anchor must be passable without the shell mangling it');
+  assert.match(editBlock, /--replace-file/);
+  assert.match(editBlock, /readFileSync\(findFile/, 'the file path is actually read');
+});
+
+test('file input strips exactly one trailing newline (the heredoc artifact)', () => {
+  assert.match(editBlock, /stripOne/, 'so a heredoc-written anchor matches text that does not end in a newline');
+  assert.match(editBlock, /const stripOne = .*slice\(0, -1\)/, 'strips exactly the trailing char (the heredoc newline)');
+});

@@ -2,8 +2,8 @@
   "_generated": "corekit/system/install-surface.mjs — do not edit; regenerate when the installed surface intentionally changes",
   "bundles": {
     "prime": {
-      "digest": "sha256:aa79486f16717b65933a891a034bf19ae64a92d0b59c55dc1338236edfb61909",
-      "contentDigest": "sha256:f81d8f500d000396afdaffc512514a3f7df4274ebf44b03aadd685ea97357216",
+      "digest": "sha256:99b3c745c72c4e1128923a58c61abafe91124be8e226361e29f090a57f587de7",
+      "contentDigest": "sha256:7c046277b286241af501785e9a3b36baf2c159d5166324917c4a099db6c7fc31",
       "fileCount": 241,
       "conflicts": [
         {

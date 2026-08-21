@@ -261,19 +261,36 @@ async function cmdImport(registry, args) {
  * surgical verbs), so a change either lands where intended or refuses — never
  * silently half-applies.
  *
- * Usage: fleet-config change edit <kind>/<id> --find "STR" --replace "STR"
+ * Anchor/replacement text is passed EITHER inline (--find/--replace, fine for
+ * short plain text) OR from files (--find-file/--replace-file). Prefer the FILES
+ * for anything containing backticks, quotes, $ or newlines: skill procedures are
+ * dense with backticked commands, and passing those as shell args mangles them
+ * (an autonomous run's `--find` had its backticked literals eaten by backquote
+ * substitution and shipped a corrupted edit). Write the raw text with a
+ * single-quoted heredoc (`cat > find.txt <<'EOF' … EOF`) so nothing is expanded,
+ * then pass the path. A single trailing newline (the heredoc's own) is stripped.
+ *
+ * Usage: fleet-config change edit <kind>/<id>
+ *          (--find "STR" | --find-file PATH) (--replace "STR" | --replace-file PATH)
  *          [--field procedure] --title T [--rationale R] [--risk r]
  */
 async function cmdChangeEdit(registry, args, target) {
   const [kind, id] = String(target || '').split('/');
-  if (!kind || !id) die('usage: fleet-config change edit <kind>/<id> --find "STR" --replace "STR" --title T');
+  if (!kind || !id) die('usage: fleet-config change edit <kind>/<id> (--find STR | --find-file PATH) (--replace STR | --replace-file PATH) --title T');
 
   const title = argValue(args, '--title');
   if (!title) die('--title is required: a change nobody can describe is a change nobody can review');
-  const find = argValue(args, '--find');
-  if (!find) die('--find is required and non-empty (the exact text to replace)');
-  const replace = argValue(args, '--replace');
-  if (replace === null || replace === undefined) die('--replace is required (may be an empty string to delete the anchor)');
+
+  // File input wins when given. Strip ONE trailing newline — the artifact a
+  // heredoc appends — so `cat > f <<'EOF'\n<anchor>\nEOF` matches an anchor that
+  // does not itself end in a newline. Read as-is otherwise (byte-for-byte).
+  const stripOne = (s) => s.endsWith('\n') ? s.slice(0, -1) : s;
+  const findFile = argValue(args, '--find-file');
+  const replaceFile = argValue(args, '--replace-file');
+  const find = findFile ? stripOne(readFileSync(findFile, 'utf8')) : argValue(args, '--find');
+  if (!find) die('--find (or --find-file) is required and non-empty (the exact text to replace)');
+  const replace = replaceFile ? stripOne(readFileSync(replaceFile, 'utf8')) : argValue(args, '--replace');
+  if (replace === null || replace === undefined) die('--replace (or --replace-file) is required (an empty --replace deletes the anchor)');
 
   const { definitions } = await registry.readDefinitions();
   const existing = definitions.get(`${kind}/${id}`);
