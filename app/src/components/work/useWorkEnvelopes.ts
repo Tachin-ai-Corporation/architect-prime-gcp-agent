@@ -121,6 +121,11 @@ export function useWorkEnvelopes(
   const [loading, setLoading] = useState(true);
   const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const loadedTreesRef = useRef<Set<string>>(new Set());
+  // Descendants pulled in by loadTree (lazy subtree expansion). The /work poll returns
+  // completed missions root-only, so without retaining these across a poll the expanded
+  // checkpoints/tasks get wiped from under an open row. Terminal history is immutable, so
+  // retaining them is always safe; the fresh /work payload wins on any id collision.
+  const loadedEnvelopesRef = useRef<Map<string, WorkEnvelope>>(new Map());
 
   useEffect(() => {
     if (!primeId) {
@@ -131,6 +136,12 @@ export function useWorkEnvelopes(
       return;
     }
 
+    // New prime → drop lazily-loaded subtrees from the previous one so the merge below
+    // can't leak them across the switch (they'd be absent from the new prime's payload
+    // and therefore retained).
+    loadedTreesRef.current = new Set();
+    loadedEnvelopesRef.current = new Map();
+
     let cancelled = false;
     const fetchWork = async () => {
       const data = await api<{ envelopes: WorkEnvelope[] }>(
@@ -138,7 +149,15 @@ export function useWorkEnvelopes(
       );
       if (cancelled) return;
       if (data?.envelopes) {
-        setEnvelopes(data.envelopes);
+        // Merge, don't replace. The shallow /work payload omits descendants of completed
+        // missions, but the user may have lazily expanded them via loadTree. Keep the fresh
+        // roots (they win on id collision) and re-attach any loaded descendants the payload
+        // dropped, so an open checkpoint/task tree survives the poll + tab-refocus refetch.
+        const freshIds = new Set(data.envelopes.map((e) => e.id));
+        const retained = [...loadedEnvelopesRef.current.values()].filter(
+          (e) => !freshIds.has(e.id)
+        );
+        setEnvelopes(retained.length > 0 ? [...data.envelopes, ...retained] : data.envelopes);
       }
       setLoading(false);
     };
@@ -236,6 +255,11 @@ export function useWorkEnvelopes(
         `/api/primes/${primeId}/work/${workId}/tree`
       );
       if (data?.envelopes?.length) {
+        // Remember every envelope from this subtree so a later /work poll (completed roots
+        // only) can't wipe the expanded descendants — see the merge in fetchWork.
+        for (const e of data.envelopes) {
+          loadedEnvelopesRef.current.set(e.id, e);
+        }
         setEnvelopes(prev => {
           const existingIds = new Set(prev.map(e => e.id));
           const newOnes = data.envelopes.filter(e => !existingIds.has(e.id));
