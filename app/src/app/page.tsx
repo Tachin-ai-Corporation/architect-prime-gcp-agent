@@ -1,19 +1,20 @@
 "use client";
 
-import { useState, useEffect, useRef, useLayoutEffect, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import styles from "./page.module.css";
 import { DialogProvider, useDialog } from "@/components/DialogProvider";
 import { LoadingScreen, OnboardingFlow } from "@/components/onboarding/OnboardingFlow";
 import { PrimeChip } from "@/components/primes/PrimeGrid";
 import { FleetVisualization } from "@/components/fleet/FleetVisualization";
+import { FleetStudioPanel } from "@/components/fleet/FleetStudioPanel";
 import { HireModal } from "@/components/fleet/HireModal";
 import { DeployPrimeModal } from "@/components/primes/DeployPrimeModal";
 import { ConfirmDeleteModal } from "@/components/primes/ConfirmDeleteModal";
 import { ActionRequiredModal } from "@/components/fleet/ActionRequiredModal";
 import { usePrime } from "@/contexts/PrimeContext";
 import { api } from "@/lib/api";
-import type { PrimeInstance, FleetAgent } from "@/lib/types";
+import type { PrimeInstance } from "@/lib/types";
 
 function HomeInner() {
   const dialog = useDialog();
@@ -38,7 +39,6 @@ function HomeInner() {
     primeId: string; agentName: string; action: { title: string; instructions: string[] };
   } | null>(null);
   /* ---- Refs ---- */
-  const isDragging = useRef(false);
   const listRef = useRef<HTMLDivElement>(null);
   const proximityRaf = useRef<number>(0);
 
@@ -55,6 +55,11 @@ function HomeInner() {
   useEffect(() => {
     const container = listRef.current;
     if (!container) return;
+    // Respect reduced-motion: the proximity glow is a per-frame mouse tracker.
+    if (typeof window !== "undefined" &&
+        window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) {
+      return;
+    }
     const RADIUS = 220;
 
     const handleMouse = (e: MouseEvent) => {
@@ -94,11 +99,6 @@ function HomeInner() {
   const selectPrime = useCallback((prime: PrimeInstance) => {
     setSelectedPrimeId((prev) => (prev === prime.id ? null : prime.id));
     router.push(`/p/${prime.id}`);
-  }, [router]);
-
-  /* ---- Select Agent for chat ---- */
-  const selectAgentChat = useCallback((primeId: string, agent: FleetAgent) => {
-    router.push(`/p/${primeId}/a/${agent.name}#chat`);
   }, [router]);
 
   /* ---- Deploy Prime ---- */
@@ -269,9 +269,7 @@ function HomeInner() {
               <FleetVisualization
                 primeId={p.id}
                 agents={fleet}
-                chatAgentName={undefined}
                 upgradingAgent={upgradingAgent}
-                onSelectAgentChat={selectAgentChat}
                 onUpgradeAgent={handleUpgradeAgent}
                 onHireClick={() => setHireTarget(p.id)}
                 onActionModal={setActionModal}
@@ -279,6 +277,13 @@ function HomeInner() {
             </PrimeChip>
           );
         })}
+
+        {/* ---- Fleet observability — absorbed Fleet Studio (what each agent runs + releases/drift) ---- */}
+        {effectivePrimeId && (
+          <div id="fleet-observability" style={{ marginTop: "var(--space-7)" }}>
+            <FleetStudioPanel primeId={effectivePrimeId} />
+          </div>
+        )}
       </div>
 
       {/* ---- Deploy Modal ---- */}

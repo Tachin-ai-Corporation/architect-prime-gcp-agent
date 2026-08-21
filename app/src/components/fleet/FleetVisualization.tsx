@@ -39,9 +39,7 @@ interface ActionModalData {
 interface FleetVisualizationProps {
   primeId: string;
   agents: FleetAgent[];
-  chatAgentName?: string;
   upgradingAgent: string | null;
-  onSelectAgentChat: (primeId: string, agent: FleetAgent) => void;
   onUpgradeAgent: (primeId: string, agentName: string, e: React.MouseEvent) => void;
   onHireClick: () => void;
   onActionModal: (data: ActionModalData) => void;
@@ -71,9 +69,7 @@ function getDeployProgress(steps: DeployStep[] | undefined) {
 export function FleetVisualization({
   primeId,
   agents,
-  chatAgentName,
   upgradingAgent,
-  onSelectAgentChat,
   onUpgradeAgent,
   onHireClick,
   onActionModal,
@@ -161,7 +157,6 @@ export function FleetVisualization({
           {agents.map((agent, i) => {
             const dp = getDeployProgress(agent.deploySteps);
             const isDeploying = agent.status === "deploying" && dp;
-            const isChatTarget = chatAgentName === agent.name;
 
             return (
               <div
@@ -170,7 +165,7 @@ export function FleetVisualization({
                   if (el) localAgentCardRefs.current.set(agent.name, el);
                   else localAgentCardRefs.current.delete(agent.name);
                 }}
-                className={`${styles.agentCard} ${agent.status === "online" ? styles.agentCardOnline : ""} ${isChatTarget ? styles.agentCardActive : ""}`}
+                className={`${styles.agentCard} ${agent.status === "online" ? styles.agentCardOnline : ""}`}
                 style={{ animationDelay: `${i * 80}ms` }}
                 id={`agent-card-${agent.name}`}
                 onClick={() => router.push(`/p/${primeId}/a/${agent.name}`)}
@@ -228,20 +223,9 @@ export function FleetVisualization({
                   </div>
                 )}
 
-                {/* Chat + Upgrade footer */}
+                {/* Upgrade footer (agent chat retired — chat is prime-only) */}
                 {agent.status === "online" && (
                   <div className={styles.agentFooter}>
-                    <button
-                      className={styles.agentChatBtn}
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onSelectAgentChat(primeId, agent);
-                      }}
-                      title={`Chat with ${agent.name}`}
-                      id={`chat-agent-${agent.name}`}
-                    >
-                      💬
-                    </button>
                     <button
                       className={styles.agentUpgradeBtn}
                       onClick={(e) => onUpgradeAgent(primeId, agent.name, e)}
