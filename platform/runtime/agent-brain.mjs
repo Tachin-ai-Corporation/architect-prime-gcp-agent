@@ -3803,11 +3803,22 @@ async function executeCheckpointPlanResume(envelope, progress, memory) {
     });
   }
 
-  // Store results and let cortex synthesize
-  // Wait, let's just make sure this is accurate
-  envelope.context_forward = `[CHECKPOINT PLAN RESULTS (resumed after crash)]\n${
-    allResults.map(r => 
-        `${r.step || r.checkpoint_step || '?'} (${r.agent || '?'}): ${r.success ? 'OK' : 'FAIL'} — ${toStr(r.result).substring(0, 200)}`
+  // These results are the ONLY account the cortex has of what the resumed plan did.
+  // Truncating each to 200 chars starved it: after an APPROVAL resume the cortex
+  // could not see that the gated action (a prod deploy) had SUCCEEDED, so it
+  // re-planned — and the re-plan re-inserted the SAME approval gate, an
+  // approve → re-plan → re-gate loop (observed live on a 1health prod deploy: a
+  // fresh apr- every time the operator approved). Two corrections: give it the same
+  // budget the sibling delegation-resume path uses (RESULT_PREVIEW_CHARS, not 200),
+  // and label the context by what actually happened — a plan that RAN TO COMPLETION
+  // on resume is not a crash, and the cortex must SYNTHESIZE the deliverable, not
+  // re-plan the (already-approved, already-executed) checkpoint.
+  const resumeHeader = planFailed
+    ? '[CHECKPOINT PLAN RESULTS — a step FAILED on resume; use synthesize_with_failure or needs_input, do not silently retry]'
+    : '[CHECKPOINT PLAN RESULTS — every step COMPLETED on resume; SYNTHESIZE the deliverable from these results. Do NOT re-plan or re-request an approval already granted for work already done.]';
+  envelope.context_forward = `${resumeHeader}\n${
+    allResults.map(r =>
+        `${r.step || r.checkpoint_step || '?'} (${r.agent || '?'}): ${r.success ? 'OK' : 'FAIL'} — ${smartTruncate(toStr(r.result), RESULT_PREVIEW_CHARS)}`
     ).join('\n')
   }`;
   envelope.updated_at = now();
