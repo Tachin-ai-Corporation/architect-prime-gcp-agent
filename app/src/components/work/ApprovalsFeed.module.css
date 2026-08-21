@@ -1,0 +1,212 @@
+/* Global Approvals drawer — mirrors the Operations drawer chrome, 1health tokens. */
+
+.feed {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: var(--bg-secondary);
+  border-left: 1px solid var(--border-default);
+}
+
+.feedHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--space-4) var(--space-4);
+  border-bottom: 1px solid var(--border-subtle);
+  flex-shrink: 0;
+}
+
+.feedTitle {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.feedBadge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: rgba(214, 168, 58, 0.14);
+  color: var(--status-warning);
+}
+
+.feedClose {
+  background: none;
+  border: none;
+  color: var(--text-tertiary);
+  font-size: 15px;
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+  transition: color var(--transition-fast);
+}
+.feedClose:hover { color: var(--text-primary); }
+
+.feedEmpty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  flex: 1;
+  color: var(--text-tertiary);
+  font-size: 13px;
+}
+.feedEmptyIcon {
+  font-size: 24px;
+  color: var(--status-success);
+}
+
+.feedList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  padding: var(--space-4);
+  overflow-y: auto;
+}
+
+.error {
+  font-size: 12px;
+  color: var(--status-error);
+  background: rgba(216, 79, 69, 0.10);
+  border: 1px solid rgba(216, 79, 69, 0.25);
+  border-radius: var(--radius-sm);
+  padding: var(--space-2) var(--space-3);
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  background: var(--charcoal);
+  border: 1px solid var(--border-subtle);
+  border-left: 3px solid var(--status-warning);
+  border-radius: var(--radius-md);
+}
+
+.cardTop {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.typeChip {
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 2px 8px;
+  border-radius: var(--radius-full);
+  background: rgba(31, 154, 155, 0.12);
+  color: var(--network-teal);
+}
+
+.prime {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+
+.title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.4;
+}
+
+.desc {
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+.meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-2);
+}
+
+.time {
+  font-size: 11px;
+  color: var(--status-warning);
+}
+
+.workLink {
+  font-size: 11px;
+  color: var(--text-link);
+  transition: color var(--transition-fast);
+}
+.workLink:hover { color: var(--signal-aqua); }
+
+.actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-2);
+  margin-top: 2px;
+}
+
+.approveBtn,
+.rejectBtn,
+.ghostBtn {
+  font-size: 12px;
+  font-weight: 600;
+  padding: 5px 14px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  border: 1px solid transparent;
+  transition: background var(--transition-fast), border-color var(--transition-fast);
+}
+.approveBtn:disabled,
+.rejectBtn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.approveBtn {
+  background: var(--status-success);
+  color: #fff;
+}
+.approveBtn:hover:not(:disabled) { background: #34996b; }
+
+.rejectBtn {
+  background: rgba(216, 79, 69, 0.10);
+  color: var(--pulse);
+  border-color: rgba(216, 79, 69, 0.25);
+}
+.rejectBtn:hover:not(:disabled) { background: rgba(216, 79, 69, 0.20); }
+
+.ghostBtn {
+  background: transparent;
+  color: var(--text-secondary);
+  border-color: var(--border-default);
+}
+.ghostBtn:hover { color: var(--text-primary); border-color: var(--border-accent); }
+
+.rejectBox {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
+
+.reasonInput {
+  width: 100%;
+  padding: 6px 10px;
+  background: var(--graphite);
+  border: 1px solid var(--border-default);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 12px;
+  outline: none;
+}
+.reasonInput:focus {
+  border-color: var(--network-teal);
+  box-shadow: 0 0 0 3px rgba(31, 154, 155, 0.15);
+}

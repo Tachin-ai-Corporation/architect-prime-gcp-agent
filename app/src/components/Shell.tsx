@@ -6,6 +6,7 @@ import { usePathname } from "next/navigation";
 import { usePrime } from "@/contexts/PrimeContext";
 import { Breadcrumb } from "./Breadcrumb";
 import { OperationsFeed, useOperations } from "./OperationsFeed";
+import { ApprovalsFeed, useApprovals } from "./work/ApprovalsFeed";
 import styles from "./Shell.module.css";
 
 export function Shell({ children }: { children: React.ReactNode }) {
@@ -15,9 +16,11 @@ export function Shell({ children }: { children: React.ReactNode }) {
   /* Poll operations across all primes */
   const primeIds = useMemo(() => primes.map(p => p.id), [primes]);
   const { operations, activeCount, refresh } = useOperations(primeIds);
+  const { approvals, pendingCount, refresh: refreshApprovals } = useApprovals(primeIds);
 
-  /* Drawer state */
+  /* Drawer state — Operations and Approvals share the right slot, so open one closes the other. */
   const [opsOpen, setOpsOpen] = useState(false);
+  const [approvalsOpen, setApprovalsOpen] = useState(false);
 
   /* Auto-open drawer when new active operations appear */
   //
@@ -95,11 +98,33 @@ export function Shell({ children }: { children: React.ReactNode }) {
             </Link>
           )}
 
+          {/* Approvals toggle */}
+          {primeIds.length > 0 && (
+            <button
+              className={`${styles.iconBtn} ${pendingCount > 0 ? styles.opsActive : ""}`}
+              onClick={() => {
+                setOpsOpen(false);
+                setApprovalsOpen((v) => {
+                  if (!v) refreshApprovals();
+                  return !v;
+                });
+              }}
+              title={pendingCount > 0 ? `${pendingCount} pending approval${pendingCount > 1 ? "s" : ""}` : "Approvals"}
+              id="shell-approvals-toggle"
+            >
+              ✅
+              {pendingCount > 0 && (
+                <span className={styles.opsBadge}>{pendingCount}</span>
+              )}
+            </button>
+          )}
+
           {/* Operations toggle */}
           {primeIds.length > 0 && (
             <button
               className={`${styles.iconBtn} ${activeCount > 0 ? styles.opsActive : ""}`}
               onClick={() => {
+                setApprovalsOpen(false);
                 setOpsOpen((v) => {
                   if (!v) refresh();
                   return !v;
@@ -163,6 +188,17 @@ export function Shell({ children }: { children: React.ReactNode }) {
             operations={operations}
             onClose={() => setOpsOpen(false)}
             onClear={handleClearOps}
+          />
+        </div>
+      )}
+
+      {/* ---- Approvals Drawer (shares the right slot with Operations) ---- */}
+      {approvalsOpen && primeIds.length > 0 && (
+        <div className={styles.opsDrawer} id="approvals-drawer">
+          <ApprovalsFeed
+            approvals={approvals}
+            onClose={() => setApprovalsOpen(false)}
+            onResolved={refreshApprovals}
           />
         </div>
       )}
