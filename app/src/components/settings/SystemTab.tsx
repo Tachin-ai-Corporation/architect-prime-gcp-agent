@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { usePrime } from "@/contexts/PrimeContext";
 import { useDialog } from "@/components/DialogProvider";
 import { api } from "@/lib/api";

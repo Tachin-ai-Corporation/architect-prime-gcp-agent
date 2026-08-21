@@ -17,16 +17,17 @@ import { useHashTab } from "@/hooks/useHashTab";
 import { useIntrospect } from "@/hooks/useIntrospect";
 import styles from "./page.module.css";
 
+// Interaction is the front door: opening a Prime lands on Chat.
 const TABS = [
-  { key: "overview", label: "Persona", icon: "🎭" },
+  { key: "chat", label: "Chat", icon: "💬" },
   { key: "work", label: "Work", icon: "📋" },
-  { key: "brain", label: "Models", icon: "🧠" },
+  { key: "overview", label: "Persona", icon: "🎭" },
+  { key: "brain", label: "Brain", icon: "🧠" },
   { key: "fleet", label: "Fleet", icon: "👥" },
   { key: "projects", label: "Projects", icon: "📁" },
   { key: "processes", label: "Processes", icon: "⚙️" },
   { key: "config", label: "Config", icon: "🔧" },
   { key: "memory", label: "Memory", icon: "💾" },
-  { key: "chat", label: "Chat", icon: "💬" },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
@@ -39,7 +40,7 @@ export default function PrimeDeepDivePage({
 }) {
   const { id } = use(params);
   const { primes, loading } = usePrime();
-  const [activeTab, setActiveTab] = useHashTab<TabKey>(TAB_KEYS, "overview");
+  const [activeTab, setActiveTab] = useHashTab<TabKey>(TAB_KEYS, "chat");
 
   /* ---- Resolve prime data ---- */
   const prime = primes.find((p) => p.id === id);

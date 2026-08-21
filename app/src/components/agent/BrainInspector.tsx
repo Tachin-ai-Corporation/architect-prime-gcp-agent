@@ -30,18 +30,6 @@ interface LiveBrainConfig {
   default: string; // e.g. "vertex-anthropic/claude-opus-4-6" or "vertex-google/gemini-2.5-pro"
   slots: Record<string, string | null>; // per-agent overrides (null = inherits default)
   daemonModels?: { ears?: string | null; mouth?: string | null; brain?: string | null };
-  responsibilities?: Responsibility[];
-}
-
-interface Responsibility {
-  id: string;
-  name: string;
-  schedule: string;
-  enabled: boolean;
-  min_spacing_minutes: number;
-  instruction: string;
-  has_process: boolean;
-  source: string;
 }
 
 /* ================================================================
@@ -128,9 +116,6 @@ export function BrainInspector({ primeId, agentName }: BrainInspectorProps) {
   const [pendingChanges, setPendingChanges] = useState<Record<string, string>>({});
   const [applying, setApplying] = useState(false);
   const [applyResult, setApplyResult] = useState<string | null>(null);
-
-  // Responsibility toggle state
-
 
   const [slots, setSlots] = useState<SlotDef[]>([]);
   const [defaultDaemonModel, setDefaultDaemonModel] = useState("gemini-3.6-flash");
@@ -371,9 +356,6 @@ export function BrainInspector({ primeId, agentName }: BrainInspectorProps) {
     }
     setApplying(false);
   };
-
-  /* ---- Toggle responsibility enabled/disabled ---- */
-
 
   return (
     <div className={styles.wrapper}>

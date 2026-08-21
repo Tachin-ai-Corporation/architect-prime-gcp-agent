@@ -17,7 +17,7 @@ export default function LibraryPage() {
         <NavCard
           icon="🧩"
           title="Skills"
-          description="Browse the skill catalog — tools, manifests, and capabilities available for installation"
+          description="Browse the skill catalog — tools, manifests, and capabilities each role receives at hire"
           href="/library/skills"
         />
         <NavCard
@@ -29,7 +29,7 @@ export default function LibraryPage() {
         <NavCard
           icon="🧠"
           title="Models"
-          description="Scan and manage Vertex AI models — Gemini, Claude, and partner models"
+          description="Scan Vertex AI availability — Gemini, Claude, and partner models"
           href="/library/models"
         />
       </div>

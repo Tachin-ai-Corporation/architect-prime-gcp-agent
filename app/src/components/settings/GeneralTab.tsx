@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useCallback } from "react";
 import { usePrime } from "@/contexts/PrimeContext";
 import styles from "@/app/settings/page.module.css";
 

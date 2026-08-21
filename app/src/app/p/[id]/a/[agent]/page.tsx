@@ -7,7 +7,6 @@ import { MemoryViewer } from "@/components/agent/MemoryViewer";
 import { AgentProjects } from "@/components/agent/AgentProjects";
 import { AgentProcesses } from "@/components/agent/AgentProcesses";
 import { ContractsViewer } from "@/components/agent/ContractsViewer";
-import { FleetCommsReadOnly } from "@/components/FleetCommsReadOnly";
 import { AgentWorkPanel } from "@/components/work/AgentWorkPanel";
 import { ApprovalQueue } from "@/components/work/ApprovalQueue";
 import { PersonaPanel } from "@/components/agent/PersonaPanel";
@@ -16,16 +15,16 @@ import { useHashTab } from "@/hooks/useHashTab";
 import { useIntrospect } from "@/hooks/useIntrospect";
 import styles from "./page.module.css";
 
+// Agents are an observability surface (chat is prime-only). Work leads.
 const TABS = [
-  { key: "overview", label: "Persona", icon: "🎭" },
   { key: "work", label: "Work", icon: "📋" },
-  { key: "brain", label: "Models", icon: "🧠" },
+  { key: "overview", label: "Persona", icon: "🎭" },
+  { key: "brain", label: "Brain", icon: "🧠" },
   { key: "contracts", label: "Contracts", icon: "📄" },
   { key: "approvals", label: "Approvals", icon: "✋" },
   { key: "projects", label: "Projects", icon: "📁" },
   { key: "processes", label: "Processes", icon: "⚙️" },
   { key: "memory", label: "Memory", icon: "💾" },
-  { key: "chat", label: "Comms", icon: "💬" },
 ] as const;
 
 type TabKey = (typeof TABS)[number]["key"];
@@ -41,7 +40,7 @@ export default function AgentDeepDivePage({
 }) {
   const { id, agent } = use(params);
   const { sidebarFleet } = usePrime();
-  const [activeTab, setActiveTab] = useHashTab<TabKey>(TAB_KEYS, "overview");
+  const [activeTab, setActiveTab] = useHashTab<TabKey>(TAB_KEYS, "work");
   const [themeMap, setThemeMap] = useState<Record<string, { glyph: string; accent: string; name: string }>>({});
 
   /* ---- Fetch agent types for theming ---- */
@@ -143,13 +142,6 @@ export default function AgentDeepDivePage({
       {/* Work */}
       {activeTab === "work" && (
         <AgentWorkPanel primeId={id} agentFilter={agent} />
-      )}
-
-      {/* Chat / Comms */}
-      {activeTab === "chat" && (
-        <div className={styles.chatTabContent}>
-          <FleetCommsReadOnly primeId={id} agentName={agent} />
-        </div>
       )}
 
       {/* Contracts — contracts.json viewer (read-only) */}
