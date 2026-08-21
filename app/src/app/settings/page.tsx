@@ -1,36 +1,28 @@
 "use client";
 
-import { useState, useCallback, Suspense } from "react";
 import Link from "next/link";
-import { useSearchParams } from "next/navigation";
 import styles from "./page.module.css";
 import { GeneralTab } from "@/components/settings/GeneralTab";
 import { IntegrationTab } from "@/components/settings/IntegrationTab";
 import { SecurityTab } from "@/components/settings/SecurityTab";
 import { SecretsTab } from "@/components/settings/SecretsTab";
 import { SystemTab } from "@/components/settings/SystemTab";
+import { useHashTab } from "@/hooks/useHashTab";
 
-type SettingsTab = "general" | "integration" | "security" | "secrets" | "system";
-
-const TABS: { id: SettingsTab; label: string; icon: string }[] = [
+const TABS = [
   { id: "general", label: "General", icon: "⚙️" },
   { id: "integration", label: "Integration", icon: "🔗" },
   { id: "security", label: "Security", icon: "🔐" },
   { id: "secrets", label: "Secrets", icon: "🔑" },
   { id: "system", label: "System", icon: "🖥️" },
-];
+] as const;
 
-function SettingsPageInner() {
-  const searchParams = useSearchParams();
-  const tabParam = searchParams.get("tab");
-  const [activeTab, setActiveTabState] = useState<SettingsTab>(
-    tabParam && TABS.find((t) => t.id === tabParam) ? (tabParam as SettingsTab) : "general"
-  );
+type SettingsTab = (typeof TABS)[number]["id"];
+const TAB_KEYS = TABS.map((t) => t.id) as SettingsTab[];
 
-  const setActiveTab = useCallback((tab: SettingsTab) => {
-    setActiveTabState(tab);
-    window.history.replaceState(null, "", `/settings?tab=${tab}`);
-  }, []);
+export default function DashboardSettingsPage() {
+  // Hash-synced, matching the deep-dive tabs (one tab mechanism across the app).
+  const [activeTab, setActiveTab] = useHashTab<SettingsTab>(TAB_KEYS, "general");
 
   return (
     <div className={styles.settingsShell} id="dashboard-settings-page">
@@ -72,13 +64,5 @@ function SettingsPageInner() {
         </div>
       </div>
     </div>
-  );
-}
-
-export default function DashboardSettingsPage() {
-  return (
-    <Suspense>
-      <SettingsPageInner />
-    </Suspense>
   );
 }

@@ -75,7 +75,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           {/* DWD not configured warning */}
           {!setup.dwdConfigured && setup.hasPrimes && (
             <Link
-              href="/settings?tab=integration"
+              href="/settings#integration"
               className={styles.iconBtn}
               title="DWD not configured — click to set up"
               id="shell-dwd-warning"
@@ -88,7 +88,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
           {/* Auth not configured warning */}
           {!setup.authConfigured && (
             <Link
-              href="/settings?tab=security"
+              href="/settings#security"
               className={styles.iconBtn}
               title="Authentication not configured — click to set up"
               id="shell-auth-warning"
@@ -167,7 +167,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
           {/* Version tag */}
           {versionInfo && (
-            <Link href="/settings?tab=system" className={styles.versionTag} id="shell-version">
+            <Link href="/settings#system" className={styles.versionTag} id="shell-version">
               {versionInfo.deployedVersion}
               <span className={versionInfo.deployedStable ? styles.versionStable : styles.versionUnstable}>
                 {versionInfo.deployedStable ? "STABLE" : "DEV"}
