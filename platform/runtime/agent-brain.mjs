@@ -57,7 +57,7 @@ import { renderBlackboard } from '../work/blackboard.mjs';
 import { canTransition } from '../contracts/work-transitions.mjs';
 import { assembleConversation } from '../context/conversation-context.mjs';
 import { toStr } from '../providers/to-str.mjs';
-import { extractCheckpoints } from '../work/plan-utils.mjs';
+import { extractCheckpoints, enforceMissionParentInvariant } from '../work/plan-utils.mjs';
 import { extractCues, searchWork, recentWorkDigest } from '../work/work-recall.mjs';
 import { renderResources, resourceKey } from '../work/resource-ledger.mjs';
 import { toContentParts } from '../context/prompt-blocks.mjs';
@@ -882,11 +882,11 @@ function versionCoordinates() {
 }
 
 async function firestoreWrite(collection, docId, data) {
-  // Invariant check: M-type envelope with parent_id should be C-type
-  if (collection === 'work' && data && data.type === 'M' && data.parent_id) {
-    log('ERROR', `Invariant violation: M-type envelope ${data.id} has parent_id ${data.parent_id}. Correcting to type C.`);
-    data.type = 'C';
-    data.delivery_status = 'internal';
+  // Invariant check (C-15): a mission (M) may only nest under its routine (R→M). A parented
+  // M with no responsibility origin is a nesting bug → demote to C. A responsibility-spawned
+  // mission (source_meta.responsibility_id) is the legitimate R→M and is exempt. See plan-utils.
+  if (collection === 'work' && data && enforceMissionParentInvariant(data)) {
+    log('ERROR', `Invariant violation: envelope ${data.id} (type M) has parent_id ${data.parent_id} but no responsibility origin. Demoted to type C.`);
   }
   // Enforce project_id on all Mission writes (brain-specific guard)
   if (collection === 'work' && data && data.type === 'M') {
@@ -2358,10 +2358,8 @@ async function completeEnvelope(envelope, opts) {
     skipCleanup = false,
   } = opts;
 
-  if (envelope.type === 'M' && envelope.parent_id) {
-    log('ERROR', `Invariant violation: M-type envelope ${envelope.id} has parent_id ${envelope.parent_id}. Correcting to type C.`);
-    envelope.type = 'C';
-    envelope.delivery_status = 'internal';
+  if (enforceMissionParentInvariant(envelope)) {
+    log('ERROR', `Invariant violation: envelope ${envelope.id} (type M) has parent_id ${envelope.parent_id} but no responsibility origin. Demoted to type C.`);
   }
 
   // ---- Transition guard (platform/contracts/work-transitions.mjs) ----

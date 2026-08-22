@@ -44,3 +44,30 @@ export function extractCheckpoints(d, log = () => {}) {
     })),
   })).filter(cp => cp.tasks.length > 0); // Drop checkpoints with zero valid tasks
 }
+
+/**
+ * C-15 invariant: a mission (M) never nests under other work. The ONE legitimate parented
+ * mission is a responsibility-spawned one — the R→M→C→T chain, where the routine (R)
+ * envelope is the mission's parent (see work/scheduler.mjs, which stamps every such mission
+ * with source_meta.responsibility_id and later queries missions by that key). Any OTHER
+ * parented M is a nesting bug and is demoted to a checkpoint (C).
+ *
+ * This guard previously had no exemption, so it silently demoted every routine-spawned
+ * mission to a C — which is why a nightly routine's tree rendered as "checkpoints under a
+ * checkpoint" instead of R→M→C→T. External delivery is separately gated on parent_id (only
+ * parent-less roots egress — see agent-brain completeEnvelope), so an exempted mission still
+ * never delivers to the mouth; this is purely about the type label and the tree shape.
+ *
+ * Pure (B-19): mutates `env` in place; returns true iff it corrected the type.
+ *
+ * @param {object} env - a work envelope (mutated in place)
+ * @returns {boolean} true if the envelope was demoted M→C
+ */
+export function enforceMissionParentInvariant(env) {
+  if (env && env.type === 'M' && env.parent_id && !env.source_meta?.responsibility_id) {
+    env.type = 'C';
+    env.delivery_status = 'internal';
+    return true;
+  }
+  return false;
+}
