@@ -98,7 +98,6 @@ docs/guides/SKILL_STANDARD.md docs/guides/SKILL_STANDARD.md
 
 # Config
 corekit/README.md corekit/README.md
-corekit/exec-approvals.json exec-approvals.json
 corekit/config/agent-types.json corekit/agent-types.json
 corekit/config/chat-config.json.tmpl corekit/chat-config.json.tmpl
 
