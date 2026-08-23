@@ -29,7 +29,7 @@ References to `corekit/lib/…`, `corekit/daemon/…` and `corekit/contracts/…
 are historical — they describe where things were when that entry was written. Do not treat
 them as current locations.
 
-## Current Architecture (v2026.08.21.3.0)
+## Current Architecture (v2026.08.23.1.1)
 
 > **Delegation BATON model implemented, flag OFF (v2026.08.07.1.0–1.2, `f99568c`).** Single-mission
 > checkpoint hand-off: instead of a child mission, ONE mission travels agent→agent (delegate works the
@@ -43,7 +43,7 @@ them as current locations.
 > `docs/plans/DELEGATION_HANDOFF_PLAN.md`.
 
 ### System Stack
-- **Cloud Run** — Next.js dashboard (tabs-primary deep-dive via shared `DeepDiveShell`+`useHashTab`, `components/ui/` primitives [`AsyncState`, `Modal`], 1health design system) + REST API (control plane)
+- **Cloud Run** — Next.js dashboard organized around three jobs (library/settings · Prime interaction · fleet observability): **node-graph "fleet studio" Home** (nodes/endpoints-in-space), **chat-first Prime deep-dive** rebuilt to feel real-time, **per-agent deep-dive is work + brain only** (individual agent chat retired — chat is Prime-only), **global cross-prime Approvals feed**; tabs-primary via shared `DeepDiveShell`+`useHashTab`, hash-aware breadcrumb, `components/ui/` primitives [`AsyncState`, `Modal`], 1health design system + REST API (control plane)
 - **Firestore** — State: primes, fleet, messages, tasks, dispatch-log, introspect queries, config
 - **Compute Engine VMs** — One per Prime + one per fleet agent
 - **Neural Gateway** — Host-native AI neural gateway on each VM (Gemini 3.5 Flash / 3.1 Pro via Vertex AI ADC, Claude Opus 4.6 via Anthropic streaming)
