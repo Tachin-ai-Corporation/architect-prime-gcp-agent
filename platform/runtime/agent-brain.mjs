@@ -2055,6 +2055,7 @@ async function recallMemory(query, context = {}) {
       const digest = await recentWorkDigest({
         firestoreQuery,
         owner: AGENT_EMAIL || AGENT_ID,
+        primeId: PRIME_ID,
         sinceDays: 7,
         limit: 50,
       });
@@ -2075,6 +2076,7 @@ async function recallMemory(query, context = {}) {
         const workHits = await searchWork({
           firestoreQuery,
           owner: AGENT_EMAIL || AGENT_ID,
+          primeId: PRIME_ID,
           cues,
           sinceDays,
           limit: searchLimit,
@@ -2175,6 +2177,7 @@ async function recallMemory(query, context = {}) {
           const deepHits = await searchWork({
             firestoreQuery,
             owner: AGENT_EMAIL || AGENT_ID,
+            primeId: PRIME_ID,
             cues: deepCues,
             sinceDays: 180,
             limit: 12,
@@ -3626,13 +3629,30 @@ async function cascadeCancelChildren(parentId) {
 // ---- Whitelisted respond reads (CP3) ----
 // In-process, read-only, deterministic. No shell, no skills, no motor.
 async function executeFleetStatus() {
+  const DEAD = ['removed', 'deleted', 'decommissioned'];
+  const fmt = (a) => `- ${a.name || a.id}: status=${a.status || 'unknown'}${a.specialty ? ` specialty=${a.specialty}` : ''}${a.email ? ` email=${a.email}` : ''}`;
   try {
-    const agents = await firestoreQuery('fleet', []);
-    const live = (agents || []).filter(a => !['removed', 'deleted', 'decommissioned'].includes(a.status));
-    if (live.length === 0) return 'No fleet agents registered.';
-    const lines = ['=== Fleet Status Snapshot ==='];
-    for (const a of live) {
-      lines.push(`- ${a.name || a.id}: status=${a.status || 'unknown'}${a.specialty ? ` specialty=${a.specialty}` : ''}${a.email ? ` email=${a.email}` : ''}`);
+    // ---- Your fleet: the agents THIS prime manages (prime-scoped path) ----
+    const own = ((await firestoreQuery('fleet', [])) || []).filter(a => !DEAD.includes(a.status));
+    const lines = [`=== Your Fleet — prime "${PRIME_ID}" manages these (${own.length}) ===`];
+    lines.push(...(own.length ? own.map(fmt) : ['(no agents yet)']));
+
+    // ---- Other primes: visible for the whole-factory picture, but NOT yours to
+    // operate (C-1). The operator wants a prime to SEE other primes and their
+    // fleets while never mistaking them for its own — so ownership is labeled
+    // explicitly here rather than left to the model to infer.
+    try {
+      const primes = ((await _db.query('', 'primes', [])) || [])
+        .filter(p => p.id !== PRIME_ID && !DEAD.includes(p.status));
+      if (primes.length) {
+        lines.push('', '=== Other Primes — visible, but you do NOT manage these ===');
+        for (const p of primes) {
+          const pf = ((await _db.query(`primes/${p.id}`, 'fleet', [])) || []).filter(a => !DEAD.includes(a.status));
+          lines.push(`- prime "${p.id}"${p.name && p.name !== p.id ? ` (${p.name})` : ''} manages: ${pf.length ? pf.map(a => a.name || a.id).join(', ') : '(none)'}`);
+        }
+      }
+    } catch (e) {
+      lines.push('', `(could not read other primes: ${e.message})`);
     }
     return lines.join('\n');
   } catch (e) {
@@ -3645,6 +3665,7 @@ async function executeRecentWork() {
     const digest = await recentWorkDigest({
       firestoreQuery,
       owner: AGENT_EMAIL || AGENT_ID,
+      primeId: PRIME_ID,
       sinceDays: 7,
       limit: 50,
     });

@@ -46,7 +46,7 @@ export function scoreRelevance(envelope, cues) {
 // Indexed owner + status query via firestoreQuery. Client-side filter
 // on created_at window and types. Score, rank, return top limit.
 
-export async function searchWork({ firestoreQuery, owner, cues, sinceDays = 30, statuses = ['complete', 'active', 'queued', 'failed', 'blocked', 'needs_input'], types, limit = 6 }) {
+export async function searchWork({ firestoreQuery, owner, primeId, cues, sinceDays = 30, statuses = ['complete', 'active', 'queued', 'failed', 'blocked', 'needs_input'], types, limit = 6 }) {
   const cutoff = new Date(Date.now() - sinceDays * 86400000);
   let allDocs = [];
 
@@ -59,10 +59,16 @@ export async function searchWork({ firestoreQuery, owner, cues, sinceDays = 30, 
     if (docs) allDocs.push(...docs);
   }
 
-  // Client-side filters: created_at window, type match
+  // Client-side filters: created_at window, type match, own-prime scope.
   allDocs = allDocs.filter(d => {
     if (d.created_at && new Date(d.created_at) < cutoff) return false;
     if (types && !types.includes(d.type)) return false;
+    // Own-prime scope (C-1): a prime's ambient recall is its OWN experience. Every
+    // prime stamps the same owner ("prime", lacking an email identity), so without
+    // this a prime recalls other primes' missions as its own — the identity
+    // cross-population where a fresh prime "remembered" another's fleet. prime_id is
+    // stamped on every work doc; filter client-side so no composite index is needed.
+    if (primeId && d.prime_id && d.prime_id !== primeId) return false;
     return true;
   });
 
@@ -104,7 +110,7 @@ const DIGEST_STATUSES = ['complete', 'failed', 'blocked', 'needs_input', 'cancel
 const OUTCOME_MARK = { complete: '[done]', failed: '[FAILED]', blocked: '[blocked]', needs_input: '[needs-input]', cancelled: '[cancelled]' };
 const digestTs = d => d.completed_at || d.updated_at || d.created_at || '';
 
-export async function recentWorkDigest({ firestoreQuery, owner, sinceDays = 7, limit = 50, statuses = DIGEST_STATUSES, types = ['M', 'R'] }) {
+export async function recentWorkDigest({ firestoreQuery, owner, primeId, sinceDays = 7, limit = 50, statuses = DIGEST_STATUSES, types = ['M', 'R'] }) {
   const seen = new Map();
   for (const status of statuses) {
     const filters = [
@@ -124,6 +130,9 @@ export async function recentWorkDigest({ firestoreQuery, owner, sinceDays = 7, l
   const cutoff = new Date(Date.now() - sinceDays * 86400000);
   const recent = [...seen.values()]
     .filter(d => types.includes(d.type))
+    // Own-prime scope (C-1) — see searchWork: keeps a prime's recent-work digest to
+    // its own missions, not the union of every prime that shares owner "prime".
+    .filter(d => !(primeId && d.prime_id && d.prime_id !== primeId))
     .filter(d => { const t = digestTs(d); return t && new Date(t) >= cutoff; })
     .sort((a, b) => new Date(digestTs(b)) - new Date(digestTs(a)))
     .slice(0, limit);

@@ -13,8 +13,14 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const { primes, versionInfo, setup } = usePrime();
   const pathname = usePathname();
 
-  /* Poll operations across all primes */
-  const primeIds = useMemo(() => primes.map(p => p.id), [primes]);
+  // Auth pages (sign-in / error) render BARE — no fleet chrome, no live polling.
+  // Shell lives in the root layout, so it wraps every route including /auth; without
+  // this gate the signed-out sign-in page showed the header badges and the live
+  // Operations/Approvals feeds (real fleet activity) to a viewer with no session.
+  const isAuthPage = pathname?.startsWith("/auth") ?? false;
+
+  /* Poll operations across all primes — never on auth pages (empty list = no fetch). */
+  const primeIds = useMemo(() => (isAuthPage ? [] : primes.map(p => p.id)), [primes, isAuthPage]);
   const { operations, activeCount, refresh } = useOperations(primeIds);
   const { approvals, pendingCount, refresh: refreshApprovals } = useApprovals(primeIds);
 
@@ -53,6 +59,9 @@ export function Shell({ children }: { children: React.ReactNode }) {
     );
     refresh();
   }, [primeIds, refresh]);
+
+  // Signed-out surface: render only the page (it carries its own full-screen layout).
+  if (isAuthPage) return <>{children}</>;
 
   return (
     <div className={styles.shell} id="shell">
