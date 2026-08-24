@@ -227,13 +227,18 @@ function HomeInner() {
      Main Home View — Vertical Prime List
      ================================================== */
 
+  /* ---- Fleet health at a glance (from data already loaded) ---- */
+  const allAgents = Object.values(sidebarFleet).flat().filter((a) => a.status !== "removed");
+  const onlineAgents = allAgents.filter((a) => a.status === "online").length;
+  const attention = allAgents.filter((a) => ["error", "needs_action", "offline"].includes(a.status));
+
   return (
     <div className={styles.homeShell} id="home-page">
       {/* ---- Top Row: title + Deploy Prime ---- */}
       <div className={styles.homeTopRow}>
         <div>
           <div className={styles.homeTopTitle}>Fleet Overview</div>
-          <div className={styles.homeTopSub}>{primes.length} prime{primes.length !== 1 ? "s" : ""} · {Object.values(sidebarFleet).flat().filter(a => a.status !== "removed").length} agents</div>
+          <div className={styles.homeTopSub}>{primes.length} prime{primes.length !== 1 ? "s" : ""} · {allAgents.length} agents</div>
         </div>
         <button
           id="deploy-prime-btn"
@@ -243,6 +248,29 @@ function HomeInner() {
           <span className={styles.deployBtnIcon}>+</span>
           Deploy Prime
         </button>
+      </div>
+
+      {/* ---- Purpose + health band (pinned above the scroll) ---- */}
+      <div className={styles.homeBand}>
+        <p className={styles.purpose}>
+          Your agent factory. Each <strong>Prime</strong> builds, upgrades, and maintains the{" "}
+          <strong>agents</strong> beneath it; the agents do the work. Click a Prime to chat with it
+          or open its fleet.
+        </p>
+        <div className={styles.healthStrip}>
+          <div className={styles.stat}>
+            <span className={styles.statNum}>{primes.length}</span>
+            <span className={styles.statLabel}>Prime{primes.length !== 1 ? "s" : ""}</span>
+          </div>
+          <div className={styles.stat}>
+            <span className={styles.statNum}>{onlineAgents}<span className={styles.statOf}>/{allAgents.length}</span></span>
+            <span className={styles.statLabel}>Agents online</span>
+          </div>
+          <div className={`${styles.stat} ${attention.length ? styles.statAlert : ""}`}>
+            <span className={styles.statNum}>{attention.length}</span>
+            <span className={styles.statLabel}>Need attention</span>
+          </div>
+        </div>
       </div>
 
       {/* ---- Scrollable Prime List ---- */}
@@ -279,11 +307,16 @@ function HomeInner() {
         })}
 
         {/* ---- Fleet observability — absorbed Fleet Studio (what each agent runs + releases/drift) ---- */}
-        {effectivePrimeId && (
-          <div id="fleet-observability" style={{ marginTop: "var(--space-7)" }}>
-            <FleetStudioPanel primeId={effectivePrimeId} />
+        <div id="fleet-observability" className={styles.observability}>
+          <div className={styles.sectionHead}>
+            <h2 className={styles.sectionTitle}>Fleet observability</h2>
+            <p className={styles.sectionSub}>
+              The ground truth beneath the graph — what every agent is actually running, and the
+              releases that define them.
+            </p>
           </div>
-        )}
+          <FleetStudioPanel />
+        </div>
       </div>
 
       {/* ---- Deploy Modal ---- */}
