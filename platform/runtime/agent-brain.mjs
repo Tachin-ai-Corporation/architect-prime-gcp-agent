@@ -3633,7 +3633,11 @@ async function executeFleetStatus() {
   const fmt = (a) => `- ${a.name || a.id}: status=${a.status || 'unknown'}${a.specialty ? ` specialty=${a.specialty}` : ''}${a.email ? ` email=${a.email}` : ''}`;
   try {
     // ---- Your fleet: the agents THIS prime manages (prime-scoped path) ----
-    const own = ((await firestoreQuery('fleet', [])) || []).filter(a => !DEAD.includes(a.status));
+    // noOrderBy: fleet docs key their timestamp `createdAt` (camelCase), and the
+    // query's default orderBy 'created_at' silently EXCLUDES every doc lacking
+    // that exact field — which is why fleet_status returned 0 agents despite a
+    // live roster. Same for the primes query below.
+    const own = ((await firestoreQuery('fleet', [], { noOrderBy: true })) || []).filter(a => !DEAD.includes(a.status));
     const lines = [`=== Your Fleet — prime "${PRIME_ID}" manages these (${own.length}) ===`];
     lines.push(...(own.length ? own.map(fmt) : ['(no agents yet)']));
 
@@ -3642,12 +3646,12 @@ async function executeFleetStatus() {
     // fleets while never mistaking them for its own — so ownership is labeled
     // explicitly here rather than left to the model to infer.
     try {
-      const primes = ((await _db.query('', 'primes', [])) || [])
+      const primes = ((await _db.query('', 'primes', [], { noOrderBy: true })) || [])
         .filter(p => p.id !== PRIME_ID && !DEAD.includes(p.status));
       if (primes.length) {
         lines.push('', '=== Other Primes — visible, but you do NOT manage these ===');
         for (const p of primes) {
-          const pf = ((await _db.query(`primes/${p.id}`, 'fleet', [])) || []).filter(a => !DEAD.includes(a.status));
+          const pf = ((await _db.query(`primes/${p.id}`, 'fleet', [], { noOrderBy: true })) || []).filter(a => !DEAD.includes(a.status));
           lines.push(`- prime "${p.id}"${p.name && p.name !== p.id ? ` (${p.name})` : ''} manages: ${pf.length ? pf.map(a => a.name || a.id).join(', ') : '(none)'}`);
         }
       }
