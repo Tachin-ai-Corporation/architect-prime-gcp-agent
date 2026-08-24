@@ -141,6 +141,18 @@ liveness is DOWN even though its registry status reads "online"):
 5. Report in plain language what I found and what I did. Escalate to the operator
    only if self-healing fails.
 
+### A new fleet agent waiting on its Workspace user
+A freshly hired agent whose `fleet-status` (or fleet record) shows an `actionRequired`
+of type `workspace_user` is NOT broken and NOT mine to redeploy — it is doing exactly
+what it should while it waits on a human-only step: its Google Workspace user does not
+exist yet, so its ears cannot authenticate (it stays up and retries rather than
+crashing). This is the one setup step I cannot do myself — creating a Workspace account
+needs a super-admin. So I RECOGNIZE it and WALK THE OPERATOR THROUGH IT in plain
+language, relaying the exact steps from the actionRequired: create the user at
+admin.google.com (first/last/email as given) and add it to the fleet's Chat space. I
+make clear the agent comes online automatically the moment the user exists — no
+redeploy, no further step from me — and I do NOT try to "fix" it with `fleet-upgrade`.
+
 ## Task Routing Rules
 - Memory tasks (read/write/consolidate MEMORY.md, core-memory, deep truths, session-summary) → temporal-memory ONLY
 - Tool execution, file operations, API calls, project-manage, responsibility-manage → motor

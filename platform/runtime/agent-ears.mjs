@@ -769,6 +769,37 @@ async function checkApprovalResponse(text) {
   }
 }
 
+/**
+ * Block until the Workspace DWD token resolves, retrying instead of crashing.
+ *
+ * A brand-new agent's Workspace user may not exist yet — the operator creates it
+ * (the `workspace_user` actionRequired). Exiting on that failure crash-loops the
+ * service, which trips the bootstrap's contract gate (C-19) and stops the WHOLE
+ * agent. Instead we stay up and retry: the moment the Workspace user is created the
+ * token resolves and the agent comes online on its own — no redeploy, no manual step.
+ */
+async function waitForDwd() {
+  const RETRY_MS = 30_000;
+  let attempt = 0;
+  for (;;) {
+    try {
+      await getDwdToken();
+      log(attempt ? 'DWD healthcheck OK — Workspace user now resolves; coming online' : 'DWD healthcheck OK',
+        attempt ? { afterAttempts: attempt } : {});
+      return;
+    } catch (err) {
+      attempt++;
+      // "Invalid email or User ID" / invalid_grant == the impersonated Workspace user
+      // does not exist yet (the expected pending state), vs a genuine DWD misconfig.
+      // Either way we retry rather than exit — a crash-loop is never the right response.
+      const pendingUser = /invalid email or user id|invalid_grant|not found|does not exist|notfound/i.test(err.message || '');
+      log(pendingUser ? 'DWD waiting for Workspace user to be created' : 'DWD healthcheck failing — will retry',
+        { email: AGENT_USER_EMAIL, error: err.message, attempt, retry_in_s: RETRY_MS / 1000 });
+      await new Promise((r) => setTimeout(r, RETRY_MS));
+    }
+  }
+}
+
 // ================================================================
 // MAIN LOOP
 // ================================================================
@@ -786,7 +817,9 @@ async function main() {
 
   // Health checks
   if (CHANNEL === 'gchat') {
-    try { await getDwdToken(); log('DWD healthcheck OK'); } catch (err) { log('DWD healthcheck FAILED', { error: err.message }); process.exit(1); }
+    // Wait for the Workspace user rather than crashing if it isn't created yet
+    // (graceful recovery — auto-comes-online when the operator provisions it).
+    await waitForDwd();
     
     // Load cached agent user ID if available
     try {

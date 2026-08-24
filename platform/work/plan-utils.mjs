@@ -71,3 +71,31 @@ export function enforceMissionParentInvariant(env) {
   }
   return false;
 }
+
+/**
+ * Which agent brain should claim a given intake.
+ *
+ * Intake is prime-scoped (`primes/{PRIME_ID}/intake`), and a FLEET agent's brain runs
+ * with PRIME_ID = its MANAGING prime — so the prime cortex AND every fleet agent under
+ * it poll the SAME intake collection. Routing is by `source_meta.agentId` (stamped by
+ * agent-ears). This predicate decides ownership so a fleet agent can never answer a
+ * message meant for the prime (or another agent):
+ *
+ *   - the prime cortex (agentId `'prime'`) owns intakes ADDRESSED to the prime AND
+ *     UNADDRESSED ones — it is the default owner of its own intake feed;
+ *   - a fleet agent owns ONLY intakes explicitly addressed to it.
+ *
+ * Both pollers previously used `!target || target === AGENT_ID`, so a fleet agent also
+ * claimed UNADDRESSED intakes and could hijack a message meant for the prime (observed:
+ * a fleet agent answered a no-agentId prime probe as itself).
+ *
+ * Pure (B-19).
+ *
+ * @param {string} agentId         - this brain's AGENT_ID ('prime' or a fleet agent name)
+ * @param {string} [targetAgentId] - the intake's `source_meta.agentId` (its addressee), if any
+ * @returns {boolean} true iff this agent should claim the intake
+ */
+export function agentClaimsIntake(agentId, targetAgentId) {
+  if (agentId === 'prime') return !targetAgentId || targetAgentId === 'prime';
+  return targetAgentId === agentId;
+}

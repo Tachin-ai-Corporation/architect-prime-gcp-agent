@@ -57,7 +57,7 @@ import { renderBlackboard } from '../work/blackboard.mjs';
 import { canTransition } from '../contracts/work-transitions.mjs';
 import { assembleConversation } from '../context/conversation-context.mjs';
 import { toStr } from '../providers/to-str.mjs';
-import { extractCheckpoints, enforceMissionParentInvariant } from '../work/plan-utils.mjs';
+import { extractCheckpoints, enforceMissionParentInvariant, agentClaimsIntake } from '../work/plan-utils.mjs';
 import { extractCues, searchWork, recentWorkDigest } from '../work/work-recall.mjs';
 import { renderResources, resourceKey } from '../work/resource-ledger.mjs';
 import { toContentParts } from '../context/prompt-blocks.mjs';
@@ -1955,10 +1955,10 @@ async function getPendingIntakeQueue() {
     const pending = await firestoreQuery('intake', [
       { field: 'status', op: 'EQUAL', value: { stringValue: 'pending' } },
     ]);
-    const filtered = pending.filter(item => {
-      const targetAgentId = item.source_meta?.agentId;
-      return !targetAgentId || targetAgentId === AGENT_ID;
-    });
+    // Claim only intakes addressed to THIS agent. A fleet agent brain shares its
+    // managing prime's intake collection (PRIME_ID = the managing prime), so it must
+    // never grab an unaddressed intake — that belongs to the prime cortex. (agentClaimsIntake)
+    const filtered = pending.filter(item => agentClaimsIntake(AGENT_ID, item.source_meta?.agentId));
     return {
       count: filtered.length,
       queue: filtered.map((item, i) => ({
@@ -3630,7 +3630,16 @@ async function cascadeCancelChildren(parentId) {
 // In-process, read-only, deterministic. No shell, no skills, no motor.
 async function executeFleetStatus() {
   const DEAD = ['removed', 'deleted', 'decommissioned'];
-  const fmt = (a) => `- ${a.name || a.id}: status=${a.status || 'unknown'}${a.specialty ? ` specialty=${a.specialty}` : ''}${a.email ? ` email=${a.email}` : ''}`;
+  const fmt = (a) => {
+    // Surface a pending setup step (e.g. workspace_user) so the prime can recognize
+    // it and walk the operator through it, rather than reading the agent as simply broken.
+    const ar = (a.actionRequired && a.actionRequired.type)
+      ? `\n    ⚠ ACTION REQUIRED (${a.actionRequired.type}): ${a.actionRequired.title || ''}`
+        + (Array.isArray(a.actionRequired.instructions) && a.actionRequired.instructions.length
+            ? ' — ' + a.actionRequired.instructions.join('; ') : '')
+      : '';
+    return `- ${a.name || a.id}: status=${a.status || 'unknown'}${a.specialty ? ` specialty=${a.specialty}` : ''}${a.email ? ` email=${a.email}` : ''}${ar}`;
+  };
   try {
     // ---- Your fleet: the agents THIS prime manages (prime-scoped path) ----
     // noOrderBy: fleet docs key their timestamp `createdAt` (camelCase), and the
@@ -4816,10 +4825,10 @@ async function pollIntake() {
       { field: 'status', op: 'EQUAL', value: { stringValue: 'pending' } },
     ]);
 
-    const filtered = pending.filter(item => {
-      const targetAgentId = item.source_meta?.agentId;
-      return !targetAgentId || targetAgentId === AGENT_ID;
-    });
+    // Claim only intakes addressed to THIS agent. A fleet agent brain shares its
+    // managing prime's intake collection (PRIME_ID = the managing prime), so it must
+    // never grab an unaddressed intake — that belongs to the prime cortex. (agentClaimsIntake)
+    const filtered = pending.filter(item => agentClaimsIntake(AGENT_ID, item.source_meta?.agentId));
 
     for (const intake of filtered) {
       try {
