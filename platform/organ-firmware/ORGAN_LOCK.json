@@ -19,7 +19,7 @@
     "platform/organ-firmware/prime/cerebellum/IDENTITY.md": "sha256:72643f5b725136c0abc5edf483f483640c33d089f66578ab948cbd63e5d7edff",
     "platform/organ-firmware/prime/cerebellum/SOUL.md": "sha256:481cb66a5a55cb0d17bf4185f41f2e3b0e436a5256767357eb81e50159dbc6a6",
     "platform/organ-firmware/prime/cortex/IDENTITY.md": "sha256:e0cddd8974775508259024f6230bd20cf9f43de6ae8b2fbe544e278bd5e9096b",
-    "platform/organ-firmware/prime/cortex/SOUL.md": "sha256:ac59499d75445a9160a2b25b802ee5bbd4945e729ea2694745abf86d4885b2f5",
+    "platform/organ-firmware/prime/cortex/SOUL.md": "sha256:1e5e94b6e6d0a1e52f14fd0f01ba0209636a4236d1343e441a488ad5510a010c",
     "platform/organ-firmware/prime/motor/IDENTITY.md": "sha256:57980cf50c40ef4d4a9ba012171240e500ef38c75c6b17bda9282e6eaefa8a74",
     "platform/organ-firmware/prime/motor/SOUL.md": "sha256:1def7ef0617b96ac6280afcffcc99deecc89738f84cc95a3c3ca92326c8a5bfd",
     "platform/organ-firmware/prime/prefrontal/IDENTITY.md": "sha256:34ba32e3659e400d0c6ce481c1999584479d0bfd300ef2f121b0bfe33917d785",
