@@ -29,6 +29,9 @@ export async function POST(_req: NextRequest, ctx: RouteContext) {
   const auth = await requireAuth();
   if (!auth.authenticated) return auth.response;
 
+  // Declared outside the try so the catch block can mark the command failed.
+  let cmdRef: FirebaseFirestore.DocumentReference | null = null;
+
   try {
     // Get Prime config from Firestore
     const doc = await primesCol().doc(id).get();
@@ -41,31 +44,23 @@ export async function POST(_req: NextRequest, ctx: RouteContext) {
     const zone = prime.zone || "us-central1-a";
     const vmName = prime.vmName || `prime-${id}`;
 
-    // Update status to deploying
-    await primesCol().doc(id).update({ status: "deploying" });
+    // Update status to deploying. Clear any stale error from a prior wedged
+    // attempt so re-clicking Deploy on an errored Prime retries cleanly.
+    await primesCol()
+      .doc(id)
+      .update({ status: "deploying", error: FieldValue.delete() });
 
     // Seed core processes (p-plan, p-investigate) — idempotent
     seedCoreProcesses(id).catch((err) =>
       console.error(`[deploy] Failed to seed core processes:`, err)
     );
 
-    // Create the VM via Compute Engine REST API
-    const token = await getAccessToken();
-    const vmResult = await createVM(token, projectId, zone, vmName, id);
-
-    if (!vmResult.ok) {
-      const err = await vmResult.text();
-      console.error(`[deploy] VM creation failed: ${err}`);
-      await primesCol().doc(id).update({ status: "error" });
-      return NextResponse.json(
-        { error: "VM creation failed", details: err },
-        { status: 500 }
-      );
-    }
-
-    // Write a command doc so Operations panel tracks the deploy
+    // Track the deploy in the Operations panel. Written up front (status
+    // 'running') so both the success and failure paths have a doc to resolve.
+    // Non-fatal: a visibility-doc write failure must not abort the deploy.
     try {
-      await commandsCol(id).doc().set({
+      cmdRef = commandsCol(id).doc();
+      await cmdRef.set({
         type: "prime_deploy",
         args: { vmName, zone },
         status: "running",
@@ -73,8 +68,114 @@ export async function POST(_req: NextRequest, ctx: RouteContext) {
       });
     } catch (e) {
       console.warn(`[deploy] Failed to write command doc:`, e);
+      cmdRef = null;
     }
 
+    // Create the VM, then poll the returned zone operation to a terminal state.
+    // instances.insert returns 202 (request accepted) long before the operation
+    // finishes; checking only the HTTP acceptance let a later async failure (e.g.
+    // INTERNAL_ERROR) wedge the Prime at 'deploying'/'running' forever with no VM.
+    // We poll to DONE within a budget that stays well under Cloud Run's 300s
+    // request timeout, and retry once on the transient INTERNAL_ERROR that GCP
+    // explicitly says to retry. Reaching DONE here means the VM *resource* was
+    // created — the ~10-min bootstrap still runs async on the VM afterward.
+    const token = await getAccessToken();
+    const POLL_INTERVAL_MS = 5000;
+    const pollDeadline = Date.now() + 180_000;
+
+    let failure: { message: string; code: string } | null = null;
+
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const insertResult = await createVM(token, projectId, zone, vmName, id);
+
+      if (!insertResult.ok) {
+        // 409 = the VM already exists (a prior attempt or redeploy won). Idempotent
+        // success: let the boot + ops reconciler carry it the rest of the way.
+        if (insertResult.status === 409) break;
+        const errText = await insertResult
+          .text()
+          .catch(() => `HTTP ${insertResult.status}`);
+        failure = { message: errText, code: `HTTP_${insertResult.status}` };
+        break; // request-level rejection, not the transient op error we retry
+      }
+
+      const op = (await insertResult
+        .json()
+        .catch(() => null)) as GceOperation | null;
+      const opName = op?.name;
+      if (!opName) {
+        // Accepted but no operation handle to poll — don't guess failure; leave it
+        // in progress for the ops reconciler to finish when the Prime comes online.
+        break;
+      }
+
+      const done = await pollZoneOperation(
+        token,
+        projectId,
+        zone,
+        opName,
+        pollDeadline,
+        POLL_INTERVAL_MS
+      );
+
+      if (done.status === "TIMEOUT") {
+        // The operation is genuinely still running (not wedged): the insert was
+        // accepted and is progressing. Leave 'deploying'/'running'; the ops route
+        // flips the command to 'complete' when the Prime reports online.
+        break;
+      }
+
+      if (done.error) {
+        const codes = (done.error.errors || []).map((e) => e.code || "");
+        const message =
+          done.error.errors?.[0]?.message ||
+          done.error.message ||
+          "VM create operation failed";
+        // "Internal error. Please try again" — retry once if budget allows.
+        if (
+          codes.includes("INTERNAL_ERROR") &&
+          attempt === 1 &&
+          Date.now() < pollDeadline - 60_000
+        ) {
+          console.warn(
+            `[deploy] Transient INTERNAL_ERROR creating ${vmName} — retrying once…`
+          );
+          continue;
+        }
+        failure = { message, code: codes.join(",") || "OPERATION_ERROR" };
+        break;
+      }
+
+      // DONE with no error — the VM resource was created cleanly.
+      break;
+    }
+
+    if (failure) {
+      console.error(
+        `[deploy] VM creation failed (${failure.code}): ${failure.message}`
+      );
+      await primesCol()
+        .doc(id)
+        .update({ status: "error", error: failure.message })
+        .catch(() => {});
+      if (cmdRef) {
+        await cmdRef
+          .update({
+            status: "failed",
+            error: failure.message,
+            updatedAt: FieldValue.serverTimestamp(),
+          })
+          .catch(() => {});
+      }
+      return NextResponse.json(
+        { error: "VM creation failed", details: failure.message },
+        { status: 500 }
+      );
+    }
+
+    // VM resource created (or already existed). The startup script runs the
+    // bootstrap on boot; the Prime comes online in ~10 min. The command stays
+    // 'running' until the ops route observes prime.status === 'online'.
     return NextResponse.json({
       status: "deploying",
       vmName,
@@ -83,8 +184,20 @@ export async function POST(_req: NextRequest, ctx: RouteContext) {
     });
   } catch (err) {
     console.error(`[deploy] Error:`, err);
-    await primesCol().doc(id).update({ status: "error" }).catch(() => {});
     const errMsg = err instanceof Error ? err.message : "Deploy failed";
+    await primesCol()
+      .doc(id)
+      .update({ status: "error", error: errMsg })
+      .catch(() => {});
+    if (cmdRef) {
+      await cmdRef
+        .update({
+          status: "failed",
+          error: errMsg,
+          updatedAt: FieldValue.serverTimestamp(),
+        })
+        .catch(() => {});
+    }
     return NextResponse.json({ error: errMsg }, { status: 500 });
   }
 }
@@ -137,11 +250,71 @@ async function getAccessToken(): Promise<string> {
   return data.access_token;
 }
 
+/* ---- Zone operation polling ---- */
+
+interface GceOperationError {
+  errors?: { code?: string; message?: string }[];
+  message?: string;
+}
+
+interface GceOperation {
+  name?: string;
+  // "PENDING" | "RUNNING" | "DONE" from GCE, plus a local "TIMEOUT" sentinel.
+  status?: string;
+  error?: GceOperationError;
+  progress?: number;
+}
+
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+
+/**
+ * Poll a zonal Compute Engine operation until it reports DONE or the deadline
+ * passes. instances.insert is asynchronous: the POST returns an operation that
+ * is still PENDING/RUNNING, and the create can still fail (e.g. INTERNAL_ERROR)
+ * after the request was accepted. Returning a definitive DONE (carrying .error
+ * on failure) is what lets the caller record a real terminal state instead of a
+ * VM that silently never appeared.
+ *
+ * On deadline, returns a synthetic { status: "TIMEOUT" } — the operation is
+ * still legitimately running, not failed, so the caller leaves it in progress.
+ * Transient GET failures are swallowed and retried within the budget.
+ */
+async function pollZoneOperation(
+  token: string,
+  projectId: string,
+  zone: string,
+  opName: string,
+  deadlineMs: number,
+  intervalMs: number
+): Promise<GceOperation> {
+  const url = `https://compute.googleapis.com/compute/v1/projects/${projectId}/zones/${zone}/operations/${opName}`;
+  for (;;) {
+    try {
+      const res = await fetch(url, {
+        headers: { Authorization: `Bearer ${token}` },
+        signal: AbortSignal.timeout(10_000),
+      });
+      if (res.ok) {
+        const op = (await res.json().catch(() => null)) as GceOperation | null;
+        if (op?.status === "DONE") return op;
+      }
+    } catch {
+      // transient network/timeout — fall through and retry within budget
+    }
+    if (Date.now() + intervalMs >= deadlineMs) return { status: "TIMEOUT" };
+    await sleep(intervalMs);
+  }
+}
+
 /**
  * Create a GCE VM via the Compute Engine REST API.
  *
  * Follows the fleet-deploy pattern: all config passed as
  * metadata attributes, startup script reads from metadata.
+ *
+ * Returns the raw insert Response (202 on acceptance). The insert is only the
+ * *request* — the caller must poll the returned zone operation (see
+ * pollZoneOperation) to learn whether the VM was actually created.
  */
 async function createVM(
   token: string,
