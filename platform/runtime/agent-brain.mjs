@@ -2921,17 +2921,13 @@ async function handleApprovalResponse(intake) {
     }
   }
 
-  // Trigger the existing approval checker to pick up the flipped docs
-  // and resume the approved checkpoint plan (approvals.mjs) or fail the envelope (rejected).
-  // Force immediate check by resetting the throttle counter.
-  if (!_approvalChecker) _initApprovals();
-  // The checker normally only runs every 5th call. We need it to run NOW.
-  // Call it 5 times to guarantee it fires on the 5th.
-  for (let i = 0; i < 5; i++) {
-    await _approvalChecker.checkPending();
-  }
-
-  // Send confirmation reply
+  // Send the confirmation reply BEFORE resuming. The resume below runs the
+  // approved checkpoint plan INLINE (blocking — potentially minutes), and its
+  // synthesized completion is delivered from within that call. If the receipt were
+  // written after the resume it would be created (and delivered) AFTER the work it
+  // acknowledges — the operator sees "Resuming work now!" trailing the finished
+  // result. The mouth is a separate process, so writing the receipt first lets it
+  // deliver within its next poll, ahead of the mission's own completion output.
   const targetTitles = target.map(a => a.title || a.envelopeId).join(', ');
   const confirmText = action === 'approved'
     ? `✅ Approved: ${targetTitles}. Resuming work.`
@@ -2964,6 +2960,15 @@ async function handleApprovalResponse(intake) {
     resolved_at: now(), resolution: action,
     approval_ids: target.map(a => a.id),
   });
+
+  // NOW trigger the existing approval checker to pick up the flipped docs and
+  // resume the approved checkpoint plan (approvals.mjs) — or fail the envelope
+  // (rejected). Force an immediate check: the checker normally only runs every
+  // 5th call, so call it 5 times to guarantee it fires now.
+  if (!_approvalChecker) _initApprovals();
+  for (let i = 0; i < 5; i++) {
+    await _approvalChecker.checkPending();
+  }
 
   return action;
 }
