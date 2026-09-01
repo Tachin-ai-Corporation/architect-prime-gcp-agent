@@ -362,6 +362,29 @@ except Exception as e:
 PYEOF
 }
 
+# ------------------------------------------------------------
+# Failure handling. From here on the fleet doc exists at status
+# 'deploying'. If any step below aborts (set -e or die), mark the doc
+# 'error' so it does not hang at 'deploying' forever with a half-done
+# progress bar. gcloud blocks on the VM-create operation and exits
+# non-zero on failure, so a transient INTERNAL_ERROR lands here — the
+# same terminal state the Prime deploy route reaches by polling its
+# async op. The command-runner separately marks the fleet_deploy command
+# 'failed'. (An EXIT trap does NOT fire inside $(...) subshells, so a
+# failing command substitution cannot trip this.)
+# ------------------------------------------------------------
+CURRENT_STEP="prep"
+on_failure() {
+  local ec=$?
+  [[ $ec -eq 0 ]] && return 0
+  trap - EXIT
+  warn "fleet-deploy failed (exit ${ec}) during: ${CURRENT_STEP}"
+  write_deploy_step "deploy_failed" "Deployment failed during ${CURRENT_STEP}" "failed" \
+    "fleet-deploy exited ${ec} during ${CURRENT_STEP}" "error" 2>/dev/null || true
+  exit "$ec"
+}
+trap on_failure EXIT
+
 init_deploy_steps
 
 # ============================================================
@@ -489,21 +512,60 @@ chmod +x /tmp/fleet-bootstrap.sh
 bash /tmp/fleet-bootstrap.sh
 STARTUP_EOF
 
+CURRENT_STEP="vm_create"
 log "Creating VM: ${FLEET_VM}"
-gcloud compute instances create "$FLEET_VM" \
-  --zone="$ZONE" \
-  --project="$FLEET_PROJECT" \
-  --image-family="ubuntu-2204-lts" \
-  --image-project="ubuntu-os-cloud" \
-  --machine-type="$MACHINE_TYPE" \
-  --boot-disk-size="$BOOT_DISK_SIZE" \
-  --service-account="$FLEET_SA_EMAIL" \
-  --scopes="https://www.googleapis.com/auth/cloud-platform" \
-  --tags="allow-https" \
-  --labels="app=architect-prime,role=fleet,agent=${AGENT_NAME}" \
-  --metadata="agent_id=${AGENT_NAME},specialty=${SPECIALTY},core_ref=${CORE_REF},gh_owner=${GH_OWNER},gh_repo=${GH_REPO},chat_space_id=${CHAT_SPACE_ID:-},agent_user_email=${AGENT_USER_EMAIL},agent_display_name=${AGENT_DISPLAY_NAME},agent_first_name=${AGENT_FIRST_NAME},agent_last_name=${AGENT_LAST_NAME},dwd_signer_sa=${DWD_SIGNER_SA},gemini_project=${PRIME_PROJECT},prime_id=${PRIME_ID:-},dashboard_url=${DASHBOARD_URL:-},operator_jobs=${OPERATOR_JOBS:-}" \
-  --metadata-from-file="startup-script=${STARTUP_TMPFILE}" \
-  --quiet
+
+# gcloud blocks until the create OPERATION completes (no --async) and exits
+# non-zero on failure — so unlike a raw instances.insert, a failed create is
+# caught here by set -e (and the on_failure trap marks the fleet doc 'error').
+create_vm() {
+  gcloud compute instances create "$FLEET_VM" \
+    --zone="$ZONE" \
+    --project="$FLEET_PROJECT" \
+    --image-family="ubuntu-2204-lts" \
+    --image-project="ubuntu-os-cloud" \
+    --machine-type="$MACHINE_TYPE" \
+    --boot-disk-size="$BOOT_DISK_SIZE" \
+    --service-account="$FLEET_SA_EMAIL" \
+    --scopes="https://www.googleapis.com/auth/cloud-platform" \
+    --tags="allow-https" \
+    --labels="app=architect-prime,role=fleet,agent=${AGENT_NAME}" \
+    --metadata="agent_id=${AGENT_NAME},specialty=${SPECIALTY},core_ref=${CORE_REF},gh_owner=${GH_OWNER},gh_repo=${GH_REPO},chat_space_id=${CHAT_SPACE_ID:-},agent_user_email=${AGENT_USER_EMAIL},agent_display_name=${AGENT_DISPLAY_NAME},agent_first_name=${AGENT_FIRST_NAME},agent_last_name=${AGENT_LAST_NAME},dwd_signer_sa=${DWD_SIGNER_SA},gemini_project=${PRIME_PROJECT},prime_id=${PRIME_ID:-},dashboard_url=${DASHBOARD_URL:-},operator_jobs=${OPERATOR_JOBS:-}" \
+    --metadata-from-file="startup-script=${STARTUP_TMPFILE}" \
+    --quiet
+}
+
+# Retry ONCE on the transient INTERNAL_ERROR GCP tells us to retry (the failure
+# that wedged prime 'mm'). VM_ATTEMPT is incremented in THIS shell — a counter
+# mutated inside $(...) never propagates back and would loop forever. The explicit
+# 'else' captures create_vm's exit code ($? after a plain if/fi with no else is 0).
+# A half-created VM from the failed op is deleted first so the retry does not
+# trip the 'already exists' guard.
+VM_CREATE_OUT=""
+VM_CREATE_RC=0
+VM_ATTEMPT=0
+while :; do
+  VM_ATTEMPT=$((VM_ATTEMPT + 1))
+  if VM_CREATE_OUT="$(create_vm 2>&1)"; then
+    VM_CREATE_RC=0
+    break
+  else
+    VM_CREATE_RC=$?
+  fi
+  if [[ $VM_ATTEMPT -lt 2 ]] && grep -qiE 'INTERNAL_ERROR|Internal error' <<< "$VM_CREATE_OUT"; then
+    warn "VM create hit a transient error (attempt ${VM_ATTEMPT}) — deleting any partial VM and retrying once in 15s"
+    gcloud compute instances delete "$FLEET_VM" --zone="$ZONE" --project="$FLEET_PROJECT" --quiet >/dev/null 2>&1 || true
+    sleep 15
+    continue
+  fi
+  break
+done
+
+if [[ $VM_CREATE_RC -ne 0 ]]; then
+  echo "$VM_CREATE_OUT" >&2
+  die "VM creation failed after ${VM_ATTEMPT} attempt(s)"
+fi
+log "$VM_CREATE_OUT"
 
 rm -f "$STARTUP_TMPFILE"
 
