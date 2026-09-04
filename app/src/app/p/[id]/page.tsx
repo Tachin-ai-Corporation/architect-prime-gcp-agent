@@ -4,6 +4,7 @@ import { use } from "react";
 import Link from "next/link";
 import { usePrime } from "@/contexts/PrimeContext";
 import { BrainInspector } from "@/components/agent/BrainInspector";
+import { EffortControl } from "@/components/agent/EffortControl";
 import { MemoryViewer } from "@/components/agent/MemoryViewer";
 import { AgentProjects } from "@/components/agent/AgentProjects";
 import { AgentProcesses } from "@/components/agent/AgentProcesses";
@@ -117,7 +118,10 @@ export default function PrimeDeepDivePage({
 
       {/* Brain */}
       {activeTab === "brain" && (
-        <BrainInspector primeId={id} agentName={agentName} />
+        <>
+          <EffortControl primeId={id} />
+          <BrainInspector primeId={id} agentName={agentName} />
+        </>
       )}
 
       {/* Fleet */}

@@ -56,6 +56,7 @@ import { projectBootstrapEnabled, missionOriginSpace } from '../control-plane/pr
 import { renderBlackboard } from '../work/blackboard.mjs';
 import { canTransition } from '../contracts/work-transitions.mjs';
 import { agentPosture, applyPosture } from '../contracts/posture.mjs';
+import { applyEffort, normalizeEffort, DEFAULT_EFFORT } from '../contracts/effort.mjs';
 import { assembleConversation } from '../context/conversation-context.mjs';
 import { toStr } from '../providers/to-str.mjs';
 import { extractCheckpoints, enforceMissionParentInvariant, agentClaimsIntake } from '../work/plan-utils.mjs';
@@ -161,6 +162,26 @@ const IS_PRIME = existsSync(CORE_DIR + '/corekit/prime-config.json') || AGENT_ID
 const AGENT_POSTURE_NAME = agentPosture(CONTRACTS, { isPrime: IS_PRIME });
 CONTRACTS = applyPosture(CONTRACTS, AGENT_POSTURE_NAME);
 console.log(`[brain] capability posture: ${AGENT_POSTURE_NAME}${IS_PRIME ? ' (prime)' : ''}`);
+
+// ---- Per-prime effort (dispatch temperature scale) ----
+// Effort is a per-PRIME, dashboard-settable latitude knob at primes/{PRIME_ID}/config/settings.effort
+// that scales the base per-organ dispatch temperature (low < medium < high < max). Prime-only — a
+// fleet agent stays at DEFAULT_EFFORT ('medium' = base temps), since it shares its managing prime's
+// config path and the knob is the prime's own cognition. Refreshed on a throttled cadence from the
+// poll loop so a dashboard change takes effect within ~a minute, no restart. Runtime-adjustable,
+// per-prime companion to the role-based posture (C-37): a sampling latitude knob, never the fence.
+let _effort = DEFAULT_EFFORT;
+let _effortAt = 0;
+async function refreshEffortCached() {
+  if (!IS_PRIME) { _effort = DEFAULT_EFFORT; return; }
+  if (Date.now() - _effortAt < 60_000) return;
+  _effortAt = Date.now();
+  try {
+    const settings = await firestoreRead('config', 'settings');
+    const e = normalizeEffort(settings?.effort);
+    if (e !== _effort) { _effort = e; log('INFO', `[brain] effort → ${_effort}`); }
+  } catch { /* keep the current value on a transient read failure */ }
+}
 
 const GATEWAY_PORT = CONTRACTS.gateway?.port || 18789;
 const GATEWAY_URL = `http://127.0.0.1:${GATEWAY_PORT}/v1/chat/completions`;
@@ -1134,7 +1155,7 @@ async function callCortex(mode, payload, sessionCtl = null) {
   // Per-agent generation parameters from registry
   const cortexConfig = REGISTRY.agents?.cortex || {};
   const maxTokens = cortexConfig.max_tokens || 32768;
-  const temperature = cortexConfig.temperature ?? 0.4;
+  const temperature = applyEffort(cortexConfig.temperature ?? 0.4, _effort);
   const topP = cortexConfig.top_p ?? 0.95;
 
   log('INFO', `Calling Cortex: mode=${mode}${sessionField ? ` session=${sessionField.op}` : ''} (max_tokens=${maxTokens}, temp=${temperature}, top_p=${topP})`);
@@ -1231,7 +1252,7 @@ async function callPrefrontal(payload) {
   const prefrontalConfig = REGISTRY.agents?.prefrontal || {};
   const route = prefrontalConfig.route || 'brain/prefrontal';
   const maxTokens = prefrontalConfig.max_tokens || 32768;
-  const temperature = prefrontalConfig.temperature ?? 0.6;
+  const temperature = applyEffort(prefrontalConfig.temperature ?? 0.6, _effort);
   const topP = prefrontalConfig.top_p ?? 0.95;
 
   // Build system prompt: prefrontal SOUL + process/project context
@@ -1886,7 +1907,7 @@ async function callAgent(agentId, envelope) {
   // Per-agent generation parameters from registry
   const agentConfig = REGISTRY.agents?.[agentId] || {};
   const maxTokens = agentConfig.max_tokens || 16384;
-  const temperature = agentConfig.temperature ?? 0.5;
+  const temperature = applyEffort(agentConfig.temperature ?? 0.5, _effort);
   const topP = agentConfig.top_p ?? 0.9;
 
   log('INFO', `Dispatching to ${agentId} via ${route} (max_tokens=${maxTokens}, temp=${temperature}, top_p=${topP})`);
@@ -5676,6 +5697,7 @@ async function main() {
   log('INFO', `Starting intake poll (every ${POLL_MS}ms)`);
   async function pollLoop() {
     try {
+      await refreshEffortCached();  // per-prime effort → dispatch temperature (throttled 60s; no-op for fleet)
       await pollIntake();
       await reconcileIncomingDelegations();  // ME-5: envelope-driven delegation pickup (runs after intake so the chat-marker path wins when both fire; dedup keeps them from double-creating)
       await checkWaitingEnvelopes();

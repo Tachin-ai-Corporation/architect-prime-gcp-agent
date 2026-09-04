@@ -85,9 +85,18 @@ export const CATALOG = {
   coreMemory: {
     plane: 'runtime-state',
     store: 'firestore',
-    path: (agentId, id) => `agents/${agentId}/core_memory/${id}`,
-    collection: (agentId) => `agents/${agentId}/core_memory`,
-    describe: 'Durable agent facts with provenance and supersession',
+    // Deployed convention (authoritative: corekit/memory/core-memory-write): a PRIME's core
+    // memory lives at primes/{primeId}/core_memory; a FLEET AGENT's at
+    // primes/{primeId}/fleet/{agent}/core_memory. Pass agent='' (or omit) for the prime's own.
+    // (The earlier agents/{agentId}/core_memory form was never written — it read empty and
+    // misled a memory-reset into "nothing to wipe"; reconciled to the real path.)
+    collection: (primeId, agent) => (agent
+      ? `primes/${primeId}/fleet/${agent}/core_memory`
+      : `primes/${primeId}/core_memory`),
+    path: (primeId, agent, id) => (agent
+      ? `primes/${primeId}/fleet/${agent}/core_memory/${id}`
+      : `primes/${primeId}/core_memory/${id}`),
+    describe: 'Durable agent facts (provenance + supersession). Prime: primes/{primeId}/core_memory; fleet agent: primes/{primeId}/fleet/{agent}/core_memory.',
   },
   fleetAgent: {
     plane: 'runtime-state',

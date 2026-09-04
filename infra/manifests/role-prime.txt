@@ -79,6 +79,8 @@ skills/project-delete/SKILL.md skills/project-delete/SKILL.md
 skills/project-delete/skill.json skills/project-delete/skill.json
 skills/fleet-agent-memory-reset/SKILL.md skills/fleet-agent-memory-reset/SKILL.md
 skills/fleet-agent-memory-reset/skill.json skills/fleet-agent-memory-reset/skill.json
+skills/operator-forensics/SKILL.md skills/operator-forensics/SKILL.md
+skills/operator-forensics/skill.json skills/operator-forensics/skill.json
 # process-ops — universal authoring of the global process PLAYBOOK library (name+description+narrative)
 corekit/memory/process-ops bin/process-ops
 skills/process-ops/SKILL.md skills/process-ops/SKILL.md

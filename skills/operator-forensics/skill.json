@@ -1,0 +1,13 @@
+{
+  "id": "operator-forensics",
+  "name": "Operator Forensics",
+  "version": 1,
+  "description": "Method for a Prime to investigate and safely act on an unfamiliar operational task: locate the authoritative definition, probe read-only, dry-run a guarded tool, verify by re-derivation, and scope tightly. Uses existing shell/scripting/gcloud + the guarded operator tools; declares no new command.",
+  "author": "architect-prime",
+  "origin": "core",
+  "category": "operations",
+  "agent_part": "motor",
+  "scripts": [],
+  "requires": {},
+  "when_to_use": "Before an unfamiliar or irreversible operational action — deleting data, wiping an agent's memory, editing runtime state — when you don't yet know the exact data model, path, or safe procedure. Investigate first; never guess or refuse."
+}

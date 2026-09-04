@@ -1,0 +1,69 @@
+.card {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-lg);
+  padding: var(--space-4) var(--space-5);
+  margin-bottom: var(--space-4);
+  background: var(--charcoal);
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.title {
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.sub {
+  font-size: 0.8rem;
+  color: var(--text-tertiary);
+}
+
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.seg {
+  padding: var(--space-2) var(--space-4);
+  background: none;
+  border: none;
+  border-right: 1px solid var(--border-subtle);
+  color: var(--text-secondary);
+  cursor: pointer;
+  text-transform: capitalize;
+  font-size: 0.85rem;
+  transition: background 160ms ease, color 160ms ease;
+}
+
+.seg:last-child {
+  border-right: none;
+}
+
+.seg:hover:not(:disabled) {
+  background: rgba(86, 99, 115, 0.08);
+}
+
+.seg:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.active {
+  background: var(--signal-aqua);
+  color: var(--graphite);
+  font-weight: 600;
+}
+
+.hint {
+  margin-top: var(--space-2);
+  font-size: 0.78rem;
+  color: var(--text-tertiary);
+}
