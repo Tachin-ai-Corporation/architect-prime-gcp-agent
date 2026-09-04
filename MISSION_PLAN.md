@@ -1,6 +1,6 @@
 # Architect Prime — Mission Plan
 
-Current version: v2026.09.01.2.2
+Current version: v2026.09.04.1.1
 
 
 > This document describes **what Architect Prime is** and **what it is becoming**.
@@ -14,7 +14,7 @@ Architect Prime is a **self-bootstrapping agent factory**. It deploys autonomous
 
 Prime's role is **infrastructure, not orchestration**. Prime creates agents, upgrades them, monitors their health, manages their cost, and tears them down. Humans assign work to agents directly; agents delegate to each other directly. The factory builds and maintains the fleet — it never sits in the middle of the work.
 
-Within its own operational domain, Prime is a capable system operator: because it is reachable only by the sys-admin through the dashboard and holds no broad Workspace identity, it safely carries system-level power — shell, Google Cloud CLI, and scripting — to diagnose, build, and self-improve creatively (B-26). This breadth is deliberate and fenced structurally (manifest + IAM), and it does not make Prime a router of fleet work: the factory-not-orchestrator boundary (C-1) is unchanged.
+Within its own operational domain, Prime is a capable system operator: because it is reachable only by the sys-admin through the dashboard and holds no broad Workspace identity, it safely carries system-level power — shell, Google Cloud CLI, and scripting — to diagnose, build, and self-improve creatively (B-26). This breadth is deliberate and fenced structurally (manifest + IAM), and it does not make Prime a router of fleet work: the factory-not-orchestrator boundary (C-1) is unchanged. Its cognitive latitude is set by role, too: the Prime runs an **unbound** capability posture — stronger execution models, wider budgets, more room to explore — where fleet agents run **strict**. A posture widens judgment only, never the walls (C-37): the same one brain, the same deterministic spine and structural fence, resolved to a wider or narrower envelope by role.
 
 Everything runs inside the operator's own GCP project: no shared infrastructure, no external runtime dependencies, no API keys. Authentication is Application Default Credentials, Domain-Wide Delegation, and per-agent IAM, end to end.
 

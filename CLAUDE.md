@@ -32,8 +32,8 @@ Architect Prime is a self-bootstrapping AI agent factory for Google Cloud. It de
 
 | Document | Purpose | When to consult |
 |----------|---------|-----------------|
-| [PRODUCT_CANON](docs/PRODUCT_CANON.md) | **The walls** — 28 invariants (C-1..C-28) | Before any design decision |
-| [BRAIN_CANON](docs/BRAIN_CANON.md) | **The gradient** — 33 qualities (B-1..B-33) | Before any brain/corekit change |
+| [PRODUCT_CANON](docs/PRODUCT_CANON.md) | **The walls** — 37 invariants (C-1..C-37) | Before any design decision |
+| [BRAIN_CANON](docs/BRAIN_CANON.md) | **The gradient** — 36 qualities (B-1..B-36) | Before any brain/corekit change |
 | [MODULE_CHARTER](docs/MODULE_CHARTER.md) | **What goes where** — organ/skill/project/process purity (C-28) | Before authoring in any of the four content layers |
 | [IMPROVEMENT_POLICY](docs/IMPROVEMENT_POLICY.md) | **Where to spend effort** — 11 rules, the module ranking, the verification ladder | Before optimising, refactoring, or adding a gate |
 | [CULTURE_OF_WORK](docs/CULTURE_OF_WORK.md) | **The framework** — 9 primitives, R->M->C->T | Before touching work envelopes |
@@ -125,6 +125,7 @@ Non-prefixed commits break the dashboard version display.
 - **C-24**: Git is the artifact substrate; objects-before-refs
 - **C-27**: The mouth is the sole outbound egress
 - **C-28**: Layer purity — organ/skill/project/process each hold one purpose; organs are soft-locked ([MODULE_CHARTER](docs/MODULE_CHARTER.md))
+- **C-37**: Cognitive latitude is a posture (prime `unbound` / fleet `strict`); the deterministic spine and the structural fence stay invariant
 
 ### Brain Canon Essentials
 - **B-1**: Deterministic machine that consults intelligence

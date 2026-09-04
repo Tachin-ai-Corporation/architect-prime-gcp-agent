@@ -29,7 +29,7 @@ References to `corekit/lib/…`, `corekit/daemon/…` and `corekit/contracts/…
 are historical — they describe where things were when that entry was written. Do not treat
 them as current locations.
 
-## Current Architecture (v2026.09.01.2.2)
+## Current Architecture (v2026.09.04.1.1)
 
 > **Delegation BATON model implemented, flag OFF (v2026.08.07.1.0–1.2, `f99568c`).** Single-mission
 > checkpoint hand-off: instead of a child mission, ONE mission travels agent→agent (delegate works the
