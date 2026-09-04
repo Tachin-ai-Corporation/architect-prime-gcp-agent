@@ -6,6 +6,7 @@
 
 import { readFileSync, existsSync } from 'node:fs';
 import { join } from 'node:path';
+import { withPosture } from '../../platform/contracts/posture.mjs';
 
 const CORE_DIR = process.env.CORE_DIR || '/opt/corekit';
 const CONTRACTS_PATH = process.env.CONTRACTS_PATH || join(CORE_DIR, 'corekit/contracts.json');
@@ -21,6 +22,11 @@ export function getContracts() {
   if (!_contracts) {
     try {
       _contracts = JSON.parse(readFileSync(CONTRACTS_PATH, 'utf8'));
+      // Capability posture (C-37): overlay by role so model selection (vertex.strong_model_agents)
+      // and the gateway tool-call budget (brain.max_iterations) reflect the prime 'unbound' /
+      // fleet 'strict' posture. The gateway is role-blind by env, so it reads the same
+      // prime-config.json disk marker the daemon launcher branches on. Widens cognition only.
+      _contracts = withPosture(_contracts, { isPrime: existsSync(join(CORE_DIR, 'corekit/prime-config.json')) });
     } catch (err) {
       console.warn(`[config] Failed to load contracts: ${err.message}`);
       _contracts = {};

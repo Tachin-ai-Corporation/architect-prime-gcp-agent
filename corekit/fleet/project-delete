@@ -1,0 +1,167 @@
+#!/usr/bin/env bash
+# ============================================================
+# project-delete — delete a project ENTIRELY (doc + subcollections + all its work)
+#
+# Usage: project-delete <project-id> [--apply] [--force]
+#
+#   Default is a DRY RUN: reports the full footprint that would be deleted, changes nothing.
+#   Pass --apply to actually delete.
+#
+# Cascades (root-level, scoped by project_id): work, plans, approvals — plus every
+# subcollection under projects/{id} (e.g. promotions), then the project doc itself.
+#
+# GUARDS:
+#   - Refuses the structural projects 'general' and 'architect-prime'.
+#   - Refuses if another project depends_on <id> (unless --force).
+#   - Requires projects/{id} to exist.
+# ============================================================
+set -euo pipefail
+
+log()  { echo "[$(date -Is)] [project-delete] $*"; }
+die()  { echo "[$(date -Is)] [project-delete] [FATAL] $*" >&2; exit 1; }
+
+TARGET=""
+APPLY="no"
+FORCE="no"
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --apply)   APPLY="yes"; shift ;;
+    --force)   FORCE="yes"; shift ;;
+    --help|-h) echo "Usage: project-delete <project-id> [--apply] [--force]"; exit 0 ;;
+    -*)        die "Unknown arg: $1" ;;
+    *)         if [[ -z "$TARGET" ]]; then TARGET="$1"; else die "Unexpected arg: $1"; fi; shift ;;
+  esac
+done
+[[ -n "$TARGET" ]] || die "Usage: project-delete <project-id> [--apply] [--force]"
+
+case "$TARGET" in
+  general|architect-prime) die "Refusing to delete the structural project '${TARGET}'." ;;
+esac
+
+PROJECT_ID="$(curl -sf -H 'Metadata-Flavor: Google' 'http://metadata.google.internal/computeMetadata/v1/project/project-id' 2>/dev/null || true)"
+[[ -n "$PROJECT_ID" ]] || die "Cannot resolve PROJECT_ID from metadata (run on a Prime VM)"
+TOKEN="$(curl -sf -H 'Metadata-Flavor: Google' 'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')"
+[[ -n "$TOKEN" ]] || die "Cannot get access token"
+FS="https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents"
+
+MODE="DRY RUN (no changes) — pass --apply to delete"; [[ "$APPLY" == "yes" ]] && MODE="APPLYING"
+log "Delete project '${TARGET}' — ${MODE}"
+
+python3 - "$TOKEN" "$FS" "$TARGET" "$APPLY" "$FORCE" <<'PY'
+import sys, json, urllib.request, urllib.error
+token, fs, target, apply, force = sys.argv[1:6]
+H = {'Authorization': f'Bearer {token}', 'Content-Type': 'application/json'}
+
+def call(url, method='GET', body=None):
+    data = json.dumps(body).encode() if body is not None else None
+    r = urllib.request.Request(url, data=data, method=method, headers=H)
+    with urllib.request.urlopen(r) as resp:
+        raw = resp.read(); return json.loads(raw) if raw else {}
+
+def get(rel):
+    try: return call(f"{fs}/{rel}")
+    except urllib.error.HTTPError as e:
+        if e.code == 404: return None
+        raise
+
+def list_coll(path):
+    out, tok = [], None
+    while True:
+        url = f"{fs}/{path}?pageSize=300" + (f"&pageToken={tok}" if tok else "")
+        try: d = call(url)
+        except urllib.error.HTTPError as e:
+            if e.code == 404: return out
+            raise
+        out += [x['name'].split('/documents/')[1] for x in d.get('documents', [])]
+        tok = d.get('nextPageToken')
+        if not tok: return out
+
+def sub_colls(doc_rel):
+    d = call(f"{fs}/{doc_rel}:listCollectionIds", method='POST', body={})
+    return d.get('collectionIds', [])
+
+def query_scoped(coll, field, val):
+    ids, cursor = [], None
+    while True:
+        sq = {"structuredQuery": {"from": [{"collectionId": coll}],
+              "where": {"fieldFilter": {"field": {"fieldPath": field}, "op": "EQUAL", "value": {"stringValue": val}}},
+              "orderBy": [{"field": {"fieldPath": "__name__"}}], "limit": 300}}
+        if cursor: sq["structuredQuery"]["startAt"] = {"values": [{"referenceValue": cursor}], "before": False}
+        rows = [x for x in call(f"{fs}:runQuery", method='POST', body=sq) if x.get('document')]
+        if not rows: break
+        ids += [x['document']['name'].split('/documents/')[1] for x in rows]
+        cursor = rows[-1]['document']['name']
+        if len(rows) < 300: break
+    return ids
+
+# ---- exists ----
+doc = get(f"projects/{target}")
+if doc is None:
+    print(f"[project-delete] projects/{target} not found — nothing to delete."); sys.exit(1)
+f = doc.get('fields', {})
+name = f.get('name', {}).get('stringValue', target)
+created_by = f.get('created_by', {}).get('stringValue', '?')
+print(f"[project-delete] target: projects/{target}  name={name!r}  created_by={created_by}")
+
+# ---- dependency guard ----
+dependents = []
+for p in list_coll('projects'):
+    pd = get(p)
+    dep = pd.get('fields', {}).get('depends_on', {}).get('arrayValue', {}).get('values', []) if pd else []
+    if any(v.get('stringValue') == target for v in dep):
+        dependents.append(p.split('/')[-1])
+if dependents:
+    msg = f"[project-delete] {len(dependents)} project(s) depend on '{target}': {', '.join(dependents)}"
+    if force != 'yes':
+        print(msg + " — refusing (pass --force to override)."); sys.exit(2)
+    print(msg + " — proceeding anyway (--force).")
+
+# ---- enumerate footprint ----
+work = query_scoped('work', 'project_id', target)
+plans = query_scoped('plans', 'project_id', target)
+approvals = query_scoped('approvals', 'project_id', target)
+subs = {}
+for s in sub_colls(f"projects/{target}"):
+    subs[s] = list_coll(f"projects/{target}/{s}")
+sub_total = sum(len(v) for v in subs.values())
+
+print("[project-delete] footprint:")
+print(f"[project-delete]   work envelopes (project_id): {len(work)}")
+print(f"[project-delete]   plans (project_id):          {len(plans)}")
+print(f"[project-delete]   approvals (project_id):      {len(approvals)}")
+for s, v in subs.items():
+    print(f"[project-delete]   subcollection {s}: {len(v)}")
+print("[project-delete]   the project doc:             1")
+grand = len(work) + len(plans) + len(approvals) + sub_total + 1
+
+if apply != 'yes':
+    print(f"[project-delete] DRY RUN — would delete {grand} record(s). Re-run with --apply.")
+    sys.exit(0)
+
+# ---- delete ----
+def delete_all(rels, label):
+    ok = 0
+    for rel in rels:
+        try: call(f"{fs}/{rel}", method='DELETE'); ok += 1
+        except Exception as e: print(f"[project-delete]   FAILED {rel}: {e}", file=sys.stderr)
+    print(f"[project-delete]   deleted {label}: {ok}/{len(rels)}")
+    return ok
+
+total = 0
+total += delete_all(work, 'work')
+total += delete_all(plans, 'plans')
+total += delete_all(approvals, 'approvals')
+for s, v in subs.items():
+    total += delete_all(v, f'sub/{s}')
+try:
+    call(f"{fs}/projects/{target}", method='DELETE'); total += 1; print("[project-delete]   deleted project doc")
+except Exception as e:
+    print(f"[project-delete]   FAILED project doc: {e}", file=sys.stderr)
+
+# ---- verify ----
+still = get(f"projects/{target}")
+rem_work = len(query_scoped('work', 'project_id', target))
+print(f"[project-delete] DELETED {total} record(s).")
+print(f"[project-delete] verify: project doc {'STILL EXISTS' if still else 'gone (404)'}, work remaining {rem_work}")
+sys.exit(0 if (still is None and rem_work == 0) else 1)
+PY

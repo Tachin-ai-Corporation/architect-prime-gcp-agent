@@ -14,6 +14,12 @@ corekit/fleet/fleet-upgrade bin/fleet-upgrade
 corekit/fleet/fleet-health-check bin/fleet-health-check
 corekit/fleet/fleet-work-read bin/fleet-work-read
 
+# Destructive operator tools (dry-run by default; prime-only). Guarded hands for
+# the unbound prime: project-delete cascades a project + its work; memory-reset
+# wipes a fleet agent's memory (never the prime's — structural guard).
+corekit/fleet/project-delete bin/project-delete
+corekit/fleet/fleet-agent-memory-reset bin/fleet-agent-memory-reset
+
 # Chat send — Prime-only. C-27 carve-out: operator-run fleet lifecycle tooling
 # (fleet-verify/upgrade/teardown) posts terse status to the fleet space out-of-band.
 # NOT installed on fleet agents — a fleet agent's sole outbound egress is its mouth.
@@ -69,6 +75,10 @@ skills/fleet-upgrade/SKILL.md skills/fleet-upgrade/SKILL.md
 skills/fleet-upgrade/skill.json skills/fleet-upgrade/skill.json
 skills/memory-consolidate/SKILL.md skills/memory-consolidate/SKILL.md
 skills/memory-consolidate/skill.json skills/memory-consolidate/skill.json
+skills/project-delete/SKILL.md skills/project-delete/SKILL.md
+skills/project-delete/skill.json skills/project-delete/skill.json
+skills/fleet-agent-memory-reset/SKILL.md skills/fleet-agent-memory-reset/SKILL.md
+skills/fleet-agent-memory-reset/skill.json skills/fleet-agent-memory-reset/skill.json
 # process-ops — universal authoring of the global process PLAYBOOK library (name+description+narrative)
 corekit/memory/process-ops bin/process-ops
 skills/process-ops/SKILL.md skills/process-ops/SKILL.md

@@ -55,6 +55,7 @@ import { handoffModelEnabled, decideHop, missionOriginator, effectiveAssignee } 
 import { projectBootstrapEnabled, missionOriginSpace } from '../control-plane/project-bootstrap.mjs';
 import { renderBlackboard } from '../work/blackboard.mjs';
 import { canTransition } from '../contracts/work-transitions.mjs';
+import { agentPosture, applyPosture } from '../contracts/posture.mjs';
 import { assembleConversation } from '../context/conversation-context.mjs';
 import { toStr } from '../providers/to-str.mjs';
 import { extractCheckpoints, enforceMissionParentInvariant, agentClaimsIntake } from '../work/plan-utils.mjs';
@@ -149,6 +150,18 @@ const AGENT_EMAIL = _rawAgentEmail.includes('${') ? '' : _rawAgentEmail;
 if (_rawAgentEmail.includes('${')) {
   console.warn(`[brain] AGENT_USER_EMAIL is an unrendered placeholder (${_rawAgentEmail}); treating as unset — owners fall back to AGENT_ID. Fix provisioning (chat-config.json / .identity-lock).`);
 }
+
+// ---- Capability posture (C-37): one brain, resolved by ROLE ----
+// Prime → 'unbound' (a wider cognitive envelope: strong execution models + budget headroom);
+// fleet → 'strict' (the canon-bound baseline, an empty overlay). Applied AFTER the contracts
+// load + env overrides above and BEFORE the budget const captures below, so every CONTRACTS.*
+// read reflects the posture. The gateway (config.mjs) applies the SAME overlay for model
+// selection. Widens cognition only — never the deterministic spine or the fence.
+const IS_PRIME = existsSync(CORE_DIR + '/corekit/prime-config.json') || AGENT_ID === 'prime';
+const AGENT_POSTURE_NAME = agentPosture(CONTRACTS, { isPrime: IS_PRIME });
+CONTRACTS = applyPosture(CONTRACTS, AGENT_POSTURE_NAME);
+console.log(`[brain] capability posture: ${AGENT_POSTURE_NAME}${IS_PRIME ? ' (prime)' : ''}`);
+
 const GATEWAY_PORT = CONTRACTS.gateway?.port || 18789;
 const GATEWAY_URL = `http://127.0.0.1:${GATEWAY_PORT}/v1/chat/completions`;
 const MAX_ITERATIONS = CONTRACTS.dispatch?.max_iterations || 12;

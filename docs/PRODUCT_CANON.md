@@ -352,3 +352,23 @@ fleet content never invokes a CoreKit upgrade, and the dashboard never labels on
 skill; content rollout implemented as a platform upgrade; an upgrade that drops assignments, profiles or
 memory; a definition schema bump with no migration and no compatibility window.
 
+### C-37 · Cognitive latitude is a posture; the spine and the fence are not
+The determinism of C-4/C-5 and the structural capability fencing of C-21 are invariant across every
+agent — they govern the MACHINE (the daemon, the R→M→C→T envelope state machine, data movement) and the
+STRUCTURE (what an agent may touch), not the breadth of judgment the intelligence is granted. That
+breadth — execution model tier, sampling, verification strictness, and iteration / tool-call / context
+budgets — is a named **posture** the single brain overlays onto its effective contract by role. Prime
+agents run **unbound** (a wider cognitive envelope: stronger execution models, more exploratory latitude,
+larger budgets); fleet agents run **strict** (the canon-bound baseline, unchanged). The unbound posture is
+licensed ONLY because Prime is reachable solely by an administrator through the dashboard (C-1), with a
+human in the loop; a fleet agent, acting autonomously in shared channels, is never granted it. The posture
+changes only the config the ONE brain reads — never its function: there is exactly one daemon and one
+codebase, and the posture is resolved by role, not compiled into a second build. A posture may widen
+cognition; it may never loosen the deterministic spine or the structural fence (C-4, C-5, C-15, C-21, C-1,
+C-33, C-8, C-27). The unbound prime thinks more freely inside exactly the same walls.
+
+**Violation looks like:** forking the brain daemon into a prime build and a fleet build; a posture that
+relaxes a capability fence, secret handling (C-8), or mouth-egress (C-27) "because it's only the prime";
+granting fleet agents the unbound posture; moving the determinism of the machine (state transitions, dedup,
+routing, data movement) under a posture knob; a "more creative" prime that can now touch what C-21 fenced off.
+

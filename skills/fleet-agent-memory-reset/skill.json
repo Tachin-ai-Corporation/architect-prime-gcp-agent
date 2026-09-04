@@ -1,0 +1,13 @@
+{
+  "id": "fleet-agent-memory-reset",
+  "name": "Fleet Agent Memory Reset",
+  "version": 1,
+  "description": "Wipe a fleet agent's memory (Firestore core memory + working MEMORY.md) to a clean slate. Prime-only; dry-run by default; structurally can never target the prime itself.",
+  "author": "architect-prime",
+  "origin": "core",
+  "category": "fleet",
+  "agent_part": "motor",
+  "scripts": ["fleet-agent-memory-reset"],
+  "requires": {},
+  "when_to_use": "When an operator asks to reset, wipe, or clear a fleet agent's memory so it starts fresh — e.g. after testing/iteration left confusing residue in its memory."
+}

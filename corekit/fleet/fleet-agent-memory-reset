@@ -1,0 +1,127 @@
+#!/usr/bin/env bash
+# ============================================================
+# fleet-agent-memory-reset — wipe a fleet agent's memory to a clean slate
+#
+# Usage: fleet-agent-memory-reset <agent-name> [--apply] [--core-only] [--memory-md-only]
+#
+#   Default is a DRY RUN: reports exactly what would be wiped, changes nothing.
+#   Pass --apply to actually wipe.
+#
+# Wipes, for a fleet agent MANAGED BY THIS PRIME:
+#   - Core memory:    every doc under primes/{PRIME_ID}/fleet/{agent}/core_memory
+#   - Working memory: /opt/corekit/workspace/MEMORY.md on fleet-{agent} (reset to the empty template)
+#
+# HARD GUARD (prime-identity safety): <agent> must exist in THIS prime's fleet
+# registry (primes/{PRIME_ID}/fleet/{agent}) and may never equal the prime id.
+# The core-memory path is a fleet SUBcollection, structurally distinct from the
+# prime's own memory (primes/{PRIME_ID}/core_memory), so this tool can never wipe
+# the prime.
+# ============================================================
+set -euo pipefail
+
+log()  { echo "[$(date -Is)] [memory-reset] $*"; }
+warn() { echo "[$(date -Is)] [memory-reset] [WARN] $*" >&2; }
+die()  { echo "[$(date -Is)] [memory-reset] [FATAL] $*" >&2; exit 1; }
+
+AGENT=""
+APPLY="no"
+SCOPE="both"   # both | core | memory-md
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --apply)          APPLY="yes"; shift ;;
+    --core-only)      SCOPE="core"; shift ;;
+    --memory-md-only) SCOPE="memory-md"; shift ;;
+    --help|-h)        echo "Usage: fleet-agent-memory-reset <agent-name> [--apply] [--core-only|--memory-md-only]"; exit 0 ;;
+    -*)               die "Unknown arg: $1" ;;
+    *)                if [[ -z "$AGENT" ]]; then AGENT="$1"; else die "Unexpected arg: $1"; fi; shift ;;
+  esac
+done
+[[ -n "$AGENT" ]] || die "Usage: fleet-agent-memory-reset <agent-name> [--apply]"
+
+CORE_DIR="${CORE_DIR:-/opt/corekit}"
+REGISTRY_FILE="${CORE_DIR}/corekit/fleet-registry.json"
+
+# ---- Resolve identity from metadata (must run on a Prime VM) ----
+PROJECT_ID="$(curl -sf -H 'Metadata-Flavor: Google' 'http://metadata.google.internal/computeMetadata/v1/project/project-id' 2>/dev/null || true)"
+[[ -n "$PROJECT_ID" ]] || die "Cannot resolve PROJECT_ID from metadata (run on a Prime VM)"
+PRIME_ID="${PRIME_ID:-}"
+[[ -z "$PRIME_ID" ]] && PRIME_ID="$(curl -sf -H 'Metadata-Flavor: Google' 'http://metadata.google.internal/computeMetadata/v1/instance/attributes/prime_id' 2>/dev/null || true)"
+[[ -z "$PRIME_ID" ]] && PRIME_ID="$(hostname | sed 's/^prime-//')"
+[[ -n "$PRIME_ID" ]] || die "Cannot resolve PRIME_ID"
+
+TOKEN="$(curl -sf -H 'Metadata-Flavor: Google' 'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token' | python3 -c 'import sys,json;print(json.load(sys.stdin)["access_token"])')"
+[[ -n "$TOKEN" ]] || die "Cannot get access token"
+FS="https://firestore.googleapis.com/v1/projects/${PROJECT_ID}/databases/(default)/documents"
+
+# ---- HARD GUARD: agent must be a fleet member of THIS prime, and not the prime ----
+[[ "$AGENT" != "$PRIME_ID" ]] || die "Refusing: '$AGENT' is the prime itself — this tool only resets FLEET agents."
+FLEET_DOC="$(curl -sf -H "Authorization: Bearer ${TOKEN}" "${FS}/primes/${PRIME_ID}/fleet/${AGENT}" 2>/dev/null || true)"
+[[ -n "$FLEET_DOC" ]] || die "Refusing: '$AGENT' is not a fleet agent under prime '${PRIME_ID}' (no primes/${PRIME_ID}/fleet/${AGENT})."
+
+CM_PATH="primes/${PRIME_ID}/fleet/${AGENT}/core_memory"
+VM="fleet-${AGENT}"
+ZONE="us-central1-a"
+if [[ -f "$REGISTRY_FILE" ]]; then
+  RZ="$(jq -r --arg n "$AGENT" '.agents[$n].zone // ""' "$REGISTRY_FILE" 2>/dev/null || true)"; [[ -n "$RZ" ]] && ZONE="$RZ"
+fi
+
+MODE="DRY RUN (no changes) — pass --apply to wipe"; [[ "$APPLY" == "yes" ]] && MODE="APPLYING"
+log "Memory reset for fleet agent '${AGENT}' (prime '${PRIME_ID}') — ${MODE}"
+log "  core memory:    ${CM_PATH}"
+log "  working memory: ${VM}:/opt/corekit/workspace/MEMORY.md"
+
+# ---- 1. Core memory (Firestore) ----
+if [[ "$SCOPE" != "memory-md" ]]; then
+  python3 - "$TOKEN" "$FS" "$CM_PATH" "$APPLY" <<'PY'
+import sys, json, urllib.request, urllib.error
+token, fs, cm_path, apply = sys.argv[1:5]
+def call(url, method='GET'):
+    r = urllib.request.Request(url, method=method, headers={'Authorization': f'Bearer {token}'})
+    with urllib.request.urlopen(r) as resp:
+        raw = resp.read(); return json.loads(raw) if raw else {}
+ids, tok = [], None
+while True:
+    url = f"{fs}/{cm_path}?pageSize=300" + (f"&pageToken={tok}" if tok else "")
+    try:
+        d = call(url)
+    except urllib.error.HTTPError as e:
+        if e.code == 404: d = {}
+        else: raise
+    for doc in d.get('documents', []):
+        ids.append(doc['name'].split('/documents/')[1])
+    tok = d.get('nextPageToken')
+    if not tok: break
+print(f"[memory-reset]   core_memory entries: {len(ids)}")
+if apply == 'yes':
+    ok = 0
+    for rel in ids:
+        try:
+            call(f"{fs}/{rel}", method='DELETE'); ok += 1
+        except Exception as e:
+            print(f"[memory-reset]   delete FAILED {rel}: {e}", file=sys.stderr)
+    print(f"[memory-reset]   deleted {ok}/{len(ids)} core_memory entries")
+elif ids:
+    print(f"[memory-reset]   would delete {len(ids)} core_memory entries (dry run)")
+PY
+fi
+
+# ---- 2. Working memory (MEMORY.md on the agent VM) ----
+if [[ "$SCOPE" != "core" ]]; then
+  if [[ "$APPLY" == "yes" ]]; then
+    log "  resetting MEMORY.md on ${VM} ..."
+    RESET_CMD="printf '## Current Focus\n\n## Active Context\n\n## Open Items\n' | sudo tee /opt/corekit/workspace/MEMORY.md >/dev/null && echo MEMORY_RESET_OK"
+    if gcloud compute ssh "$VM" --zone="$ZONE" --project="$PROJECT_ID" --command="$RESET_CMD" --quiet 2>/dev/null | grep -q MEMORY_RESET_OK; then
+      log "  MEMORY.md reset to clean template"
+    else
+      warn "  could not reset MEMORY.md on ${VM} (VM unreachable or SSH denied) — core memory was still wiped"
+    fi
+  else
+    log "  would reset ${VM}:/opt/corekit/workspace/MEMORY.md to the empty template (dry run)"
+  fi
+fi
+
+if [[ "$APPLY" == "yes" ]]; then
+  log "✅ Memory reset complete for '${AGENT}'."
+else
+  log "Dry run complete. Re-run with --apply to wipe."
+fi

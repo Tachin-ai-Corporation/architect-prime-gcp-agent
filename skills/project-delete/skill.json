@@ -1,0 +1,13 @@
+{
+  "id": "project-delete",
+  "name": "Project Delete",
+  "version": 1,
+  "description": "Delete a project ENTIRELY — the doc, its subcollections, and all its project_id-scoped work/plans/approvals. Prime-only; dry-run by default; refuses structural and depended-on projects.",
+  "author": "architect-prime",
+  "origin": "core",
+  "category": "project",
+  "agent_part": "motor",
+  "scripts": ["project-delete"],
+  "requires": {},
+  "when_to_use": "When an operator asks to delete, remove, or tear down a project entirely (not merely archive it) — removing its record and all of its accumulated work."
+}

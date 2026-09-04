@@ -127,6 +127,7 @@ platform/contracts/schemas/runtime.mjs platform/contracts/schemas/runtime.mjs
 platform/contracts/schemas/spec.mjs platform/contracts/schemas/spec.mjs
 platform/contracts/change-transitions.mjs platform/contracts/change-transitions.mjs
 platform/contracts/work-transitions.mjs platform/contracts/work-transitions.mjs
+platform/contracts/posture.mjs platform/contracts/posture.mjs
 
 # Fleet Definition plane (P2). The registry and compiler ship to every VM because
 # content-sync reads and compiles a definition set locally; authoring goes through
