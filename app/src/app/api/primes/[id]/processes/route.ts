@@ -17,9 +17,12 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
     const includeDeprecated = url.searchParams.get("includeDeprecated") === "true";
 
     const col = processesCol();
-    const snap = await col.orderBy("created_at", "desc").get();
+    // Do NOT orderBy("created_at") here: Firestore's orderBy silently EXCLUDES documents that
+    // lack the ordered field, which hid every agent-registered process (process-ops stamps
+    // updated_at, not created_at). Read unordered and sort client-side, robust to a missing field.
+    const snap = await col.get();
 
-    let processes: Array<{ id: string; status?: string }> = snap.docs.map((doc) => ({
+    let processes: Array<{ id: string; status?: string; created_at?: string; updated_at?: string }> = snap.docs.map((doc) => ({
       id: doc.id,
       ...doc.data(),
     }));
@@ -28,6 +31,11 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
     if (!includeDeprecated) {
       processes = processes.filter((p: { status?: string }) => p.status !== "deprecated");
     }
+
+    // Newest-first by created_at, falling back to updated_at (never drops a doc for a missing field).
+    processes.sort((a, b) =>
+      String(b.created_at ?? b.updated_at ?? "").localeCompare(String(a.created_at ?? a.updated_at ?? "")),
+    );
 
     return NextResponse.json({ processes });
   } catch (err) {

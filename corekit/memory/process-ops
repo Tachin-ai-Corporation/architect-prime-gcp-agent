@@ -73,11 +73,20 @@ print(); print('narrative:'); print(g('narrative') or '(none)')
     export _PO_ID="$ID" _PO_NAME="$NAME" _PO_DESC="$DESCRIPTION" _PO_NARR="$NARRATIVE" \
            _PO_TAGS="$TAGS" _PO_PROJECT="$PROJECT" _PO_AGENT="$AGENT" \
            _PO_TS="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+    # created_at is immutable: preserve an existing one (this is an update), else stamp now (first
+    # write). Without created_at a process is hidden by any orderBy('created_at') reader (the
+    # dashboard bug that made agent-registered processes invisible).
+    export _PO_CREATED="$(curl -sf -H "Authorization: Bearer ${TOKEN}" "${BASE}/${ID}" 2>/dev/null | python3 -c 'import sys,json
+try:
+    print(json.load(sys.stdin)["fields"]["created_at"]["stringValue"])
+except Exception:
+    pass' 2>/dev/null || true)"
     OUT=$(python3 -c "
 import os, json
 fields = {'id':{'stringValue':os.environ['_PO_ID']}, 'updated_by':{'stringValue':os.environ['_PO_AGENT']},
-          'updated_at':{'stringValue':os.environ['_PO_TS']}, 'status':{'stringValue':'active'}}
-mask = ['id','updated_by','updated_at','status']
+          'updated_at':{'stringValue':os.environ['_PO_TS']}, 'status':{'stringValue':'active'},
+          'created_at':{'stringValue': os.environ.get('_PO_CREATED') or os.environ['_PO_TS']}}
+mask = ['id','updated_by','updated_at','status','created_at']
 for k, env in [('name','_PO_NAME'), ('description','_PO_DESC'), ('narrative','_PO_NARR')]:
     v = os.environ.get(env, '')
     if v: fields[k] = {'stringValue': v}; mask.append(k)
