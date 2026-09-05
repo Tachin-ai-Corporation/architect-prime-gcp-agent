@@ -1,8 +1,9 @@
 // Action handler: synthesize
 
-import { extractVerdict, extractFailSummary, extractProbes, stakesAtLeast } from '../../work/verdict.mjs';
+import { extractVerdict, extractFailSummary, extractProbes, extractPassCaveat, stakesAtLeast } from '../../work/verdict.mjs';
 import { filterProjectContext, validateContextEntry } from '../../control-plane/project-context.mjs';
 import { finalizeBlockedBySpine, probeGatedFinalizeAction } from '../../work/checkpoint-spine.mjs';
+import { renderCaveatSection } from '../../work/finalization.mjs';
 
 // Pure exemption predicate — determines if verification can be skipped.
 function isSynthExempt(envelope, contracts = {}) {
@@ -155,7 +156,8 @@ export async function handleSynthesize(ctx, deps) {
   // `summary` is included because enforceSchema's raw-text fallback emits
   // { action:'synthesize', summary } (vertex-text.mjs) — without it that body drops.
   const rawSynthesisOutput = decision.synthesis || decision.summary || decision.content || decision.response || decision.message || decision.instruction || '';
-  const synthesisOutput = composeAnswerFirst(decision, rawSynthesisOutput);
+  // `let`: a met-with-caveat completion appends an operator-facing caveat block before completeEnvelope.
+  let synthesisOutput = composeAnswerFirst(decision, rawSynthesisOutput);
 
   // Wrap synthesis in C→T under the mission
   await createCT(envelope, {
@@ -174,6 +176,9 @@ export async function handleSynthesize(ctx, deps) {
   // FC-F: when we deferred the spine finalize-gate, the deliverable MUST be re-derived here (never
   // exempt) — this verification is the ground-truth gate that replaces the deferred spine check.
   let verificationPassed = false;
+  // C-38 / B-37: a mission-level PASS may ride a caveat (met-with-caveat). Captured here and, together
+  // with any checkpoint milestone caveats accumulated on the envelope, surfaced in the final output.
+  let synthCaveat = '';
   if ((!skipVerify || deferredFromSpineGate) && deps.dispatchAgent && deps.extractVerdict) {
     const missionStakes = envelope.stakes || 'routine';
     const ATTACK_STAKES_MIN = deps.CONTRACTS?.dispatch?.attack_duty_stakes_min || 'consequential';
@@ -295,7 +300,7 @@ export async function handleSynthesize(ctx, deps) {
               priorResultsAppend: [{ agent: 'cerebellum', result: `[VERIFICATION FAILED (post-probe)] ${fSummary}\n[SYSTEM] Probes re-derived the claims against ground truth — the ANSWER must be corrected, not the work. Return "synthesize_with_failure" with an honest outcome summary.` }],
             };
           }
-          if (fv === 'PASS') verificationPassed = true;   // FC-F: post-probe PASS confirms the deliverable
+          if (fv === 'PASS') { verificationPassed = true; synthCaveat = extractPassCaveat(finalV.output) || synthCaveat; }   // FC-F: post-probe PASS confirms the deliverable
           // PASS or null falls through to normal completion
         } else {
           deps.log('WARN', `[synthesize] PROBE verdict but no parseable probes on mission ${envelope.id} — failing closed (B-28)`);
@@ -314,6 +319,7 @@ export async function handleSynthesize(ctx, deps) {
         envelope.review_reason = 'Cerebellum did not render verdict on synthesis';
       } else if (verdict === 'PASS') {
         verificationPassed = true;   // FC-F: explicit PASS confirms the deliverable
+        synthCaveat = extractPassCaveat(verification.output) || synthCaveat;   // C-38: met-with-caveat
       }
       // PASS falls through to normal completion
     } catch (e) {
@@ -330,6 +336,21 @@ export async function handleSynthesize(ctx, deps) {
       return await escalateUnmetDeliverable(spineGate, ' [probe-gated: re-derivation did not confirm the deliverable]');
     }
     log('INFO', `[TELEMETRY] finalize_blocked_spine mission=${envelope.id} probe_gated=1 verified=1 terminal_cp=${spineGate.terminal.n} iter=${iteration} — deliverable re-derived observably met; finalizing despite the spine verdict`);
+  }
+
+  // C-38 / B-37: surface any caveats the mission was passed WITH — the checkpoint milestone caveats
+  // accumulated by the executor plus a synthesis-level one — as an honest, operator-facing block. A
+  // clean completion (no caveats) is unchanged. This is what turns a functional-but-imperfect
+  // deliverable into "done, with a note" instead of a false block.
+  const caveatSection = renderCaveatSection([
+    ...(Array.isArray(envelope._milestone_caveats) ? envelope._milestone_caveats : []),
+    ...(synthCaveat ? [synthCaveat] : []),
+  ]);
+  if (caveatSection) {
+    synthesisOutput = `${synthesisOutput}${caveatSection}`;
+    envelope.output = synthesisOutput;
+    log('INFO', `[synthesize] surfaced met-with-caveat block (${caveatSection.length} chars) on ${envelope.id}`);
+    log('INFO', `[TELEMETRY] completion_caveat mission=${envelope.id}`);
   }
 
   await completeEnvelope(envelope, {

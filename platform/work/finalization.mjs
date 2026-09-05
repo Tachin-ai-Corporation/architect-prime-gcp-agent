@@ -46,6 +46,26 @@ export function deliverableStandsDespiteMilestone(priorResults) {
   return rows.some(isRealTaskSuccess) && !rows.some(isRealTaskFailure);
 }
 
+/**
+ * Render the operator-facing caveat block for a `met-with-caveat` completion (C-38 / B-37).
+ *
+ * A caveat is an honest, non-defeating gap the cerebellum passed the milestone WITH — it must be
+ * SURFACED, never swallowed (a swallowed caveat is a silent quality regression). This composes the
+ * accumulated milestone caveats into one section appended to the mission output. Pure (B-19): dedups,
+ * trims, and returns '' when there is nothing to say (a clean completion is unchanged).
+ *
+ * @param {Array<string>} caveats - accumulated caveat lines (e.g. "CP2: two folders resolve at runtime")
+ * @returns {string} the section text, or '' when empty
+ */
+export function renderCaveatSection(caveats) {
+  const seen = new Set();
+  const lines = (Array.isArray(caveats) ? caveats : [])
+    .map(c => String(c ?? '').trim())
+    .filter(c => c.length > 0 && !seen.has(c) && seen.add(c));
+  if (lines.length === 0) return '';
+  return `\n\n— Caveats (noted, non-blocking) —\n${lines.map(l => `• ${l}`).join('\n')}`;
+}
+
 // A line that says something an operator could act on. `[FAILED]` markers, bare tool
 // echoes and empty frames are structure, not explanation.
 const isSubstantive = (line) => {

@@ -111,6 +111,39 @@ export function extractFailSummary(output) {
 }
 
 /**
+ * Extract the OPTIONAL caveat from a report_pass tool-log entry (C-38 / B-37 graded verdict).
+ *
+ * A `met-with-caveat` verdict is a PASS that carries a `caveat` field: the milestone's intent is
+ * achieved, but a listed criterion is partially met or deferred in a way that does NOT defeat the
+ * deliverable (a value that resolves at runtime, an optional enrichment left undone). The verdict is
+ * still structurally a PASS (extractVerdict returns 'PASS' unchanged and the whole flow is untouched);
+ * this reads the caveat so the daemon can SURFACE it to the operator rather than swallow it.
+ *
+ * Same `) →` sentinel as extractReportFailArgs — a caveat sentence can contain parentheses, so a
+ * first-paren match would truncate the JSON to garbage. Returns '' for a clean pass, no caveat, or
+ * any parse failure (a caveat is additive; its absence is never a control-flow signal).
+ *
+ * @param {string} output - The full agent response including tool execution log
+ * @returns {string} - The caveat text, or '' when the pass is clean/unparseable
+ */
+export function extractPassCaveat(output) {
+  if (!output) return '';
+  const text = typeof output === 'string' ? output : JSON.stringify(output);
+  const m = text.match(/\[TOOL\] report_pass\(([\s\S]*?)\)\s*→/)
+    || text.match(/\[TOOL\] report_pass\(([\s\S]*)\)\s*$/m);
+  if (!m) return '';
+  const rawArgs = m[1];
+  try {
+    const args = JSON.parse(rawArgs);
+    return typeof args.caveat === 'string' ? args.caveat.trim() : '';
+  } catch {
+    // Regex fallback for a truncated pass payload — recover the caveat string if it is intact.
+    const cav = rawArgs.match(/"caveat"\s*:\s*"([^"\\]*(?:\\.[^"\\]*)*)"/);
+    return cav ? cav[1].replace(/\\"/g, '"').replace(/\\n/g, '\n').trim() : '';
+  }
+}
+
+/**
  * Parse the probes array from a request_probe tool-log entry.
  * Returns [] on any parse failure.
  *

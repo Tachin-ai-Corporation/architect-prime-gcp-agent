@@ -10,7 +10,7 @@ import { buildPriorWorkContext, renderCheckpointDigest } from '../context/compac
 import { makeAddress } from '../providers/channel.mjs';
 import { composeDelegationMarker, normalizeTargetEmail, checkDelegationCapability, checkExecutionCapability } from './delegation.mjs';
 import { readFileSync as _readFileSync } from 'fs';
-import { extractVerdict, extractFailSummary, extractFailRecommendation, isMissingEvidenceFail, stakesAtLeast } from './verdict.mjs';
+import { extractVerdict, extractFailSummary, extractFailRecommendation, extractPassCaveat, isMissingEvidenceFail, stakesAtLeast } from './verdict.mjs';
 import { detectMotorFailure, isRecoveredToolError, isDeliveryCriticalIntent } from './agent-output.mjs';
 import { createHash } from 'crypto';
 import { allocateVersion, sanitizeRepoId } from '../persistence/git-store.mjs';
@@ -1674,7 +1674,27 @@ export async function executeCheckpoints(checkpoints, opts) {
             ...(inconclusive ? { inconclusive: true } : {}),
           });
         } else if (cpVerdict === 'PASS') {
-          log('INFO', `[checkpoint-executor] Cerebellum PASS on CP${cpNum} milestone`);
+          // C-38 / B-37 graded verdict: a PASS may ride a `caveat` — the milestone's INTENT is met
+          // but a listed criterion is partially met / deferred in a way that does not DEFEAT the
+          // deliverable (a value that resolves at runtime, an optional enrichment left undone). The
+          // verdict is structurally a PASS (the checkpoint completes, the spine advances, nothing in
+          // the flow changes); the only new behaviour is to SURFACE the caveat instead of swallowing
+          // it — an honest note the operator sees, the difference between a false block and done.
+          const caveat = extractPassCaveat ? extractPassCaveat(cpVer.output) : '';
+          if (caveat) {
+            log('INFO', `[checkpoint-executor] Cerebellum PASS-with-caveat on CP${cpNum} milestone: ${caveat.slice(0, 160)}`);
+            log('INFO', `[TELEMETRY] milestone_caveat mission=${envelope.id} cp=${cpNum}`);
+            envelope._milestone_caveats = Array.isArray(envelope._milestone_caveats) ? envelope._milestone_caveats : [];
+            envelope._milestone_caveats.push(`CP${cpNum}: ${caveat}`);
+            cpResults.push({
+              step: `${cpNum}.verify`,
+              agent: 'cerebellum',
+              result: `[MILESTONE MET — WITH CAVEAT] ${caveat}`,
+              success: true,
+            });
+          } else {
+            log('INFO', `[checkpoint-executor] Cerebellum PASS on CP${cpNum} milestone`);
+          }
         } else {
           // No terminal verdict (or an unresolved PROBE request) — fail closed (B-28): a
           // milestone must not pass unverified. The failed-checkpoint path re-enters cortex

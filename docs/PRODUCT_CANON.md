@@ -372,3 +372,25 @@ relaxes a capability fence, secret handling (C-8), or mouth-egress (C-27) "becau
 granting fleet agents the unbound posture; moving the determinism of the machine (state transitions, dedup,
 routing, data movement) under a posture knob; a "more creative" prime that can now touch what C-21 fenced off.
 
+### C-38 · Success is judged, not gated
+Whether a deliverable MEETS ITS INTENT is a judgment, not a computation. The C-4 imperative — everything
+that CAN be deterministic IS — governs the MACHINE (state transitions, data movement, routing); judging
+whether produced work achieved what was asked is not one of the things that can be made deterministic
+without lying about it, and forcing it into a rigid checklist is a category error that makes brittle exactly
+the thing that most needs to adapt. So the labor divides. Determinism owns the spine AND an anti-dishonesty
+**floor**: a real deliverable must exist, a real attempt must have been made, a claimed artifact must be
+present before `complete` may be written (B-28). The floor proves something real happened; it never decides
+whether that something is good enough. That decision — did the work achieve the intent, judged holistically
+against ALL available context and the artifact itself — belongs to the cerebellum, an LLM rendering a
+**graded** verdict: a milestone whose intent is achieved with a noted, non-defeating gap is MET WITH A
+CAVEAT (the gap surfaced honestly to the operator), never FAILED. This is the complement of C-37: where a
+posture widens the intelligence's latitude to **act**, this widens its authority to **judge** — determinism
+secures the walls; the cerebellum decides whether the work inside them is done.
+
+**Violation looks like:** a new deterministic guard bolted on to catch the case the last deterministic guard
+mis-judged (the infinite regress of success-gates); an acceptance criterion failed literally when the
+deliverable met the request (a registered, working playbook blocked over two folder IDs that resolve at
+runtime); completion inferred by counting task-result rows instead of asking the verifier whether the
+deliverable meets the goal; conversely, removing the honesty floor and "just trusting the LLM" so a mission
+can report complete with nothing produced — the false-green the floor exists to stop.
+

@@ -284,7 +284,7 @@ export const listDirTool = {
 
 export const reportPass = {
   name: 'report_pass',
-  description: 'Report that all acceptance criteria are satisfied. Call this tool exactly once when every criterion has concrete supporting evidence.',
+  description: 'Report that the milestone\'s INTENT is achieved. Call this tool exactly once when the deliverable does what was asked, with concrete supporting evidence. You may PASS even when a listed criterion is only partially met or deferred — SO LONG AS the gap does NOT defeat the deliverable (e.g. a value that resolves at runtime, an optional enrichment left undone): pass, and state that gap in `caveat` so the operator sees it. Reserve report_fail for a milestone whose intent is genuinely unmet (wrong output, a missing core deliverable, an unrecoverable error, a claim contradicted by evidence).',
   schema: {
     type: 'object',
     properties: {
@@ -301,11 +301,12 @@ export const reportPass = {
           required: ['criterion', 'pass', 'evidence'],
         },
       },
+      caveat: { type: 'string', description: 'OPTIONAL. Leave empty for a clean, unqualified pass. If the intent is met but a criterion is partially met or deferred in a way that does NOT defeat the deliverable, name that gap here in one plain sentence — it is surfaced to the operator, honestly, not hidden. A caveat is not a way to wave through wrong work: a gap that defeats the deliverable is a report_fail, not a caveat.' },
     },
     required: ['reasoning', 'checks'],
   },
-  execute: async ({ reasoning, checks }) => {
-    return { verdict: 'PASS', reasoning, checks };
+  execute: async ({ reasoning, checks, caveat }) => {
+    return { verdict: 'PASS', reasoning, checks, ...(caveat ? { caveat } : {}) };
   },
 };
 

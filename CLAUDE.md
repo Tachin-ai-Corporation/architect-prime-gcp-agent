@@ -32,8 +32,8 @@ Architect Prime is a self-bootstrapping AI agent factory for Google Cloud. It de
 
 | Document | Purpose | When to consult |
 |----------|---------|-----------------|
-| [PRODUCT_CANON](docs/PRODUCT_CANON.md) | **The walls** — 37 invariants (C-1..C-37) | Before any design decision |
-| [BRAIN_CANON](docs/BRAIN_CANON.md) | **The gradient** — 36 qualities (B-1..B-36) | Before any brain/corekit change |
+| [PRODUCT_CANON](docs/PRODUCT_CANON.md) | **The walls** — 38 invariants (C-1..C-38) | Before any design decision |
+| [BRAIN_CANON](docs/BRAIN_CANON.md) | **The gradient** — 37 qualities (B-1..B-37) | Before any brain/corekit change |
 | [MODULE_CHARTER](docs/MODULE_CHARTER.md) | **What goes where** — organ/skill/project/process purity (C-28) | Before authoring in any of the four content layers |
 | [IMPROVEMENT_POLICY](docs/IMPROVEMENT_POLICY.md) | **Where to spend effort** — 11 rules, the module ranking, the verification ladder | Before optimising, refactoring, or adding a gate |
 | [CULTURE_OF_WORK](docs/CULTURE_OF_WORK.md) | **The framework** — 9 primitives, R->M->C->T | Before touching work envelopes |
@@ -126,6 +126,7 @@ Non-prefixed commits break the dashboard version display.
 - **C-27**: The mouth is the sole outbound egress
 - **C-28**: Layer purity — organ/skill/project/process each hold one purpose; organs are soft-locked ([MODULE_CHARTER](docs/MODULE_CHARTER.md))
 - **C-37**: Cognitive latitude is a posture (prime `unbound` / fleet `strict`); the deterministic spine and the structural fence stay invariant
+- **C-38**: Success is judged, not gated — determinism secures the spine + an honesty floor; the cerebellum owns the graded verdict on whether the intent was met
 
 ### Brain Canon Essentials
 - **B-1**: Deterministic machine that consults intelligence
@@ -136,6 +137,7 @@ Non-prefixed commits break the dashboard version display.
 - **B-18**: Thin orchestrator spine over single-purpose libraries
 - **B-28**: Verification is re-derivation, not recognition
 - **B-29**: Every claim carries its epistemic bin
+- **B-37**: The verdict is graded (met / met-with-caveat / not-met) and the cerebellum owns it — a non-defeating gap passes with a surfaced caveat, never a false block
 
 ## Self-Maintenance
 

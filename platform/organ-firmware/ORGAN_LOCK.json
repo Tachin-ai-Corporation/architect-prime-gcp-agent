@@ -5,7 +5,7 @@
   "files": {
     "platform/organ-firmware/fleet/_base/IDENTITY.md": "sha256:799dafadb38f64ff4685c318e85800952b01a72b93eced87b131a8d1550e0be0",
     "platform/organ-firmware/fleet/_brain/cerebellum/IDENTITY.md": "sha256:2a2ecc1f59dc04b390945d8fad8888b021b3ef6afc993b1d3cadb2ebf94f6182",
-    "platform/organ-firmware/fleet/_brain/cerebellum/SOUL.md": "sha256:e1d41937323ed1ca77581a26132fa0f0c070869224d09e9260d7c879d5bf6ca8",
+    "platform/organ-firmware/fleet/_brain/cerebellum/SOUL.md": "sha256:46ff78ec166f102896d229b0c4d06893a0bf7cc98f178810b6e24c55d387ff8b",
     "platform/organ-firmware/fleet/_brain/cortex/IDENTITY.md": "sha256:aaafd626890899705720c42cd0532a1c6022451f48587f564980b2b5ae07ed1e",
     "platform/organ-firmware/fleet/_brain/cortex/SOUL.md": "sha256:29ae66f2c3e032e180fd8221ed0a906c9a5c12d477b57c63d2dd65e6707e8486",
     "platform/organ-firmware/fleet/_brain/motor/IDENTITY.md": "sha256:e55608437143fa3d7e89545c20091da633f3f72051440e84b8244714464b6cc6",
@@ -17,7 +17,7 @@
     "platform/organ-firmware/fleet/_brain/temporal-research/IDENTITY.md": "sha256:7e4127745ad7c456ca342c305fab502092a478bf6655daa5419ef6b186d8cfc0",
     "platform/organ-firmware/fleet/_brain/temporal-research/SOUL.md": "sha256:139463107122e659f8280c50900a7298f8578832978fa319a7c70acd13b1c1d1",
     "platform/organ-firmware/prime/cerebellum/IDENTITY.md": "sha256:72643f5b725136c0abc5edf483f483640c33d089f66578ab948cbd63e5d7edff",
-    "platform/organ-firmware/prime/cerebellum/SOUL.md": "sha256:481cb66a5a55cb0d17bf4185f41f2e3b0e436a5256767357eb81e50159dbc6a6",
+    "platform/organ-firmware/prime/cerebellum/SOUL.md": "sha256:bd256a793dcf7c4b1cdc4e79e3732bc7b2a13d059a3f77c7ab8f27c1643f820f",
     "platform/organ-firmware/prime/cortex/IDENTITY.md": "sha256:e0cddd8974775508259024f6230bd20cf9f43de6ae8b2fbe544e278bd5e9096b",
     "platform/organ-firmware/prime/cortex/SOUL.md": "sha256:1e5e94b6e6d0a1e52f14fd0f01ba0209636a4236d1343e441a488ad5510a010c",
     "platform/organ-firmware/prime/motor/IDENTITY.md": "sha256:57980cf50c40ef4d4a9ba012171240e500ef38c75c6b17bda9282e6eaefa8a74",
