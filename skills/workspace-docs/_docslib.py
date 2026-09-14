@@ -99,3 +99,84 @@ def resolve_tab(doc, tab_id=None):
         return None, None
     resolved = tab.get('tabProperties', {}).get('tabId', '')
     return tab.get('documentTab', {}).get('body', {}).get('content', []), resolved
+
+
+# --- Brand-guide parsing (docs-create-branded) ---------------------------------
+#
+# The brand guide is a plain Doc of "Key: Value" lines (see workspace-docs
+# SKILL.md "Brand guide format"). Real brand docs often LOSE their line breaks — a
+# Markdown import collapses consecutive lines into one paragraph — so a naive
+# line.split(':', 1) parse swallows a whole block into one value (the entire
+# TYPOGRAPHY block became the "Heading Font" value; PRIMARY swallowed the rest of
+# COLORS). parse_brand_guide is robust: it captures each known key's value only up
+# to the NEXT known key, a newline, or end-of-text.
+
+# Supported keys -> brand[] field, LONGEST label first so a multi-word label wins
+# over its prefix ("heading 1 size" over "heading font"; "body text/font/size"
+# over "body"). These are the fields the docs-create-branded CSS actually consumes.
+_BRAND_KEY_MAP = [
+    ('heading 1 size', 'h2_size'),
+    ('heading 2 size', 'h2_size'),
+    ('heading 3 size', 'h3_size'),
+    ('heading font',   'heading_font'),
+    ('body text',      'body_color'),
+    ('body font',      'body_font'),
+    ('body size',      'body_size'),
+    ('title size',     'title_size'),
+    ('callout bg',     'callout_bg'),
+    ('primary',        'primary'),
+    ('secondary',      'secondary'),
+    ('accent',         'accent'),
+    ('surface',        'surface'),
+    ('muted',          'muted'),
+]
+# Documented labels the CSS does not (yet) consume. They carry no field, but MUST
+# still terminate a preceding value so it never swallows the next "Key:" pair.
+_BRAND_STOP_LABELS = [
+    'table header background', 'table header text', 'table row alt', 'heading text',
+    'divider color', 'link color', 'line spacing', 'margins', 'logo url', 'header', 'footer',
+]
+_BRAND_COLOR_FIELDS = {'primary', 'secondary', 'accent', 'body_color', 'muted', 'surface', 'callout_bg'}
+_BRAND_SIZE_FIELDS = {'title_size', 'h2_size', 'h3_size', 'body_size'}
+
+
+def parse_brand_guide(plain, brand):
+    """Apply brand-guide overrides from `plain` text onto the `brand` dict, in place.
+
+    Each known key's value is captured only up to the next known key, a newline, or
+    end-of-text — so a brand doc that lost its line breaks (a Markdown import that
+    collapsed "Key: Value" lines into one paragraph) parses correctly instead of
+    swallowing a whole block into one value. Colors must be a hex literal; bare font
+    sizes get a 'pt' unit. Unknown/unsupported labels are ignored but still bound
+    values. Returns `brand` for convenience.
+    """
+    import re
+    labels = sorted(
+        {k for k, _ in _BRAND_KEY_MAP} | set(_BRAND_STOP_LABELS),
+        key=len, reverse=True,
+    )
+    stop = '|'.join(re.escape(s) for s in labels)
+    pair_re = re.compile(
+        r'(' + stop + r')\s*:\s*(.*?)(?=\s*(?:' + stop + r')\s*:|[\r\n]|$)',
+        re.IGNORECASE,
+    )
+    field_of = dict(_BRAND_KEY_MAP)
+    for m in pair_re.finditer(plain):
+        field = field_of.get(m.group(1).strip().lower())
+        value = m.group(2).strip()
+        if not field or not value:
+            continue
+        if field in _BRAND_COLOR_FIELDS:
+            hexm = re.match(r'#[0-9A-Fa-f]{3,8}\b', value)
+            if not hexm:
+                continue
+            value = hexm.group(0)
+        elif field in _BRAND_SIZE_FIELDS:
+            numm = re.match(r'(\d+(?:\.\d+)?)\s*(pt|px)?', value)
+            if not numm:
+                continue
+            value = numm.group(1) + (numm.group(2) or 'pt')
+        else:  # font family — value already bounded; tidy trailing punctuation
+            value = value.strip().strip('.,;')
+        brand[field] = value
+    return brand

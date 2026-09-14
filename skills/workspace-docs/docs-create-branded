@@ -106,34 +106,16 @@ def api_call(url, method='GET', headers=None, data=None):
 if brand_doc:
     try:
         sys.path.insert(0, os.environ.get('DOCSLIB_DIR', '.'))
-        from _docslib import extract_text_and_map
+        from _docslib import extract_text_and_map, parse_brand_guide
         doc = api_call(f'https://docs.googleapis.com/v1/documents/{brand_doc}')
         body_content = doc.get('body', {}).get('content', [])
         plain, _ = extract_text_and_map(body_content)
-        key_map = {
-            'primary': 'primary', 'secondary': 'secondary', 'accent': 'accent',
-            'body text': 'body_color', 'muted': 'muted', 'surface': 'surface',
-            'callout bg': 'callout_bg', 'heading font': 'heading_font',
-            'body font': 'body_font', 'title size': 'title_size',
-            'heading 1 size': 'h2_size', 'heading 2 size': 'h2_size',
-            'heading 3 size': 'h3_size', 'body size': 'body_size',
-        }
-        for line in plain.split('\n'):
-            if ':' not in line or line.startswith('#'):
-                continue
-            k, v = line.split(':', 1)
-            k_lower = k.strip().lower()
-            v = v.strip()
-            if not v:
-                continue
-            # Match hex colors
-            for brand_key, brand_field in key_map.items():
-                if brand_key in k_lower and v.startswith('#'):
-                    brand[brand_field] = v
-                    break
-                elif brand_key in k_lower:
-                    brand[brand_field] = v
-                    break
+        # Robust "Key: Value" parse (shared, tested). Tolerant of brand docs that
+        # lost their line breaks — a Markdown import collapsing the block into one
+        # paragraph, which the old line.split(':',1) parse mangled (the whole
+        # TYPOGRAPHY block swallowed into one font value; PRIMARY swallowing the
+        # rest of COLORS -> teal never applied, defaults used).
+        parse_brand_guide(plain, brand)
     except Exception as e:
         sys.stderr.write(f'Brand guide read warning: {e} — using defaults\n')
 
