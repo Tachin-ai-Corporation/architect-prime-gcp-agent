@@ -287,10 +287,8 @@
       "brain": { "max_iterations": 40 }
     }
   },
-  "_posture_assignments_comment": "Per-agent capability-posture assignment (C-37 latitude, C-29 Fleet Definition). Raises a specific fleet agent's cognitive-latitude profile declaratively — the repo-principled alternative to a per-VM AGENT_POSTURE env hack. Resolution precedence (platform/contracts/posture.mjs): AGENT_POSTURE env (canary) > posture_assignments.agents[agentId] > role default (prime=unbound, fleet=strict). Only a posture defined in `postures` above is honored (typo-safe, forward-compatible). Widens COGNITION ONLY (model tier + budgets); the fence, secrets, egress, deterministic spine and honesty floor are invariant. millie (assistant) is raised to 'unbound' because its weekly executive update — a document gather+synthesis mission — proved marginal on the strict/Flash baseline in live dry-runs (unreliable gather, weak exec-altitude, flaky brand handling); the stronger execution tier + wider budgets give reliable, first-pass output.",
+  "_posture_assignments_comment": "Per-agent capability-posture assignment (C-37 latitude, C-29 Fleet Definition). Raises a specific fleet agent's cognitive-latitude profile declaratively — the repo-principled alternative to a per-VM AGENT_POSTURE env hack. Resolution precedence (platform/contracts/posture.mjs): AGENT_POSTURE env (canary) > posture_assignments.agents[agentId] > role default (prime=unbound, fleet=strict). Only a posture defined in `postures` above is honored (typo-safe, forward-compatible). Widens COGNITION ONLY (model tier + budgets); the fence, secrets, egress, deterministic spine and honesty floor are invariant. Currently empty: millie (assistant) was briefly assigned 'unbound' for its weekly executive update, but live dry-runs showed the wide 'unbound' budget (dispatch.max_iterations 75) let the mission CHURN far longer (15+ min, ~4.5M tokens, multiple partial docs) without converging cleaner than the tight strict/Flash budget (~5 min) — budget discipline mattered more than model horsepower here. The real fixes were process-level (read-back verification evidence + idempotency + source scope). A future 'strong models + tight budgets' posture would be the right tool; until then the mechanism stays, unused.",
   "posture_assignments": {
-    "agents": {
-      "millie": "unbound"
-    }
+    "agents": {}
   }
 }
