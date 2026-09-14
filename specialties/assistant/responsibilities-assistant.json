@@ -1,4 +1,29 @@
 {
-  "version": 1,
-  "responsibilities": []
+  "version": 2,
+  "responsibilities": [
+    {
+      "id": "r-weekly-exec-update",
+      "name": "Weekly Executive Update",
+      "schedule": "30 15 * * 4",
+      "timezone": "America/Chicago",
+      "enabled": true,
+      "singleton": true,
+      "min_spacing_minutes": 1440,
+      "triggerable": true,
+      "instruction": "Produce this week's Weekly Executive Update to structure the 30-minute weekly executive sync. Recall the weekly-executive-update process playbook, gather the most recent notes for each of this deployment's designated weekly source meetings, and synthesize a time-boxed executive briefing: an agenda-at-a-glance, a short State of the Week, per-area status with blockers flagged inline, the decisions to lock this week, and an owner/action/due table. Deliver it as a branded document in the exec-summaries folder and report the link.",
+      "success_criteria": "A single dated Weekly Executive Update document exists in the exec-summaries folder, sourced ONLY from the most recent occurrence of each designated weekly source meeting. It is structured as a 30-minute agenda (agenda-at-a-glance, State of the Week, per-area status, Decisions to Lock, Blockers, and an Action Items table with owners and due dates), with acronyms and names normalized. The document link is reported.",
+      "context": {
+        "purpose": "Leadership runs a 30-minute weekly executive sync and needs one reliable, skimmable briefing, built the same way every week from that week's meeting notes.",
+        "process": [
+          "RECALL: load the 'Weekly Executive Update' process playbook and this deployment's designated source meetings, exec-summaries folder, and branding reference from project context / memory.",
+          "GATHER: for each designated weekly source meeting, take only the MOST RECENT occurrence's notes or transcript (list the meeting folder and pick the latest by date; never fold in older weeks).",
+          "SYNTHESIZE: distill into the fixed 30-minute scaffold — agenda-at-a-glance, State of the Week, per-area status with inline blocker flags, Decisions to Lock, and an owner/action/due Action Items table. Normalize acronyms and names; produce one definitive briefing, not several drafts.",
+          "DELIVER: build the document with docs-create-branded into the exec-summaries folder using the standard exec-brief branding, then report the link."
+        ],
+        "reference_files": ["workspace/MEMORY.md"],
+        "prior_learnings": ""
+      },
+      "project_id": null
+    }
+  ]
 }

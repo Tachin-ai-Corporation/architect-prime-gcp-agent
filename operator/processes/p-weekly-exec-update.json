@@ -1,0 +1,16 @@
+{
+  "id": "p-weekly-exec-update",
+  "name": "Weekly Executive Update",
+  "description": "How the weekly executive update is produced: distill the most recent notes from the four standing weekly meetings into one time-boxed briefing that runs the 30-minute weekly executive sync, and publish it to the Weekly Exec Summaries folder.",
+  "narrative": "The weekly executive update is the single briefing that runs the company's 30-minute weekly executive sync — a meeting-runner, not a reading report. Build it from the meeting notes captured that week, and only from the four standing weekly meetings: the Weekly Sync, Client Projects + Maintenance, Platform Weekly, and the Operations Sync. These arrive as auto-generated notes and transcripts in the shared meeting-notes Drive folder; for each of the four, take only the MOST RECENT occurrence — the meetings recur, so list the folder and pick the latest by date, and never fold in older weeks. Read the actual notes; do not work from a prior week's summary. If one of the four has no new occurrence this week, say so briefly rather than reaching back.\n\nShape the document to be walked through in thirty minutes. Open with an agenda-at-a-glance — the segments, a time box for each, and who leads — summing to about thirty minutes. Then a short State of the Week: what shipped, the single biggest risk, the week's focus, and the binding constraint. Then per-area status grouped as Client Delivery, Platform & Engineering, and Operations & Business, with any blocker called out inline where it belongs. Then a consolidated Decisions to Lock list — the calls the room needs to make. Close with a Blockers & Action Recap: what is stuck and who clears it, and an owner / action / due table.\n\nSynthesize, do not transcribe — distill decisions, progress, risks, and owners, and normalize garbled names and acronyms (for example SOC 2, HCSC, TEFCA, Paragon 3, Conduit). Keep it skimmable and dense: three pages at most. Produce one definitive briefing, never several near-duplicate drafts — that fragmentation is the failure mode this playbook replaces.\n\nDeliver one branded document per week, dated, placed in the Weekly Exec Summaries folder, and report its link. Match the established exec-brief look — a clean teal-accented format with the agenda table, inline blocker flags, and the action table — so every week reads the same and leadership can run the meeting straight down the page.",
+  "intent_keywords": [
+    "weekly executive update",
+    "executive brief",
+    "exec sync",
+    "weekly update",
+    "weekly exec summary",
+    "meeting notes"
+  ],
+  "status": "active",
+  "version": 1
+}
