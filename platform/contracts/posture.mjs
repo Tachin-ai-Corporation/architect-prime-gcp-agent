@@ -18,13 +18,26 @@
 
 /**
  * Resolve the posture NAME for this agent.
- * Role decides by default; an explicit AGENT_POSTURE env forces it (canary / rollback).
+ * Precedence (highest first):
+ *   1. AGENT_POSTURE env — forces it (canary / rollback), per-VM escape hatch.
+ *   2. A declarative per-agent assignment in the fleet definition
+ *      (contracts.posture_assignments.agents[agentId]) — lets the deployment raise a
+ *      specific fleet agent's cognitive latitude WITHOUT a per-VM env hack. Only a
+ *      posture that is actually defined in contracts.postures is honored (typo-safe,
+ *      and forward-compatible with new postures). This is Fleet-Definition content
+ *      (C-29) and widens COGNITION ONLY (C-37) — never the fence or the honesty floor.
+ *   3. Role default — prime → 'unbound', fleet → 'strict'.
  * Pure: pass `env` in tests; falls back to process.env.
  */
-export function agentPosture(contracts, { isPrime = false, env } = {}) {
+export function agentPosture(contracts, { isPrime = false, agentId = '', env } = {}) {
   const e = env || (typeof process !== 'undefined' ? process.env : {}) || {};
   const forced = e.AGENT_POSTURE;
   if (forced === 'unbound' || forced === 'strict') return forced;
+  const postures = (contracts && contracts.postures) || {};
+  const assigned = agentId
+    ? (((contracts && contracts.posture_assignments && contracts.posture_assignments.agents) || {})[agentId])
+    : undefined;
+  if (assigned && Object.prototype.hasOwnProperty.call(postures, assigned)) return assigned;
   return isPrime ? 'unbound' : 'strict';
 }
 
@@ -59,6 +72,6 @@ export function applyPosture(contracts, postureName) {
 }
 
 /** Convenience: resolve + apply in one call. Pure. */
-export function withPosture(contracts, { isPrime = false, env } = {}) {
-  return applyPosture(contracts, agentPosture(contracts, { isPrime, env }));
+export function withPosture(contracts, { isPrime = false, agentId = '', env } = {}) {
+  return applyPosture(contracts, agentPosture(contracts, { isPrime, agentId, env }));
 }

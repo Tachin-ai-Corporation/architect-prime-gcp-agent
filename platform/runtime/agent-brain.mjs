@@ -152,14 +152,16 @@ if (_rawAgentEmail.includes('${')) {
   console.warn(`[brain] AGENT_USER_EMAIL is an unrendered placeholder (${_rawAgentEmail}); treating as unset — owners fall back to AGENT_ID. Fix provisioning (chat-config.json / .identity-lock).`);
 }
 
-// ---- Capability posture (C-37): one brain, resolved by ROLE ----
+// ---- Capability posture (C-37): one brain, resolved by ROLE, with per-agent override ----
 // Prime → 'unbound' (a wider cognitive envelope: strong execution models + budget headroom);
-// fleet → 'strict' (the canon-bound baseline, an empty overlay). Applied AFTER the contracts
-// load + env overrides above and BEFORE the budget const captures below, so every CONTRACTS.*
-// read reflects the posture. The gateway (config.mjs) applies the SAME overlay for model
-// selection. Widens cognition only — never the deterministic spine or the fence.
+// fleet → 'strict' (the canon-bound baseline, an empty overlay). A specific fleet agent can be
+// raised declaratively in the fleet definition (contracts.posture_assignments.agents[AGENT_ID])
+// — the repo-principled alternative to a per-VM AGENT_POSTURE env hack. Applied AFTER the
+// contracts load + env overrides above and BEFORE the budget const captures below, so every
+// CONTRACTS.* read reflects the posture. The gateway (config.mjs) resolves the SAME posture for
+// model selection. Widens cognition only — never the deterministic spine or the fence.
 const IS_PRIME = existsSync(CORE_DIR + '/corekit/prime-config.json') || AGENT_ID === 'prime';
-const AGENT_POSTURE_NAME = agentPosture(CONTRACTS, { isPrime: IS_PRIME });
+const AGENT_POSTURE_NAME = agentPosture(CONTRACTS, { isPrime: IS_PRIME, agentId: AGENT_ID });
 CONTRACTS = applyPosture(CONTRACTS, AGENT_POSTURE_NAME);
 console.log(`[brain] capability posture: ${AGENT_POSTURE_NAME}${IS_PRIME ? ' (prime)' : ''}`);
 
