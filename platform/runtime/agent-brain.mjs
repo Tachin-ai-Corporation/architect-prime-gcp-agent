@@ -5714,12 +5714,20 @@ async function main() {
   // Phase 7A: Start Responsibility scheduler
   startResponsibilityScheduler();
 
-  // Phase 7A: Watch responsibility config for hot-reload
-  for (const f of [
-    CORE_DIR + '/corekit/responsibilities.json',
-    CORE_DIR + '/corekit/responsibilities-job.json',
-  ]) {
-    if (existsSync(f)) {
+  // Phase 7A: Watch responsibility config for hot-reload — the base plus every
+  // responsibilities-*.json overlay (matches loadResponsibilities' glob, so an
+  // operator/role overlay hot-reloads instead of waiting for a daemon restart).
+  {
+    const respDir = CORE_DIR + '/corekit';
+    const respFiles = [];
+    const respBase = respDir + '/responsibilities.json';
+    if (existsSync(respBase)) respFiles.push(respBase);
+    try {
+      for (const rf of readdirSync(respDir).filter(f => /^responsibilities-.+\.json$/.test(f)).sort()) {
+        respFiles.push(respDir + '/' + rf);
+      }
+    } catch { /* corekit dir may not exist in some contexts */ }
+    for (const f of respFiles) {
       watchFile(f, { interval: 10000 }, () => {
         log('INFO', `Responsibility config changed: ${f}`);
         loadResponsibilities();

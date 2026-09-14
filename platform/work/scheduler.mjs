@@ -8,7 +8,7 @@
 // All Firestore/brain access uses injected dependencies — no global state.
 // cronNextFire() is also exported standalone as a pure utility.
 
-import { readFileSync, existsSync } from 'fs';
+import { readFileSync, existsSync, readdirSync } from 'fs';
 
 // A responsibility "cycle in progress" (for the singleton guard) means an M mission
 // that is executing or about to. Everything else — complete/failed/cancelled AND
@@ -154,16 +154,29 @@ export function createScheduler(deps) {
 
   /**
    * Load responsibilities from on-disk JSON config files.
-   * Reads responsibilities.json and responsibilities-job.json, merges by ID
-   * (first-seen wins).
+   * Reads corekit/responsibilities.json (fleet base) first, then every
+   * corekit/responsibilities-*.json overlay (job, operator, role) sorted for
+   * determinism, merging by ID (first-seen wins, so the base stays authoritative).
    *
    * @returns {Array<object>} Loaded responsibilities array
    */
   function loadResponsibilities() {
-    const files = [
-      coreDir + '/corekit/responsibilities.json',
-      coreDir + '/corekit/responsibilities-job.json',
-    ];
+    // Read the fleet base first (authoritative under first-seen-wins), then EVERY
+    // responsibilities-*.json overlay present, sorted for determinism. The old code
+    // hardcoded only responsibilities.json + responsibilities-job.json, which
+    // silently dropped operator/role overlays mapped to any other
+    // responsibilities-*.json destination — e.g. operator responsibilities installed
+    // as corekit/responsibilities-devops.json (job-tachin-website.txt) never fired.
+    const dir = coreDir + '/corekit';
+    const files = [];
+    const basePath = dir + '/responsibilities.json';
+    if (existsSync(basePath)) files.push(basePath);
+    try {
+      const overlays = readdirSync(dir)
+        .filter(f => /^responsibilities-.+\.json$/.test(f))
+        .sort();
+      for (const f of overlays) files.push(dir + '/' + f);
+    } catch { /* corekit dir may not exist in some contexts */ }
     const merged = [];
     const seen = new Set();
     for (const f of files) {
