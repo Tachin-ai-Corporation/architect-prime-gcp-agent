@@ -12,6 +12,9 @@ const CONTRACTS = {
   brain: { max_iterations: 25 },
   postures: {
     strict: {},
+    focused: {
+      vertex: { strong_model_agents: ['prefrontal', 'motor', 'cerebellum'] },
+    },
     unbound: {
       vertex: { strong_model_agents: ['prefrontal', 'motor', 'cerebellum'] },
       brain: { max_iterations: 40 },
@@ -50,6 +53,14 @@ describe('withPosture — overlay application', () => {
     const eff = withPosture(CONTRACTS, { isPrime: false, agentId: 'millie', env: {} });
     assert.deepEqual(eff.vertex.strong_model_agents, ['prefrontal', 'motor', 'cerebellum']);
     assert.equal(eff.brain.max_iterations, 40);
+  });
+  it('focused = strong models but the TIGHT baseline budget (no widening)', () => {
+    // The defining invariant of 'focused': strong model tier for synthesis quality,
+    // WITHOUT the 'unbound' budget widening — so it can never silently become 'unbound'.
+    const c = { ...CONTRACTS, posture_assignments: { agents: { millie: 'focused' } } };
+    const eff = withPosture(c, { isPrime: false, agentId: 'millie', env: {} });
+    assert.deepEqual(eff.vertex.strong_model_agents, ['prefrontal', 'motor', 'cerebellum']);
+    assert.equal(eff.brain.max_iterations, 25); // base, NOT unbound's 40
   });
   it('an unassigned fleet agent stays on the base (strict = empty overlay)', () => {
     const eff = withPosture(CONTRACTS, { isPrime: false, agentId: 'stan', env: {} });
