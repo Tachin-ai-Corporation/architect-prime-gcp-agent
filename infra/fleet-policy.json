@@ -278,11 +278,13 @@
     "sync_interval_ms": 300000,
     "sync_enabled": true
   },
-  "_postures_comment": "Capability posture (C-37): the ONE brain overlays a named cognitive-latitude profile onto its effective contract by ROLE — 'unbound' for Prime (dashboard-only, admin-facing, human-in-the-loop; a wider cognitive envelope), 'strict' for fleet (the canon-bound baseline). Resolved + applied in platform/contracts/posture.mjs by BOTH processes independently: the brain daemon (agent-brain.mjs, before its budget const captures) and the neural gateway (corekit/brain/config.mjs getContracts, for model selection). Per-VM override for canary/rollback: AGENT_POSTURE=strict|unbound. A posture carries ONLY latitude knobs (execution model tier + iteration/tool budgets) — NEVER a capability, secret, egress, or state-machine key; C-37 forbids relaxing the deterministic spine or the structural fence. 'strict' is intentionally an EMPTY overlay (= today's behavior). 'focused' raises the model tier (prefrontal/motor/cerebellum -> subagentStrong) but KEEPS the tight baseline budgets (no dispatch/brain widening) — strong cognition without the 'unbound' churn, for gather-and-synthesis-heavy fleet work. See docs/plans/CAPABILITY_POSTURE_PLAN.md.",
+  "_postures_comment": "Capability posture (C-37): the ONE brain overlays a named cognitive-latitude profile onto its effective contract by ROLE — 'unbound' for Prime (dashboard-only, admin-facing, human-in-the-loop; a wider cognitive envelope), 'strict' for fleet (the canon-bound baseline). Resolved + applied in platform/contracts/posture.mjs by BOTH processes independently: the brain daemon (agent-brain.mjs, before its budget const captures) and the neural gateway (corekit/brain/config.mjs getContracts, for model selection). Per-VM override for canary/rollback: AGENT_POSTURE=strict|unbound. A posture carries ONLY latitude knobs (execution model tier + iteration/tool budgets) — NEVER a capability, secret, egress, or state-machine key; C-37 forbids relaxing the deterministic spine or the structural fence. 'strict' is intentionally an EMPTY overlay (= today's behavior). 'focused' raises the model tier (prefrontal/motor/cerebellum -> subagentStrong) AND tightens the budget BELOW baseline (brain.max_iterations 10, dispatch 30 vs base 25/50) — a strong, thorough model WILL keep iterating, so the cap must be tight or it over-works a task that is already done; strong cognition that converges fast without the 'unbound' churn, for gather-and-synthesis-heavy fleet work. See docs/plans/CAPABILITY_POSTURE_PLAN.md.",
   "postures": {
     "strict": {},
     "focused": {
-      "vertex": { "strong_model_agents": ["prefrontal", "motor", "cerebellum"] }
+      "vertex": { "strong_model_agents": ["prefrontal", "motor", "cerebellum"] },
+      "brain": { "max_iterations": 10 },
+      "dispatch": { "max_iterations": 30 }
     },
     "unbound": {
       "vertex": { "strong_model_agents": ["prefrontal", "motor", "cerebellum"] },
