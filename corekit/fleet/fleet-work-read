@@ -37,6 +37,14 @@ TYPE_FILTER="M"
 MISSION_ID=""
 JSON_MODE=false
 
+# Temp files declared up-front so the SINGLE EXIT-trap cleanup never trips
+# `set -u` on a path a given invocation didn't create — the --email path skips
+# the registry lookup (REG_TMP), which used to leave the drill/list EXIT traps
+# referencing an unbound $REG_TMP and abort with a non-zero exit.
+REG_TMP=""; M_TMP=""; C_TMP=""; Q_TMP=""
+cleanup() { rm -f "$REG_TMP" "$M_TMP" "$C_TMP" "$Q_TMP" 2>/dev/null || true; }
+trap cleanup EXIT
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --agent)   AGENT_NAME="$2";    shift 2 ;;
@@ -76,7 +84,7 @@ TOKEN="$(curl -sH 'Metadata-Flavor: Google' \
 if [[ -z "$AGENT_EMAIL" ]]; then
   [[ -n "$AGENT_NAME" ]] || die "Provide --agent <name> or --email <full-email>"
   [[ -n "$PRIME_ID" ]] || die "Cannot resolve PRIME_ID for registry lookup; pass --email instead"
-  REG_TMP="$(mktemp)"; trap 'rm -f "$REG_TMP"' EXIT
+  REG_TMP="$(mktemp)"
   curl -s -o "$REG_TMP" -H "Authorization: Bearer $TOKEN" \
     "${FIRESTORE_URL}/primes/${PRIME_ID}/fleet/${AGENT_NAME}"
   AGENT_EMAIL="$(python3 -c "
@@ -96,7 +104,6 @@ fi
 if [[ -n "$MISSION_ID" ]]; then
   # Fetch the mission, then each child (children[] holds C ids; T ids hang off C).
   M_TMP="$(mktemp)"; C_TMP="$(mktemp)"
-  trap 'rm -f "$REG_TMP" "$M_TMP" "$C_TMP"' EXIT
   curl -s -o "$M_TMP" -H "Authorization: Bearer $TOKEN" "${FIRESTORE_URL}/work/${MISSION_ID}"
 
   # Collect the whole subtree by querying children ids breadth-first via the
@@ -168,15 +175,22 @@ fi
 # ============================================================
 # List mode: last N missions for the agent
 # ============================================================
-# Equality on owner (fleet agents store owner == full email). No orderBy in
-# the query (avoids a composite-index requirement); sort client-side.
-Q_TMP="$(mktemp)"; trap 'rm -f "$REG_TMP" "$Q_TMP"' EXIT
+# Equality on owner (fleet agents store owner == full email) + orderBy
+# created_at DESC so the NEWEST envelopes come first. Needs the composite index
+# work(owner ASC, created_at DESC), provisioned via firestore.indexes.json.
+# The old query had NO orderBy ("to avoid a composite-index requirement") and
+# relied on a client-side sort of a limit:500 page — but Firestore returns that
+# page in an ARBITRARY order, so for a high-volume agent (>500 envelopes) it
+# excluded the recent missions entirely and surfaced only old canaries. Client
+# side still filters type/status and takes the last N.
+Q_TMP="$(mktemp)"
 QUERY_BODY="$(python3 -c "
 import json,sys
 email='$AGENT_EMAIL'
 print(json.dumps({'structuredQuery':{
   'from':[{'collectionId':'work'}],
   'where':{'fieldFilter':{'field':{'fieldPath':'owner'},'op':'EQUAL','value':{'stringValue':email}}},
+  'orderBy':[{'field':{'fieldPath':'created_at'},'direction':'DESCENDING'}],
   'limit':500}}))
 ")"
 
