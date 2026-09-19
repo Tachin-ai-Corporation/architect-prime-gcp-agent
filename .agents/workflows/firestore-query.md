@@ -4,8 +4,10 @@ description: Query and debug Firestore data for Prime agents — messages, tasks
 
 # Firestore Query & Agent Investigation
 
-> All queries run **via the VM** using its metadata credentials. This avoids local auth issues.
-> Follow `/ssh-vm-access` Step 1 if you don't know the VM name/zone.
+> Queries can run **via the VM** (its metadata credentials — no local auth needed) or **locally**
+> with `gcloud auth print-access-token` for the REST API plus ADC (`gcloud auth application-default
+> login`) for the `@google-cloud/firestore` client libs. Either way pass `--project=your-gcp-project`
+> explicitly. Follow `/ssh-vm-access` Step 1 if you don't know the VM name/zone.
 
 ## Step 0: Identify the Right VM
 
@@ -92,7 +94,7 @@ echo y | gcloud compute ssh {VM_NAME} --zone=us-central1-a --project=your-gcp-pr
 
 ### Script: List Recent Work Envelopes (Any Agent)
 
-Use this to see what missions exist. **No composite index needed.**
+Use this to see the most recent missions across **all** primes/agents — `work` is a ROOT collection. **No composite index needed.** To scope to one agent, add a `where owner == "<email>"` filter (that uses the `work(owner, created_at)` composite index).
 
 ```bash
 #!/bin/bash
@@ -101,7 +103,7 @@ TOKEN=$(curl -sH 'Metadata-Flavor: Google' 'http://metadata.google.internal/comp
 curl -s -X POST -H "Authorization: Bearer $TOKEN" \
   -H 'Content-Type: application/json' \
   -d '{"structuredQuery":{"from":[{"collectionId":"work"}],"orderBy":[{"field":{"fieldPath":"created_at"},"direction":"DESCENDING"}],"limit":10}}' \
-  'https://firestore.googleapis.com/v1/projects/your-gcp-project/databases/(default)/documents/primes/chucknorris:runQuery' \
+  'https://firestore.googleapis.com/v1/projects/your-gcp-project/databases/(default)/documents:runQuery' \
   | python3 -c "
 import sys, json
 for item in json.load(sys.stdin):
@@ -126,7 +128,7 @@ TOKEN=$(curl -sH 'Metadata-Flavor: Google' 'http://metadata.google.internal/comp
 
 # Replace ENVELOPE_ID with the actual ID (e.g., w-1781293786846-31941720)
 curl -s -H "Authorization: Bearer $TOKEN" \
-  'https://firestore.googleapis.com/v1/projects/your-gcp-project/databases/(default)/documents/primes/chucknorris/work/ENVELOPE_ID' \
+  'https://firestore.googleapis.com/v1/projects/your-gcp-project/databases/(default)/documents/work/ENVELOPE_ID' \
   | python3 -c "
 import sys, json
 f = json.load(sys.stdin).get('fields', {})
@@ -159,21 +161,34 @@ for doc in json.load(sys.stdin).get('documents', []):
 
 ## Collection Paths
 
-All paths relative to: `primes/chucknorris/`
+There are **two roots**, and getting this wrong silently returns nothing.
+
+- **Root collections** live at the database root — `.../documents/<collection>/<id>`. Query them at
+  `.../documents:runQuery` (name the collection in `from`), NOT under a prime.
+- **Prime-scoped collections** live under a prime document — `.../documents/primes/<primeId>/<collection>/<id>`.
+  Query them at `.../documents/primes/<primeId>:runQuery`. Live prime ids: `chuck`, `candicejr`, `mm`.
+
+### Root collections (NOT under `primes/`)
 
 | Collection | Content |
 |-----------|---------|
-| `work/{id}` | M/C/T work envelopes |
-| `intake/{id}` | Inbound messages from ears |
-| `work_archive/{id}` | Archived envelopes |
-| `projects/{id}` | Project registry (top-level, not under primes) |
+| `primes/{id}` | Prime registry (`chuck`, `candicejr`, `mm`) |
+| `work/{id}` | M/C/T work envelopes. Archived ones stay here with `status: "archived"` — there is **no** separate `work_archive` collection |
+| `approvals/{id}` | Approval gates — scoped to a prime by the `prime_id` **field**, not by nesting |
 | `processes/{id}` | Process definitions |
-| `approvals/{id}` | Approval gates |
-| `fleet/{agent_id}` | Fleet agent status |
-| `messages` | Chat messages |
-| `commands` | Dashboard commands |
+| `projects/{id}` | Project registry |
 
-> **Note:** `projects` is a top-level collection, NOT under `primes/chucknorris/`.
+### Prime-scoped collections (under `primes/{primeId}/`)
+
+| Collection | Content |
+|-----------|---------|
+| `primes/{id}/intake/{intakeId}` | Inbound messages from ears |
+| `primes/{id}/messages/{msgId}` | Chat messages (dashboard ↔ prime) |
+| `primes/{id}/fleet/{agentId}` | Fleet agent status |
+| `primes/{id}/commands/{cmdId}` | Dashboard commands |
+
+> **Legacy note:** a few envelopes may still linger under `primes/{id}/work` from before the
+> project-rooting migration (C-1). Current work is at the **root** `work` collection — always query there.
 
 ## Agent Investigation Playbook
 
@@ -198,6 +213,7 @@ When asked to check on an agent's work, follow this order:
 
 ## Notes
 - **Zone**: All VMs in `us-central1-a`.
-- **Project**: `your-gcp-project`.
-- **Token refresh**: VM metadata tokens auto-refresh; no manual auth needed.
+- **Project**: `your-gcp-project` — pass `--project` explicitly (there may be no default set locally).
+- **Auth**: On the VM, metadata tokens auto-refresh (no manual auth). Locally, `gcloud auth print-access-token` gives a REST bearer token and ADC covers the client libs.
+- **Root vs prime-scoped**: `work`/`approvals`/`processes`/`projects` are ROOT; `intake`/`messages`/`fleet`/`commands` are under `primes/{id}` (see Collection Paths). Querying the wrong root returns an empty result, not an error.
 - **400 Bad Request**: Firestore paths need even segment counts (collection/document pairs).
