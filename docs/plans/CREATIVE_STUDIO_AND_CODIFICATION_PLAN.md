@@ -73,7 +73,7 @@ No real folder IDs or meeting names go into `specialties/` or `platform/` — th
 }
 ```
 
-- `30 15 * * 4` = **Thu 15:30 UTC = Thu 10:30 CDT** (dow `4` = Thursday; lands after the week's meetings). **Cron is UTC-only — the `timezone` field is documentation, not honored** (`platform/work/scheduler.mjs`); when DST ends it fires at 09:30 CST, so re-pin to `30 16 * * 4` at the boundary if the exact hour matters. *(Superseded v2026.09.24.1.1: the scheduler now honors `timezone`, and the schedule is `15 10 * * 4` + `America/Chicago` — 10:15 Central year-round, no re-pin.)*
+- `30 15 * * 4` = **Thu 15:30 UTC = Thu 10:30 CDT** (dow `4` = Thursday; lands after the week's meetings). **Cron is UTC-only — the `timezone` field is documentation, not honored** (`platform/work/scheduler.mjs`); when DST ends it fires at 09:30 CST, so re-pin to `30 16 * * 4` at the boundary if the exact hour matters. *(Superseded v2026.09.24.1.1: the scheduler now honors `timezone`, and the schedule is `15 10 * * 4` + `America/Chicago` — 10:15 Central year-round, no re-pin; moved to `20 10 * * 4` — 10:20 Central — in v2026.09.24.1.8.)*
 - Recall is by **intent-keyword match**, not `processRef` (which is inert) — the instruction deliberately contains "weekly executive update" / "meeting" so the operator process is recalled at plan time (`platform/runtime/actions/checkpoint_plan.mjs`).
 
 ### The operator process (Tachin-specific narrative)

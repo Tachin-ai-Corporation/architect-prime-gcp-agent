@@ -5,7 +5,7 @@
     {
       "id": "r-weekly-exec-update",
       "name": "Weekly Executive Update",
-      "schedule": "15 10 * * 4",
+      "schedule": "20 10 * * 4",
       "timezone": "America/Chicago",
       "enabled": true,
       "singleton": true,
