@@ -210,6 +210,22 @@ describe('shipped responsibilities', () => {
     assert.match(text, /READ THE PROJECT/);
   });
 
+  it('the weekly exec update never widens sharing, never trusts a remembered doc id, and finds notes by name', () => {
+    // 2026-09-24: a run edited a TRASHED doc it remembered by id, and added "anyone with the link"
+    // to an executive briefing because the text asked for a "shareable link". Google also re-creates
+    // its Meet folders whenever the root is shared, so a pinned folder id goes stale.
+    const r = JSON.parse(readFileSync(join(repo, 'specialties', 'assistant', 'responsibilities-assistant.json'), 'utf8'))
+      .responsibilities.find((x) => x.id === 'r-weekly-exec-update');
+    const text = JSON.stringify(r);
+    assert.doesNotMatch(text, /shareable/i, '"shareable link" read as "make it link-shareable"');
+    assert.match(text, /NEVER change the doc's sharing/);
+    assert.match(text, /never reuse a doc id carried over from recall or an earlier run/);
+    assert.doesNotMatch(text, /UPDATE that one/, 'the update path lost the scaffold; the doc is created fresh');
+    assert.match(text, /BY ITS NAME/, 'Meet folders are forked by Google — the name is the stable handle');
+    const playbook = JSON.parse(readFileSync(join(repo, 'operator', 'processes', 'p-weekly-exec-update.json'), 'utf8')).narrative;
+    assert.doesNotMatch(playbook, /shareable|update that one|at exactly those ids/i, 'the playbook must not contradict the responsibility');
+  });
+
   it('declare only five-field schedules in timezones the scheduler can honor', () => {
     // An unknown zone only WARNs at runtime and schedules in UTC — a typo in shipped
     // content would move a fire time by hours with nothing but a log line to show it.
