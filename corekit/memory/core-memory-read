@@ -46,6 +46,13 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
+# `--category all` (or `*`) means every category. It used to become a literal filter
+# `category == "all"`, match nothing, and print "No core memory entries found." — which a
+# consolidation read as "Core Memory is empty" and then "promoted" project facts into it.
+if [[ "$CATEGORY" == "all" || "$CATEGORY" == "*" ]]; then
+  CATEGORY=""
+fi
+
 # Auto-detect fleet agent context
 if [[ -z "$AGENT" && -n "${AGENT_ID:-}" ]]; then
   AGENT="$AGENT_ID"
@@ -135,7 +142,8 @@ RESPONSE=$(curl -sf \
   -X POST "https://firestore.googleapis.com/v1/${PARENT}:runQuery" \
   -d "${QUERY_BODY}" 2>&1)
 
-echo "$RESPONSE" | QUERY="$QUERY" CLIENT_STATUS="$CLIENT_STATUS_FILTER" CLIENT_CATEGORY="$CLIENT_CATEGORY_FILTER" python3 -c '
+echo "$RESPONSE" | QUERY="$QUERY" CLIENT_STATUS="$CLIENT_STATUS_FILTER" CLIENT_CATEGORY="$CLIENT_CATEGORY_FILTER" \
+  REQ_CATEGORY="$CATEGORY" REQ_STATUS="$STATUS" REQ_SINCE="$SINCE" REQ_AGENT="${AGENT:-prime}" python3 -c '
 import json, sys, os
 
 try:
@@ -228,7 +236,17 @@ for entry in results:
     print()
 
 if count == 0:
-    print("No core memory entries found.")
+    # Say WHAT was filtered. A filtered read that matches nothing is not an empty memory —
+    # reading it as one is how a consolidation concluded "Core Memory is empty" and filled it
+    # with copies of project facts (2026-09-24).
+    scope = ["agent " + os.environ.get("REQ_AGENT", "?")]
+    for label, key in (("category", "REQ_CATEGORY"), ("query", "QUERY"), ("status", "REQ_STATUS"), ("since", "REQ_SINCE")):
+        v = os.environ.get(key, "").strip()
+        if v:
+            scope.append(label + " " + repr(v))
+    print("No core memory entries matched (" + ", ".join(scope) + ").")
+    if any(os.environ.get(k, "").strip() for k in ("REQ_CATEGORY", "QUERY", "REQ_SINCE")):
+        print("This read was FILTERED — it does not mean memory is empty. Omit --category/--query/--since to read every entry before concluding that.")
 else:
     print(f"--- {count} entries ---")
 ' 2>/dev/null || echo "No results found."

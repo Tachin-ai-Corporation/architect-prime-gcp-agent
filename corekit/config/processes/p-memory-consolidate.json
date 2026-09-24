@@ -2,7 +2,7 @@
   "id": "p-memory-consolidate",
   "name": "Memory Consolidation",
   "description": "Nightly memory consolidation: gather sessions and the long-term store, triage honestly, prune and promote sparingly, rewrite the memory index, and review Deep Truths.",
-  "narrative": "This is memory's own housekeeping, and it is exclusively about memory — ignore whatever other work is in flight, and write nothing but memory: working memory, the long-term store and Deep Truths. Gather the raw material first: recent sessions and the current long-term store, both the recent entries and the full archive, and read the playbooks and projects the agent works with so you can tell a memory from a restatement of a definition — definitions are read, never edited. Triage it into what stays, what deserves promotion into durable memory, and what has gone stale, gone wrong or been duplicated and should be retired — then execute those retirements and promotions conservatively (a few high-value writes, never a flood, never a second copy of a fact that already stands, never a rename of one that is still right). Rewrite the memory index so it reflects only what is still active. Finally, review whether any long-standing, well-evidenced fact has earned Deep-Truth status. The throughline: gather, triage honestly, prune and promote sparingly, keep the index true.",
+  "narrative": "This is memory's own housekeeping, and it is exclusively about memory — ignore whatever other work is in flight, and write nothing but memory: working memory, the long-term store and Deep Truths. Gather the raw material first: recent sessions and the current long-term store, both the recent entries and the full archive, and read the playbooks and projects the agent works with so you can tell a memory from a restatement of a definition — definitions are read, never edited, and never copied into memory. Triage it into what stays, what deserves promotion into durable memory, and what has gone stale, gone wrong or been duplicated and should be retired — then execute those retirements and promotions conservatively (a few high-value writes, never a flood, never a second copy of a fact that already stands, never a rename of one that is still right). Rewrite the memory index so it reflects only what is still active. Finally, review whether any long-standing, well-evidenced fact has earned Deep-Truth status. The throughline: gather, triage honestly, prune and promote sparingly, keep the index true.",
   "intent_keywords": [
     "memory",
     "consolidation",
@@ -11,5 +11,5 @@
     "nightly"
   ],
   "status": "active",
-  "version": 6
+  "version": 7
 }

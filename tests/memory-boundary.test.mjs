@@ -282,6 +282,22 @@ describe('no memory path writes a definition', () => {
     }
   });
 
+  it('reading a definition never becomes copying it into memory (the 2026-09-24 canary)', () => {
+    // The canary read `--category all` (not a category → a silent empty result), concluded "Core
+    // Memory was initially empty", and promoted the default project's resources — a placeholder URL
+    // included — into memory as "canonical project facts".
+    const r = JSON.parse(read('corekit/config/responsibilities.json')).responsibilities.find((x) => x.id === 'r-memory-consolidation');
+    const text = JSON.stringify(r);
+    assert.match(text, /NEVER copy a definition's content into Core Memory/);
+    assert.match(text, /An empty read is almost always a bad filter, not an empty memory/);
+    assert.match(text, /Never promote something a project or playbook already declares/);
+    assert.match(read('skills/memory-consolidate/SKILL.md'), /never copy a definition INTO memory/);
+    assert.match(read('corekit/config/processes/p-memory-consolidate.json'), /never copied into memory/);
+    const cmr = read('corekit/memory/core-memory-read');
+    assert.match(cmr, /if \[\[ "\$CATEGORY" == "all" \|\| "\$CATEGORY" == "\*" \]\]; then\s+CATEGORY=""/, '`--category all` reads every category');
+    assert.match(cmr, /This read was FILTERED — it does not mean memory is empty/, 'an empty filtered read says so');
+  });
+
   it('the consolidation skill and responsibility hand out only the memory tools', () => {
     const skill = read('skills/memory-consolidate/SKILL.md');
     assert.doesNotMatch(skill, /`runCommand`|`writeFile`/, 'no shell, no general file writer');
