@@ -23,7 +23,7 @@ These fields are in the responsibility JSON definition (not the WorkEnvelope):
 | `min_spacing_minutes` | `number` | Minimum minutes between firings |
 | `instruction` | `string` | What the agent should do when this fires |
 | `context` | `ResponsibilityContext` | Rich context for the agent |
-| `processRef` | `string \| null` | Playbook ID the fired Mission recalls (if referenced) |
+| `processRef` | `string \| null` | The playbook the fired Mission follows as its planning prior: the scheduler resolves it and carries its narrative into the mission's context (never as steps); a missing or retired playbook logs a WARN and the mission fires on `context.process` alone |
 | `processParameters` | `Record<string, unknown> \| null` | Optional parameters carried with the reference |
 | `project_id` | `string \| null` | Project for generated Missions (falls back to default) |
 | `trigger` | `string \| null` | Event trigger: `'on_complete'`, `'on_failure'`, `'on_merge'` **(not yet implemented)**, `'on_deploy'` **(not yet implemented)**, or `null` |
@@ -113,7 +113,7 @@ sequenceDiagram
 4. Fire the responsibility:
    - Create **R envelope** (type `R`, immediately `complete`)
    - Create **M envelope** (type `M`, `active`, child of R)
-   - Dispatch the Mission into the cortex decide loop — the agent plans its own checkpoints (C-15); if `processRef` references a playbook, its narrative is recalled as a planning prior
+   - Dispatch the Mission into the cortex decide loop — the agent plans its own checkpoints (C-15); if `processRef` references a playbook, the scheduler has already carried its narrative into the mission's context as a planning prior. Deployment-specific inputs (folder ids, a brand doc) are resource references of the mission's **project** (`project_id`), never memory
 
 ### The R→M Envelope Pair
 

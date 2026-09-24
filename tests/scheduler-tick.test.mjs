@@ -16,12 +16,13 @@ import { createScheduler } from '../platform/work/scheduler.mjs';
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), '..');
 
-function harness(responsibilities) {
+function harness(responsibilities, extraDeps = {}) {
   const root = mkdtempSync(join(tmpdir(), 'sched-tick-'));
   mkdirSync(join(root, 'corekit'), { recursive: true });
   writeFileSync(join(root, 'corekit', 'responsibilities.json'),
     JSON.stringify({ version: 2, responsibilities }));
   const missions = []; // responsibility id of each mission created
+  const missionDocs = []; // the first write of each M, as written
   const logs = [];
   let n = 0;
   const s = createScheduler({
@@ -36,8 +37,10 @@ function harness(responsibilities) {
       // fireResponsibility writes each M twice (created, then with recalled memory) — count the first.
       if (col === 'work' && doc.type === 'M' && doc.memory_context === null) {
         missions.push(doc.source_meta.responsibility_id);
+        missionDocs.push(JSON.parse(JSON.stringify(doc)));
       }
     },
+    ...extraDeps,
   });
   s.loadResponsibilities();
   const firesAt = async (iso) => {
@@ -46,7 +49,7 @@ function harness(responsibilities) {
     return missions.length - before;
   };
   const done = () => { s.stop(); rmSync(root, { recursive: true, force: true }); };
-  return { s, logs, firesAt, done };
+  return { s, logs, firesAt, missionDocs, done };
 }
 
 describe('scheduler tick — long-period schedules stay armed', () => {
@@ -128,7 +131,85 @@ describe('scheduler tick — the declared timezone is honored', () => {
   });
 });
 
+describe('scheduler — processRef is honored', () => {
+  // Documented as "the playbook the fired mission recalls", processRef was read by nothing: the
+  // mission saw only context.process. It is now resolved at fire time and carried as a prior.
+  const PLAYBOOK = { id: 'p-probe', name: 'Probe Playbook', narrative: 'Gather first, then synthesize from the full notes.', status: 'active' };
+  const resp = { id: 'r-pb', name: 'PB', schedule: '0 8 * * *', enabled: true, processRef: 'p-probe', instruction: 'Do the thing.' };
+
+  it('carries the playbook narrative into the mission as its planning prior, and stamps it for the lesson reflex', async () => {
+    const h = harness([resp], { getProcess: async (id) => (id === 'p-probe' ? PLAYBOOK : null) });
+    try {
+      h.s.start(new Date('2026-09-24T07:00:00Z')); h.s.stop();
+      assert.equal(await h.firesAt('2026-09-24T08:00:20Z'), 1);
+      const [m] = h.missionDocs;
+      assert.match(m.context_summary, /PLAYBOOK — Probe Playbook \(p-probe\): Gather first, then synthesize from the full notes\./);
+      assert.equal(m.source_meta.process_ref, 'p-probe');
+      assert.deepEqual(m.recalled_processes, ['p-probe']);
+    } finally { h.done(); }
+  });
+
+  it('a missing or retired playbook degrades to context.process alone — loudly, never silently', async () => {
+    for (const found of [null, { ...PLAYBOOK, status: 'deprecated' }, { ...PLAYBOOK, narrative: '' }]) {
+      const h = harness([resp], { getProcess: async () => found });
+      try {
+        h.s.start(new Date('2026-09-24T07:00:00Z')); h.s.stop();
+        assert.equal(await h.firesAt('2026-09-24T08:00:20Z'), 1, 'still fires');
+        const [m] = h.missionDocs;
+        assert.doesNotMatch(m.context_summary || '', /PLAYBOOK —/);
+        assert.equal('process_ref' in m.source_meta, false);
+        assert.ok(h.logs.some((l) => l.startsWith('WARN') && l.includes("processRef 'p-probe'")));
+      } finally { h.done(); }
+    }
+  });
+
+  it('with no process registry wired, it fires exactly as before', async () => {
+    const h = harness([resp]);
+    try {
+      h.s.start(new Date('2026-09-24T07:00:00Z')); h.s.stop();
+      assert.equal(await h.firesAt('2026-09-24T08:00:20Z'), 1);
+      assert.equal('recalled_processes' in h.missionDocs[0], false);
+    } finally { h.done(); }
+  });
+});
+
 describe('shipped responsibilities', () => {
+  it('every processRef resolves to a shipped playbook seed', () => {
+    const seeds = new Set();
+    for (const dir of [join(repo, 'corekit', 'config', 'processes'), join(repo, 'operator', 'processes')]) {
+      if (!existsSync(dir)) continue;
+      for (const f of readdirSync(dir)) {
+        if (f.endsWith('.json')) seeds.add(JSON.parse(readFileSync(join(dir, f), 'utf8')).id);
+      }
+    }
+    const files = [
+      join(repo, 'corekit', 'config', 'responsibilities.json'),
+      join(repo, 'corekit', 'config', 'responsibilities-prime.json'),
+      ...readdirSync(join(repo, 'specialties'), { withFileTypes: true }).filter((d) => d.isDirectory())
+        .flatMap((d) => readdirSync(join(repo, 'specialties', d.name)).filter((f) => /^responsibilities-.+\.json$/.test(f))
+          .map((f) => join(repo, 'specialties', d.name, f))),
+    ];
+    let refs = 0;
+    for (const f of files) {
+      for (const r of JSON.parse(readFileSync(f, 'utf8')).responsibilities || []) {
+        if (!r.processRef) continue;
+        refs += 1;
+        assert.ok(seeds.has(r.processRef), `${r.id} → processRef '${r.processRef}' has no shipped playbook`);
+      }
+    }
+    assert.ok(refs >= 2, `expected the shipped processRefs (consolidation, weekly exec), saw ${refs}`);
+  });
+
+  it('the weekly exec update takes its bindings from a project, not from memory', () => {
+    const r = JSON.parse(readFileSync(join(repo, 'specialties', 'assistant', 'responsibilities-assistant.json'), 'utf8'))
+      .responsibilities.find((x) => x.id === 'r-weekly-exec-update');
+    assert.equal(r.project_id, 'exec-briefing');
+    assert.equal(r.processRef, 'p-weekly-exec-update');
+    const text = JSON.stringify(r);
+    assert.doesNotMatch(text, /from (core )?memory|core-memory-read|READ MEMORY/i, 'ids are project resources — memory is pruned nightly');
+    assert.match(text, /READ THE PROJECT/);
+  });
+
   it('declare only five-field schedules in timezones the scheduler can honor', () => {
     // An unknown zone only WARNs at runtime and schedules in UTC — a typo in shipped
     // content would move a fire time by hours with nothing but a log line to show it.

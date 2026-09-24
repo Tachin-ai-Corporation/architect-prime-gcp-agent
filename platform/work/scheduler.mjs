@@ -158,6 +158,7 @@ export function cronNextFire(expression, timeZone, from = new Date()) {
  * @param {function} deps.recallMemory             - async (query, ctx) => memory
  * @param {function} deps.firestoreWrite           - async (collection, docId, data) => result
  * @param {function} [deps.firestoreQuery]          - async (collection, filters) => docs[] — for singleton check
+ * @param {function} [deps.getProcess]             - async (id) => playbook|null — resolves a responsibility's processRef
  * @param {function} deps.getDefaultProjectId      - () => string|null
  * @returns {object} Scheduler API
  */
@@ -171,6 +172,7 @@ export function createScheduler(deps) {
     firestoreWrite,
     firestoreRead,
     firestoreQuery,
+    getProcess,
     getDefaultProjectId,
   } = deps;
 
@@ -287,6 +289,22 @@ export function createScheduler(deps) {
     if (resp.context?.process?.length) {
       contextParts.push(`PROCESS:\n${resp.context.process.map((s, i) => `${i + 1}. ${s}`).join('\n')}`);
     }
+    // processRef — the playbook this responsibility follows. Documented as "the playbook the fired
+    // mission recalls", but read by nothing until now: the mission saw only context.process, and any
+    // playbook recall was left to a model's keyword match. Resolved here, deterministically (C-4), and
+    // carried as the mission's planning PRIOR — a narrative the agent adapts, never steps (C-15/C-28).
+    // Best-effort: a missing or retired playbook degrades to context.process alone, loudly.
+    let playbookId = null;
+    if (resp.processRef && getProcess) {
+      let playbook = null;
+      try { playbook = await getProcess(resp.processRef); } catch { playbook = null; }
+      if (playbook?.narrative && playbook.status !== 'deprecated') {
+        playbookId = resp.processRef;
+        contextParts.push(`PLAYBOOK — ${playbook.name || playbookId} (${playbookId}): ${playbook.narrative}`);
+      } else {
+        log('WARN', `Responsibility ${resp.id}: processRef '${resp.processRef}' not found, retired, or without a narrative — firing on context.process alone`);
+      }
+    }
     if (resp.context?.reference_files?.length) {
       contextParts.push(`REFERENCE FILES: ${resp.context.reference_files.join(', ')}`);
     }
@@ -379,7 +397,10 @@ export function createScheduler(deps) {
         responsibility_name: resp.name,
         fired_at: now(),
         ...scopeMeta,
+        ...(playbookId ? { process_ref: playbookId } : {}),
       },
+      // The playbook it followed, for the post-mission lesson reflex (checkpoint_plan merges its own matches in).
+      ...(playbookId ? { recalled_processes: [playbookId] } : {}),
       project_id: resp.project_id || DEFAULT_PROJECT_ID,
       created_at: now(),
       started_at: null,

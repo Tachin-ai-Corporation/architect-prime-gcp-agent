@@ -5757,6 +5757,8 @@ function _initScheduler() {
     firestoreWrite,
     firestoreRead,
     firestoreQuery,
+    // Resolves a responsibility's processRef into its playbook (local seeds + the global library).
+    getProcess: async (id) => { await ensureProcessesLoaded(); return PROCESSES[id] || null; },
     getDefaultProjectId: () => DEFAULT_PROJECT_ID,
     logger: log,
     config: {
