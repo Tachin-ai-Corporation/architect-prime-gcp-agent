@@ -16,7 +16,8 @@ These fields are in the responsibility JSON definition (not the WorkEnvelope):
 |-------|------|-------------|
 | `id` | `string` | Unique identifier (e.g. `r-memory-consolidation`) |
 | `name` | `string` | Human-readable name |
-| `schedule` | `string` | Cron expression (5-field: `min hour dom month dow`) |
+| `schedule` | `string` | Cron expression (5-field: `min hour dom month dow`), read in `timezone` |
+| `timezone` | `string` | IANA zone the schedule is written in (default `UTC`). DST moves the UTC instant, not the local time: `15 10 * * 4` + `America/Chicago` is 10:15 Central all year. An unknown zone logs a WARN and schedules in UTC |
 | `enabled` | `boolean` | Whether the scheduler fires this responsibility |
 | `min_spacing_minutes` | `number` | Minimum minutes between firings |
 | `instruction` | `string` | What the agent should do when this fires |
@@ -106,7 +107,7 @@ sequenceDiagram
 ### Scheduling Loop
 
 1. Every 60 seconds, the daemon iterates all enabled responsibilities
-2. For each: check if the cron expression matches the current time
+2. For each: check whether its next fire time (the next cron match in its `timezone`, looked up to 8 days ahead) has arrived. A slot further out than that — a monthly schedule — has no next fire yet; the loop re-checks hourly and arms it as it comes into range, so a long cadence is never dropped
 3. Check `min_spacing_minutes` — if fired too recently, skip and advance to next fire time
 4. Fire the responsibility:
    - Create **R envelope** (type `R`, immediately `complete`)

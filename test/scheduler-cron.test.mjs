@@ -116,4 +116,61 @@ describe('cronNextFire', () => {
     const result = cronNextFire('0 0 31 2 *');
     assert.equal(result, null);
   });
+
+  // The horizon was 48h, shorter than a week: right after a weekly slot the next
+  // one was "not found", and the tick loop treated that as never. r-weekly-exec-update
+  // fired on 2026-09-17 and was dormant on 2026-09-24.
+  it('finds the next WEEKLY slot from right after the previous one', () => {
+    const next = cronNextFire('30 15 * * 4', 'UTC', new Date('2026-09-17T15:30:00Z'));
+    assert.equal(next?.toISOString(), '2026-09-24T15:30:00.000Z');
+  });
+
+  it('scans from the given instant, starting at the next minute', () => {
+    const next = cronNextFire('* * * * *', 'UTC', new Date('2026-09-24T10:00:30Z'));
+    assert.equal(next?.toISOString(), '2026-09-24T10:01:00.000Z');
+  });
+
+  it('still returns null past the horizon (a monthly slot 30 days out)', () => {
+    assert.equal(cronNextFire('0 9 1 * *', 'UTC', new Date('2026-09-01T09:00:00Z')), null);
+  });
+
+  it('a zoned weekly slot lands on the right UTC instant on both sides of DST', () => {
+    // 10:15 Central: CDT (UTC-5) until 2026-11-01, CST (UTC-6) after.
+    assert.equal(
+      cronNextFire('15 10 * * 4', 'America/Chicago', new Date('2026-09-24T16:00:00Z'))?.toISOString(),
+      '2026-10-01T15:15:00.000Z');
+    assert.equal(
+      cronNextFire('15 10 * * 4', 'America/Chicago', new Date('2026-10-29T16:00:00Z'))?.toISOString(),
+      '2026-11-05T16:15:00.000Z');
+  });
+});
+
+// ── timezone ────────────────────────────────────────────────────────
+
+describe('cronMatch — timezone', () => {
+  it('matches the declared local time in CDT (UTC-5)', () => {
+    assert.equal(cronMatch('15 10 * * 4', new Date('2026-09-24T15:15:00Z'), 'America/Chicago'), true);
+  });
+
+  it('keeps the local time across the DST change (CST, UTC-6)', () => {
+    assert.equal(cronMatch('15 10 * * 4', new Date('2026-11-05T16:15:00Z'), 'America/Chicago'), true);
+    assert.equal(cronMatch('15 10 * * 4', new Date('2026-11-05T15:15:00Z'), 'America/Chicago'), false,
+      'a UTC-baked schedule would have fired here — an hour early — once DST ended');
+  });
+
+  it('reads the day of week in the zone, not in UTC', () => {
+    // 02:00Z on the 25th is Friday in UTC, still Thursday 21:00 in Chicago.
+    assert.equal(cronMatch('0 21 * * 4', new Date('2026-09-25T02:00:00Z'), 'America/Chicago'), true);
+    assert.equal(cronMatch('0 21 * * 4', new Date('2026-09-25T02:00:00Z')), false);
+  });
+
+  it('with no zone (or UTC) the expression is UTC, exactly as before', () => {
+    assert.equal(cronMatch('15 10 * * 4', new Date('2026-09-24T10:15:00Z')), true);
+    assert.equal(cronMatch('15 10 * * 4', new Date('2026-09-24T10:15:00Z'), 'UTC'), true);
+    assert.equal(cronMatch('15 10 * * 4', new Date('2026-09-24T15:15:00Z')), false);
+  });
+
+  it('an unknown zone throws rather than guessing', () => {
+    assert.throws(() => cronMatch('* * * * *', new Date(), 'Mars/Olympus_Mons'), RangeError);
+  });
 });

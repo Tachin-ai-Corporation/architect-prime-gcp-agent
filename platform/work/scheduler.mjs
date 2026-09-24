@@ -3,7 +3,8 @@
 //
 // Manages cron-scheduled responsibilities (load from disk JSON, compute next
 // fire times, periodic check loop) and event-triggered responsibilities
-// (on_complete, on_deploy, on_failure).
+// (on_complete, on_deploy, on_failure). A schedule is matched in the
+// responsibility's declared IANA `timezone` (default UTC).
 //
 // All Firestore/brain access uses injected dependencies — no global state.
 // cronNextFire() is also exported standalone as a pure utility.
@@ -18,23 +19,67 @@ import { readFileSync, existsSync, readdirSync } from 'fs';
 // treated as in-progress, so a fresh fire was refused against archived history.
 const RESP_IN_PROGRESS = new Set(['active', 'queued', 'pending', 'waiting']);
 
+// How far ahead cronNextFire looks for the next slot. It was 48h — shorter than a
+// week — so every WEEKLY responsibility re-armed to null after its first fire or
+// skip, and the tick loop skipped a null next-fire forever: r-weekly-exec-update
+// fired once after a restart and then never again (its 2026-09-24 slot passed
+// silently while the daily consolidation beside it fired every morning). 8 days
+// covers weekly with a day of margin; a longer cadence (monthly) that starts
+// outside the horizon is armed by the tick loop's re-arm as it comes into range.
+const NEXT_FIRE_HORIZON_MS = 8 * 24 * 60 * 60 * 1000;
+
+// How often the tick loop retries arming a null next-fire. Far below the horizon,
+// so any slot is armed at least (horizon − interval) before it is due, while a
+// cron that never matches (the Feb-31 event-only idiom) rescans at most hourly.
+const REARM_INTERVAL_MS = 60 * 60 * 1000;
+
 // ---- Cron expression helpers (pure functions) ----
 
+const WEEKDAY = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+const _zoneFormatters = new Map(); // IANA zone → Intl.DateTimeFormat (construction is the slow part)
+
 /**
- * Check whether a 5-field cron expression matches a given Date (UTC).
- * Fields: minute hour day-of-month month day-of-week
+ * The wall-clock fields a cron expression is matched against, read in `timeZone`.
+ * UTC (the default) uses the Date's UTC getters directly. Any other IANA zone goes
+ * through Intl, so a DST change moves the UTC instant and leaves the declared local
+ * time where it was. An unknown zone throws a RangeError — this does not guess.
+ *
+ * @param {Date} date
+ * @param {string} [timeZone='UTC']
+ * @returns {{min:number, hour:number, dom:number, mon:number, dow:number}} dow 0=Sun
+ */
+function wallClock(date, timeZone) {
+  if (!timeZone || timeZone === 'UTC') {
+    return {
+      min: date.getUTCMinutes(), hour: date.getUTCHours(), dom: date.getUTCDate(),
+      mon: date.getUTCMonth() + 1, dow: date.getUTCDay(),
+    };
+  }
+  let fmt = _zoneFormatters.get(timeZone);
+  if (!fmt) {
+    fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone, hourCycle: 'h23', weekday: 'short',
+      month: 'numeric', day: 'numeric', hour: 'numeric', minute: 'numeric',
+    });
+    _zoneFormatters.set(timeZone, fmt);
+  }
+  const p = {};
+  for (const { type, value } of fmt.formatToParts(date)) p[type] = value;
+  return { min: +p.minute, hour: +p.hour, dom: +p.day, mon: +p.month, dow: WEEKDAY[p.weekday] };
+}
+
+/**
+ * Check whether a 5-field cron expression matches a given Date.
+ * Fields: minute hour day-of-month month day-of-week — read in `timeZone`.
  *
  * @param {string} expression - Standard 5-field cron expression
- * @param {Date} date - Date to check against (uses UTC components)
+ * @param {Date} date - Date to check against
+ * @param {string} [timeZone='UTC'] - IANA zone the expression is written in
  * @returns {boolean} True if the expression matches the date
  */
-export function cronMatch(expression, date) {
+export function cronMatch(expression, date, timeZone) {
   const [minExpr, hourExpr, domExpr, monExpr, dowExpr] = expression.trim().split(/\s+/);
-  const min = date.getUTCMinutes();
-  const hour = date.getUTCHours();
-  const dom = date.getUTCDate();
-  const mon = date.getUTCMonth() + 1;
-  const dow = date.getUTCDay(); // 0=Sun
+  const { min, hour, dom, mon, dow } = wallClock(date, timeZone);
 
   return fieldMatches(minExpr, min, 0, 59)
     && fieldMatches(hourExpr, hour, 0, 23)
@@ -76,24 +121,24 @@ export function fieldMatches(expr, value, _rangeMin, _rangeMax) {
 
 /**
  * Calculate the next fire time for a cron expression by scanning forward
- * minute-by-minute from now (max 48 hours).
+ * minute-by-minute from `from` (max NEXT_FIRE_HORIZON_MS — 8 days).
  *
  * Pure function — no side effects, no dependencies.
  *
  * @param {string} expression - Standard 5-field cron expression
- * @returns {Date|null} Next matching Date, or null if none within 48h
+ * @param {string} [timeZone='UTC'] - IANA zone the expression is written in
+ * @param {Date} [from=new Date()] - The scan starts at the minute after this instant
+ * @returns {Date|null} Next matching Date, or null if none within the horizon
  */
-export function cronNextFire(expression) {
-  const now_ = new Date();
-  const check = new Date(now_);
+export function cronNextFire(expression, timeZone, from = new Date()) {
+  const check = new Date(from);
   check.setUTCSeconds(0, 0);
   check.setUTCMinutes(check.getUTCMinutes() + 1); // start from next minute
-  const maxMs = 48 * 60 * 60 * 1000;
-  while (check.getTime() - now_.getTime() < maxMs) {
-    if (cronMatch(expression, check)) return check;
+  while (check.getTime() - from.getTime() < NEXT_FIRE_HORIZON_MS) {
+    if (cronMatch(expression, check, timeZone)) return check;
     check.setUTCMinutes(check.getUTCMinutes() + 1);
   }
-  return null; // no match within 48h
+  return null; // no match within the horizon — the tick loop re-arms (see REARM_INTERVAL_MS)
 }
 
 /**
@@ -142,12 +187,41 @@ export function createScheduler(deps) {
   // ---- Internal state ----
   let RESPONSIBILITIES = [];
   const _respLastFired = {};  // id → timestamp (ms)
-  let _respNextFire = {};     // id → Date
+  let _respNextFire = {};     // id → Date, or null = no slot within the horizon yet
+  const _respRearmAt = {};    // id → ms of the last attempt to arm a null next-fire
+  const _badZoneWarned = new Set();
   let _intervalId = null;
 
   /** ISO timestamp */
   function now() {
     return new Date().toISOString();
+  }
+
+  /**
+   * The zone a responsibility's schedule is written in. The v2 contract declares
+   * `timezone` ("explicit, because DST silently shifts a fire time") and the
+   * compiler carries it, but this scheduler used to ignore it and match every cron
+   * in UTC. An unknown zone falls back to UTC LOUDLY: it must not throw inside the
+   * tick loop, and silently never firing is the failure this module keeps finding.
+   */
+  function zoneFor(r) {
+    const tz = r.timezone || 'UTC';
+    if (tz === 'UTC') return tz;
+    try {
+      wallClock(new Date(0), tz); // validates the zone (and caches its formatter)
+      return tz;
+    } catch {
+      if (!_badZoneWarned.has(r.id)) {
+        _badZoneWarned.add(r.id);
+        log('WARN', `Responsibility ${r.id}: unknown timezone '${tz}' — scheduling it in UTC`);
+      }
+      return 'UTC';
+    }
+  }
+
+  /** Next fire for a loaded responsibility, in its own zone. */
+  function nextFireFor(r, from = new Date()) {
+    return cronNextFire(r.schedule, zoneFor(r), from);
   }
 
   // ---- Responsibility loading ----
@@ -387,7 +461,7 @@ export function createScheduler(deps) {
 
     _respLastFired[id] = Date.now();
     // Keep the cron cadence coherent — re-arm the next scheduled fire.
-    if (resp.enabled && resp.schedule) _respNextFire[id] = cronNextFire(resp.schedule);
+    if (resp.enabled && resp.schedule) _respNextFire[id] = nextFireFor(resp);
     log('INFO', `[TELEMETRY] responsibility_triggered id=${id} source=${source} bypass_spacing=${bypassSpacing === true}`);
 
     // Fire-and-forget — the mission runs in the background.
@@ -399,9 +473,11 @@ export function createScheduler(deps) {
 
   /**
    * Start the responsibility scheduler. Computes initial next-fire times
-   * and begins a 60-second interval to check for due responsibilities.
+   * and begins a 60-second interval that runs tick().
+   *
+   * @param {Date} [now_=new Date()] - The instant next-fires are computed from
    */
-  function start() {
+  function start(now_ = new Date()) {
     if (RESPONSIBILITIES.length === 0) {
       log('INFO', 'No responsibilities configured, scheduler idle');
       return;
@@ -409,61 +485,80 @@ export function createScheduler(deps) {
 
     // Calculate initial next-fire times
     for (const r of RESPONSIBILITIES) {
-      if (r.enabled) {
-        _respNextFire[r.id] = cronNextFire(r.schedule);
+      if (r.enabled && r.schedule) {
+        _respNextFire[r.id] = nextFireFor(r, now_);
         const nextStr = _respNextFire[r.id]
           ? _respNextFire[r.id].toISOString()
-          : 'none (no match in 48h)';
-        log('INFO', `Responsibility ${r.id}: next fire ${nextStr}`);
+          : 'none within 8d (re-armed automatically as it comes into range)';
+        log('INFO', `Responsibility ${r.id}: next fire ${nextStr} (${r.schedule} ${zoneFor(r)})`);
       }
     }
 
     // Check every 60 seconds
-    _intervalId = setInterval(async () => {
-      const now_ = new Date();
-      for (const r of RESPONSIBILITIES) {
-        if (!r.enabled) continue;
-        const nextFire = _respNextFire[r.id];
-        if (!nextFire || now_ < nextFire) continue;
+    _intervalId = setInterval(() => {
+      tick().catch(e => log('ERROR', `Scheduler tick failed: ${e.message}`));
+    }, 60_000);
+  }
 
-        // Min spacing check
-        const lastFired = _respLastFired[r.id];
-        const minSpacingMs = (r.min_spacing_minutes || 15) * 60 * 1000;
-        if (lastFired && (now_.getTime() - lastFired) < minSpacingMs) {
-          log('INFO', `Responsibility ${r.id} skipped (min spacing ${r.min_spacing_minutes}m)`);
-          _respNextFire[r.id] = cronNextFire(r.schedule);
-          continue;
-        }
+  /**
+   * One scheduler pass: fire every responsibility whose next slot has arrived.
+   * start() runs it every 60s; tests drive it directly with a fixed clock.
+   *
+   * @param {Date} [now_=new Date()]
+   */
+  async function tick(now_ = new Date()) {
+    for (const r of RESPONSIBILITIES) {
+      if (!r.enabled || !r.schedule) continue;
+      let nextFire = _respNextFire[r.id];
+      if (!nextFire) {
+        // null means "no slot within the horizon when last computed", NOT "never".
+        // This loop used to `continue` on null forever, so a weekly responsibility
+        // fired once after a restart and then went dormant. Re-arm it — throttled,
+        // so a cron that truly never matches does not rescan every minute.
+        if (now_.getTime() - (_respRearmAt[r.id] || 0) < REARM_INTERVAL_MS) continue;
+        _respRearmAt[r.id] = now_.getTime();
+        nextFire = _respNextFire[r.id] = nextFireFor(r, now_);
+        if (!nextFire) continue;
+      }
+      if (now_ < nextFire) continue;
 
-        // Singleton check: skip if non-terminal mission already exists for this responsibility
-        if (r.singleton && firestoreQuery) {
-          try {
-            const active = await firestoreQuery('work', [
-              { field: 'source_meta.responsibility_id', op: 'EQUAL', value: { stringValue: r.id } },
-            ], { noOrderBy: true });
-            const nonTerminal = active.filter(e => e.type === 'M' && RESP_IN_PROGRESS.has(e.status));
-            if (nonTerminal.length > 0) {
-              log('INFO', `Responsibility ${r.id}: singleton guard — cycle in progress (${nonTerminal[0].id}), sleeping`);
-              _respNextFire[r.id] = cronNextFire(r.schedule);
-              continue;
-            }
-          } catch (e) {
-            log('WARN', `Responsibility ${r.id}: singleton check failed (${e.message}), proceeding with fire`);
-          }
-        }
+      // Min spacing check
+      const lastFired = _respLastFired[r.id];
+      const minSpacingMs = (r.min_spacing_minutes || 15) * 60 * 1000;
+      if (lastFired && (now_.getTime() - lastFired) < minSpacingMs) {
+        log('INFO', `Responsibility ${r.id} skipped (min spacing ${r.min_spacing_minutes}m)`);
+        _respNextFire[r.id] = nextFireFor(r, now_);
+        continue;
+      }
 
-        // Fire!
-        log('INFO', `Responsibility ${r.id} firing: ${r.name}`);
-        _respLastFired[r.id] = now_.getTime();
-        _respNextFire[r.id] = cronNextFire(r.schedule);
-
+      // Singleton check: skip if non-terminal mission already exists for this responsibility
+      if (r.singleton && firestoreQuery) {
         try {
-          await fireResponsibility(r);
+          const active = await firestoreQuery('work', [
+            { field: 'source_meta.responsibility_id', op: 'EQUAL', value: { stringValue: r.id } },
+          ], { noOrderBy: true });
+          const nonTerminal = active.filter(e => e.type === 'M' && RESP_IN_PROGRESS.has(e.status));
+          if (nonTerminal.length > 0) {
+            log('INFO', `Responsibility ${r.id}: singleton guard — cycle in progress (${nonTerminal[0].id}), sleeping`);
+            _respNextFire[r.id] = nextFireFor(r, now_);
+            continue;
+          }
         } catch (e) {
-          log('ERROR', `Responsibility ${r.id} fire failed: ${e.message}`);
+          log('WARN', `Responsibility ${r.id}: singleton check failed (${e.message}), proceeding with fire`);
         }
       }
-    }, 60_000);
+
+      // Fire!
+      log('INFO', `Responsibility ${r.id} firing: ${r.name}`);
+      _respLastFired[r.id] = now_.getTime();
+      _respNextFire[r.id] = nextFireFor(r, now_);
+
+      try {
+        await fireResponsibility(r);
+      } catch (e) {
+        log('ERROR', `Responsibility ${r.id} fire failed: ${e.message}`);
+      }
+    }
   }
 
   /**
@@ -480,10 +575,10 @@ export function createScheduler(deps) {
    * Recalculate next-fire times after a config reload.
    * Called by the brain when watchFile detects changes.
    */
-  function recalcNextFires() {
+  function recalcNextFires(now_ = new Date()) {
     _respNextFire = {};
     for (const r of RESPONSIBILITIES) {
-      if (r.enabled) _respNextFire[r.id] = cronNextFire(r.schedule);
+      if (r.enabled && r.schedule) _respNextFire[r.id] = nextFireFor(r, now_);
     }
   }
 
@@ -559,6 +654,8 @@ export function createScheduler(deps) {
     loadResponsibilities,
     /** Start the cron scheduler (60s check interval). */
     start,
+    /** One scheduler pass at a given instant (the interval's body; tests drive it). */
+    tick,
     /** Stop the cron scheduler. */
     stop,
     /** Fire event-triggered responsibilities. */

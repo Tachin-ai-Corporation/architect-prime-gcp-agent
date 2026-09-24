@@ -16,7 +16,7 @@ Responsibilities sit at the top of the R→M→C→T envelope hierarchy:
 
 ## Key Components
 - **Config files**: `responsibilities.json` — defines responsibility entries with cron expressions
-- **Brain daemon cron scheduler**: Evaluates cron expressions and creates R-type envelopes at trigger time
+- **Brain daemon cron scheduler** (`platform/work/scheduler.mjs`): Evaluates cron expressions — in each responsibility's IANA `timezone` (default `UTC`) — and creates R-type envelopes at trigger time. The next fire is looked up 8 days ahead; a longer cadence (monthly) is re-armed hourly as it comes into range. (Before v2026.09.24.1.1 the horizon was 48h and a null next-fire was skipped forever, so weekly schedules went dormant after one fire; `timezone` was ignored.)
 - **Motor tool `responsibility-manage`**: CRUD operations for responsibility configs (create, read, update, delete)
 
 ## How It Works
