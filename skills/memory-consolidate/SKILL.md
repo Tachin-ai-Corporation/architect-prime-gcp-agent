@@ -6,12 +6,18 @@ Automatically triggered by nightly cron. Do not invoke manually. Performs nightl
 ## Commands
 
 Temporal-Memory executes these directly — it is the memory authority and runs the memory tools itself; the consolidation mission is dispatched with tool access (B-3/B-16).
-- `core-memory-read [--query Q] [--category C] [--since 30d] [--limit N]` — read Core Memory (entries returned value/relevance-ranked).
+
+**The memory boundary.** Memory is exactly three layers — working memory (`MEMORY.md`), Core Memory and Deep Truths — and they are the only things this cycle writes. Processes, projects, skills and responsibilities are *definitions*: read them to reconcile, never write them. A lesson about one is recorded as memory, tagged to it. The tools enforce this: the consolidation toolset has no shell and no general file writer.
+
+Run each CLI through the **`memoryCommand`** tool, passing the command line exactly as shown. It runs with no shell, so pipes, `;`, `&&`, redirects and `$(…)` are refused; put long free text in its `stdin` field.
+- `core-memory-read [--query Q] [--category C] [--since 30d] [--limit N]` — read Core Memory (entries returned value/relevance-ranked). The default limit is small — pass `--limit 50` when surveying.
 - `core-memory-write --fact "<fact>" --category <cat> [--tags "t1,t2"] [--importance <0..1>] [--supersedes <old-id>]` — promote or update a durable fact.
-- `core-memory-retire --id <id> --reason "<why>"` — retire a stale/contradicted entry.
+- `core-memory-retire --id <id> --reason "<why>"` — retire a stale/contradicted/duplicated entry.
 - `update-deep-truths --list | --add "<truth>" | --remove "<text>"` — Deep Truths lifecycle.
 - `session-summary --hours 24 [--exclude-intent memory_consolidation]` — recent sessions + compaction digests.
-- `runCommand` / `readFile` / `writeFile` — read and rewrite `MEMORY.md`; write the report.
+- `process-ops list` · `process-ops get <id>` · `project-manage list` · `project-manage get <id>` — **read-only** views of the playbooks and projects you reconcile against. Their write subcommands are refused.
+
+Files: read with `readFile`; write `MEMORY.md` and `consolidation_report.md` with **`writeMemoryFile`** — the only files memory writes.
 
 ## Procedures
 
@@ -29,13 +35,14 @@ This is Temporal-Memory's "sleep cycle" — I process the day's experiences acro
    - **Record aliases as their own entries.** If a mission searched for "signed artifacts" and the folder is actually *Executed Advisory Agreements*, write **both** names pointing at the same id. The alias is the expensive knowledge: one real mission burned its entire dispatch budget re-running the same failed search six times because the name in the plan was not the name in Drive.
    - **Reconcile, don't accumulate.** When an id has changed, `--supersedes` the old entry. When a target no longer resolves, retire it in step 8 — a confidently wrong id is worse than no id, because it will be trusted.
    - The `resources` cap does not consume the step-9 promotion budget: identifiers are cheap, high-value, and self-limiting (one per real-world object).
-6. **Triage Working Memory:** Classify every entry in `MEMORY.md` into one of: `ACTIVE`, `COMPLETED`, `STALE`, or `PROMOTE`.
-7. **Identify Outdated Core Memories:** Compare recent work against the long-term archive to locate contradicted, redundant, or stale entries.
-8. **Retire or Supersede:** Run `core-memory-retire --id <entry-id> --reason "<reason>"` for stale items, or `core-memory-write --fact "<fact>" --category <cat> --supersedes <old-id>` for updates. (Max 5 per run).
-9. **Promote Stable Facts:** Run `core-memory-write --fact "<fact>" --category <cat> --tags "<topic>" --importance <0..1>` for promoted items. (Max 5 per run). **Weight by value (B-5):** set `--importance` high (→1.0) for a learning that recurred across sessions, led to a success, or is load-bearing; leave routine facts at the default. Always set `--tags` (topic) so retrieval can find high-value learnings by subject. This is how recall surfaces the good stuff first — the whole brain benefits from what I weight well. **Never promote a failure into a feasibility verdict.** A mission that failed promotes only as a forward *lesson* — "when `<situation>`, `<do X>`" — never as "`<task>` is infeasible / impossible / can't be done." Feasibility is decided at execution time against current tools; a durable "it can't be done" belief is self-fulfilling and outlives the conditions that produced it. If such a belief already exists and the tooling has since changed, retire it in step 8.
-10. **Prune and Rewrite Working Memory:** Overwrite `/opt/corekit/workspace/MEMORY.md` with only active items, using the template format (must be under 2,000 characters).
+5c. **Read the definitions (read-only):** `process-ops list` and `project-manage list` (then `get` for anything relevant) show the playbooks and projects this agent works with. A Core Memory fact that merely restates what a project or playbook declares — a resource id the project already carries, a playbook's own advice — is redundant: retire the *memory* copy in step 8. Never edit the definition; you cannot, and it is not memory.
+6. **Triage Working Memory:** Classify every entry in `MEMORY.md` into one of: `ACTIVE`, `COMPLETED`, `STALE`, or `PROMOTE`. A `lesson (project <id>)` / `lesson (playbook <id>)` line is the daemon's record of what a mission taught about that project or playbook — promote it as a lesson tagged with that id, or let it go.
+7. **Identify Outdated Core Memories:** Compare recent work against the long-term archive to locate contradicted, redundant, duplicated or stale entries.
+8. **Retire or Supersede:** Run `core-memory-retire --id <entry-id> --reason "<reason>"` for stale items, or `core-memory-write --fact "<fact>" --category <cat> --supersedes <old-id>` for updates. (Max 5 per run). Retire on evidence a fact is **wrong, stale or duplicated — never to rename it.** A fact whose value is still right keeps its name: other work (a responsibility, a resource lookup) recalls it by that name, and a "canonical" rename silently breaks it. For duplicates, keep the oldest entry and retire the copies.
+9. **Promote Stable Facts:** Run `core-memory-write --fact "<fact>" --category <cat> --tags "<topic>" --importance <0..1>` for promoted items. (Max 5 per run). **Never write a fact that is already active** — steps 4-5 show what exists; skip it, or `--supersedes` the existing entry to change it. A second copy is not reinforcement, it is noise that the next pass has to clean up. **Weight by value (B-5):** set `--importance` high (→1.0) for a learning that recurred across sessions, led to a success, or is load-bearing; leave routine facts at the default. Always set `--tags` (topic) so retrieval can find high-value learnings by subject. This is how recall surfaces the good stuff first — the whole brain benefits from what I weight well. **Never promote a failure into a feasibility verdict.** A mission that failed promotes only as a forward *lesson* — "when `<situation>`, `<do X>`" — never as "`<task>` is infeasible / impossible / can't be done." Feasibility is decided at execution time against current tools; a durable "it can't be done" belief is self-fulfilling and outlives the conditions that produced it. If such a belief already exists and the tooling has since changed, retire it in step 8.
+10. **Prune and Rewrite Working Memory:** Overwrite `MEMORY.md` with only active items via `writeMemoryFile`, using the template format (must be under 2,000 characters).
 11. **Review and Update Deep Truths:** Run `update-deep-truths --list` and modify if needed using `--add` or `--remove`. (Max 2 changes per run).
-12. **Generate Report:** Write a structured `consolidation_report.md` to the workspace (and echo it) with counts: working-memory triaged, retirements, promotions, Deep-Truth changes, final MEMORY.md char count. **This file is the mission's verifiable outcome** — cerebellum checks it; never leave the consolidation to be reconstructed after the fact.
+12. **Generate Report:** Write a structured `consolidation_report.md` via `writeMemoryFile` (and echo it) with counts: working-memory triaged, retirements, promotions, Deep-Truth changes, final MEMORY.md char count. **This file is the mission's verifiable outcome** — cerebellum checks it; never leave the consolidation to be reconstructed after the fact.
 
 ---
 
@@ -43,7 +50,7 @@ This is Temporal-Memory's "sleep cycle" — I process the day's experiences acro
 
 ### Three-Layer Memory Architecture
 
-The work ledger (`primes/{id}/work/`) serves as an episodic recall source — a retrieval mechanism over the system's own audit trail (B-23). It is not a fourth consolidated memory layer; facts from work history are promoted into Core Memory through the normal triage process (B-5 preserved).
+The work ledger (the root `work/` collection) serves as an episodic recall source — a retrieval mechanism over the system's own audit trail (B-23). It is not a fourth consolidated memory layer; facts from work history are promoted into Core Memory through the normal triage process (B-5 preserved). Likewise the conversation (deterministic context, B-32), and the process, project and skill definitions: all are read by memory, none is written by it.
 
 | Layer | Storage | When Loaded | Lifespan | Your Job |
 |---|---|---|---|---|
@@ -77,3 +84,4 @@ The work ledger (`primes/{id}/work/`) serves as an episodic recall source — a 
 | `core-memory-write` or `core-memory-retire` fails | Firestore connection timeout or rate limit | Retry the operation once. If it continues to fail, log the failure and defer the update to the next night's consolidation run. |
 | Cannot write to `MEMORY.md` | File is locked or permission denied | Wait 5 seconds and retry the write operation. If it fails again, log a warning and proceed with the remaining steps. |
 | Deep truths limit exceeded (10) | Attempting to add an 11th truth | Run `update-deep-truths --list`, identify and remove a less critical or redundant truth first, then add the new one. |
+| `REFUSED (memory boundary)` from `memoryCommand` or `writeMemoryFile` | The command or path is outside memory — a definition write, a shell operator, or a non-memory file | Do not look for another route: memory writes only the three layers. Record what you wanted to capture as a Core Memory lesson tagged to the project or playbook instead. For a shell operator, run each CLI as its own `memoryCommand` call. |

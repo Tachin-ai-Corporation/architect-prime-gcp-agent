@@ -19,6 +19,7 @@ import { extractResources, mergeResources, renderResources, seedFromProse } from
 import { markCheckpoint, spineSummary, checkpointFailureHalts } from './checkpoint-spine.mjs';
 import { deployTargetLine } from '../control-plane/deploy-target.mjs';
 import { checkpointAssignee, sameAgent, missionOriginator, handoffPatch, handoffModelEnabled } from './baton.mjs';
+import { isMemoryScoped, fenceMemoryTask } from './memory-scope.mjs';
 
 const VALID_TASK_AGENTS = new Set(['motor', 'temporal-research', 'temporal-memory']);
 
@@ -377,6 +378,22 @@ export async function executeCheckpoints(checkpoints, opts) {
         // is honored regardless of which layer authored it.
         stepType = task._step_type || task.step_type || task.type || 'standard';
         isOptional = task._optional === true;
+      }
+
+      // Memory boundary (platform/work/memory-scope.mjs): a mission fired by a memory-scoped
+      // responsibility writes only the memory layers. Motor's task runs on temporal-memory (its
+      // toolset is memory-only); a delegation or approval gate is refused. BEFORE the WS-2 reroute,
+      // so a memory mission can never be converted into a delegation.
+      if (isMemoryScoped(envelope)) {
+        const fence = fenceMemoryTask({ stepType, taskAgent });
+        if (fence.action === 'reroute') {
+          log('INFO', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: [memory-scope] ${fence.reason}`);
+          taskAgent = fence.agent;
+        } else if (fence.action === 'refuse') {
+          log('WARN', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: [memory-scope] refused — ${fence.reason}`);
+          cpResults.push({ step: `${cpNum}.${taskNum}`, agent: taskAgent || stepType, result: `[REFUSED] ${fence.reason}`, success: false });
+          continue;
+        }
       }
 
       // WS-2: route specialty-owned execution to the owning teammate. A LOCAL motor task that

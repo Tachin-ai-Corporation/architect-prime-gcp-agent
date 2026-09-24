@@ -309,6 +309,16 @@ export function createScheduler(deps) {
       const merged = [resp.context?.prior_learnings, overlayLearnings].filter(Boolean).join('\n');
       contextParts.push(`PRIOR LEARNINGS: ${merged}`);
     }
+    // Memory boundary: a memory-scoped responsibility (the nightly consolidation) fires a mission
+    // that writes ONLY the memory layers. Stamped on source_meta, where the checkpoint executor
+    // enforces it (platform/work/memory-scope.mjs); stated here so the plan never needs the fence.
+    const memoryScoped = resp.effect_scope === 'memory';
+    if (memoryScoped) {
+      contextParts.push('EFFECT SCOPE: memory — this mission writes only the agent\'s memory (working memory, '
+        + 'Core Memory, Deep Truths), all of it by temporal-memory. Processes, projects, skills and '
+        + 'responsibilities are read as context and never written.');
+    }
+    const scopeMeta = memoryScoped ? { effect_scope: 'memory' } : {};
     const contextSummary = contextParts.join('\n\n');
 
     // Create type=R Responsibility envelope
@@ -333,6 +343,7 @@ export function createScheduler(deps) {
         responsibility_id: resp.id,
         responsibility_name: resp.name,
         schedule: resp.schedule,
+        ...scopeMeta,
       },
       created_at: now(),
       started_at: now(),
@@ -367,6 +378,7 @@ export function createScheduler(deps) {
         responsibility_id: resp.id,
         responsibility_name: resp.name,
         fired_at: now(),
+        ...scopeMeta,
       },
       project_id: resp.project_id || DEFAULT_PROJECT_ID,
       created_at: now(),

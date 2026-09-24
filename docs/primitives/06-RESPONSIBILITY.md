@@ -19,6 +19,7 @@ These fields are in the responsibility JSON definition (not the WorkEnvelope):
 | `schedule` | `string` | Cron expression (5-field: `min hour dom month dow`), read in `timezone` |
 | `timezone` | `string` | IANA zone the schedule is written in (default `UTC`). DST moves the UTC instant, not the local time: `15 10 * * 4` + `America/Chicago` is 10:15 Central all year. An unknown zone logs a WARN and schedules in UTC |
 | `enabled` | `boolean` | Whether the scheduler fires this responsibility |
+| `effect_scope` | `'world' \| 'memory'` | Default `world`. `memory` = a firing writes ONLY the agent's memory layers (the nightly consolidation): its tasks run on temporal-memory, whose consolidation toolset is memory-only, and delegations/approval gates are refused (`platform/work/memory-scope.mjs`) |
 | `min_spacing_minutes` | `number` | Minimum minutes between firings |
 | `instruction` | `string` | What the agent should do when this fires |
 | `context` | `ResponsibilityContext` | Rich context for the agent |

@@ -57,7 +57,7 @@ test('the schema declares every field the scheduler reads', () => {
   const props = schemaFor('responsibility').spec.properties;
   for (const f of ['schedule', 'event', 'timezone', 'catch_up', 'singleton',
     'min_spacing_minutes', 'context', 'instruction', 'success_criteria',
-    'project_id', 'enabled']) {
+    'project_id', 'enabled', 'effect_scope']) {
     assert.ok(props[f], `the scheduler reads ${f}; the contract must declare it`);
   }
 });
@@ -89,7 +89,7 @@ test('the compiled record carries schedule and event, not trigger', () => {
 });
 
 test('the compiled record carries the scheduler-only fields', () => {
-  for (const f of ['singleton', 'min_spacing_minutes', 'context', 'timezone', 'catch_up']) {
+  for (const f of ['singleton', 'min_spacing_minutes', 'context', 'timezone', 'catch_up', 'effect_scope']) {
     assert.match(compiler, new RegExp(`${f}:`), `${f} must reach the runtime record`);
   }
 });

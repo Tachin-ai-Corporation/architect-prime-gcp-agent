@@ -161,6 +161,11 @@ capability for every role**, not gated to a PM/architect:
   dedupe, never clobber; conservative and evidence-based, never invent. The auto-maintenance below is
   what keeps universal write access from drifting into mess.
 
+> **Superseded (v2026.09.24.1.2) — the memory boundary.** Memory is a closed set (BRAIN_CANON B-5):
+> the reflex below now records a *lesson* about the project or playbook into working memory, and the
+> nightly consolidation decides what earns Core Memory. It no longer rewrites a playbook narrative or
+> writes project context — a Fleet Definition record changes only through its own plane (C-29).
+
 **Automatic context maintenance — the temporal-memory reflex.** A process's narrative and a project's
 context should reflect *what just happened*, not the day they were written. So maintenance becomes an
 **automatic post-mission reflex seated in the temporal-memory organ** — a *skill* (the how) plus a

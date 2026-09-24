@@ -116,9 +116,20 @@ export function loadAgentConfig(agentId, opts = {}) {
     workspace,
     allowedTools: agentId === 'cerebellum'
       ? ['readFile', 'report_pass', 'report_fail', 'request_probe']
-      : needsTools ? (agentOverrides.allowedTools || null) : [],
+      : agentId === 'temporal-memory'
+        ? (needsTools ? [...MEMORY_TOOLSET] : [])
+        : needsTools ? (agentOverrides.allowedTools || null) : [],
   };
 }
+
+/**
+ * The memory boundary (BRAIN_CANON B-5): tooled to consolidate, Temporal-Memory holds ONLY these
+ * — the memory CLIs and read-only definition views (memoryCommand), its own memory files
+ * (writeMemoryFile), and reads. Never runCommand or writeFile: with a full shell a consolidation
+ * pass wrote project context. Deliberately NOT overridable by a workspace config.json — a fence
+ * the fenced agent's own config can widen is not a fence.
+ */
+export const MEMORY_TOOLSET = Object.freeze(['readFile', 'listDir', 'memoryCommand', 'writeMemoryFile']);
 
 /**
  * Get the neural gateway config.

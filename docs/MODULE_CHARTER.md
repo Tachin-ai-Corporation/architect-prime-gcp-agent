@@ -68,7 +68,7 @@ Every domain splits three ways: **mechanism** (Foundation) · **definition** (Fl
 | **Responsibilities** | scheduler, leasing, idempotency, event matching, timezone/catch-up rules | schedule/event rule, instruction, target, success criteria, enablement | cursor, lease, last/next fire, execution history |
 | **Projects** | schema, hierarchy, context inheritance, dependency semantics, repository API | project templates and deployment conventions | project records, membership, accumulated context, status |
 | **Culture of work** | R→M→C→T state machine, transition reducer, approvals, waits, delegation, artifact/outbox rules | approval thresholds and routing policy within platform bounds; narrative processes | envelopes, approvals, handoffs, checkpoints, tasks, artifacts |
-| **Memory** | storage/retrieval, consolidation, supersession, provenance, retention and prompt-budget algorithms | memory/retention policy, role-specific recall priorities | facts, observations, summaries, preferences, lessons |
+| **Memory** | storage/retrieval, consolidation, supersession, provenance, retention and prompt-budget algorithms | memory/retention policy, role-specific recall priorities | facts, observations, summaries, preferences, lessons — held ONLY in working memory (`MEMORY.md`), Core Memory and the Deep Truths region; see *The memory boundary* |
 | **Secrets** | secret broker, redaction, workload identity, grant reconciliation, audit | required secret handles and allowed purposes | secret values in Secret Manager; grants and audit events |
 | **Models** | provider compatibility, routing API, fallback semantics, budget enforcement | per-role model and cost/quality policy | calls, cost, latency, failures |
 | **Fleet** | agent lifecycle/reconciler, images, health, package application | desired role/capability/release assignments | VMs, service health, actual digest, drift status |
@@ -197,5 +197,29 @@ is *a named narrative of how a kind of work goes well*, it is a Process.
   Firestore access outside persistence adapters; generated artifacts carry their source digest and are
   never edited as authorities; deployed agent tools have no write path under the installed platform
   root.
+
+Enforced in the runtime rather than by the gate:
+
+- **The memory boundary** — memory is a closed set (BRAIN_CANON **B-5**). The memory system writes
+  exactly three layers, and reads — never writes — everything else:
+
+  | | Store | Written by |
+  |---|---|---|
+  | **Memory** (the only writes) | Working memory — `workspace/MEMORY.md` | the daemon (one line per mission; the lesson reflex's project/playbook lessons) and Temporal-Memory in consolidation (prune, rewrite) |
+  | | Core Memory — agent-scoped, with supersession, provenance, weight | Temporal-Memory in consolidation (promote, supersede, retire); an explicit "remember this" by the acting organ |
+  | | Deep Truths — the managed region of the cortex `SOUL.md` | `update-deep-truths` in consolidation only |
+  | | the consolidation report | Temporal-Memory — the pass's verifiable record |
+  | **Read, never written by memory** | processes · projects (incl. their resource references) · skills · organ bodies · responsibilities | their own planes (C-29) |
+  | | the work ledger, incl. compaction digests · the responsibility learnings overlay | the daemon (C-17) |
+  | | the conversation / thread ledger | deterministic context (B-32) |
+
+  Mechanism: Temporal-Memory tooled to consolidate holds only `MEMORY_TOOLSET`
+  (`corekit/brain/config.mjs` — the memory CLIs + read-only definition views, its own memory files, no
+  shell); a responsibility with `effect_scope: "memory"` fires missions whose tasks run only on
+  Temporal-Memory (`platform/work/memory-scope.mjs`); the lesson reflex appends to working memory,
+  never to a definition. `tests/memory-boundary.test.mjs` holds the CLI set, the tool set and
+  `corekit/memory/` in agreement. A deployment-specific binding a responsibility depends on (a folder
+  id, a brand doc) is a **project resource**, not memory — memory may hold what was *learned*, and
+  consolidation may prune it.
 
 See PRODUCT_CANON **C-28** (layers) and **C-29 … C-36** (planes).

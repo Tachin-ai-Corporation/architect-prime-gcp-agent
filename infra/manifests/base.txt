@@ -171,6 +171,7 @@ platform/work/delegation.mjs platform/work/delegation.mjs
 platform/providers/channel.mjs platform/providers/channel.mjs
 platform/work/deliverable.mjs platform/work/deliverable.mjs
 platform/work/checkpoint-executor.mjs platform/work/checkpoint-executor.mjs
+platform/work/memory-scope.mjs platform/work/memory-scope.mjs
 platform/work/finalization.mjs platform/work/finalization.mjs
 platform/context/compaction.mjs platform/context/compaction.mjs
 platform/work/result-packet.mjs platform/work/result-packet.mjs

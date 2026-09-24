@@ -50,7 +50,8 @@ import { extractVerdict, extractFailSummary, extractFailRecommendation } from '.
 import { composeDeliverable } from '../work/deliverable.mjs';
 import { executeCheckpoints } from '../work/checkpoint-executor.mjs';
 import { rebuildFromSpine } from '../work/checkpoint-spine.mjs';
-import { shouldMaintainContext, buildMaintenancePrompt, parseMaintenanceResponse, shouldMaintainProcesses, buildProcessMaintenancePrompt } from '../context/context-maintenance.mjs';
+import { shouldMaintainContext, buildMaintenancePrompt, parseMaintenanceResponse, shouldMaintainProcesses, buildProcessMaintenancePrompt, lessonLine } from '../context/context-maintenance.mjs';
+import { isMemoryScoped } from '../work/memory-scope.mjs';
 import { handoffModelEnabled, decideHop, missionOriginator, effectiveAssignee } from '../work/baton.mjs';
 import { projectBootstrapEnabled, missionOriginSpace } from '../control-plane/project-bootstrap.mjs';
 import { renderBlackboard } from '../work/blackboard.mjs';
@@ -2265,7 +2266,7 @@ async function writeMemory(envelope) {
     // its own entry to the working memory it just pruned (self-pollution). Skip it — the
     // consolidation report is the record, not a MEMORY.md line.
     const _cons = `${envelope.processId || envelope.processRef || envelope.process_ref || ''} ${envelope.responsibility_id || envelope.responsibilityId || envelope._responsibility || ''}`.toLowerCase();
-    if (_cons.includes('memory-consolidate') || _cons.includes('memory-consolidation') ||
+    if (isMemoryScoped(envelope) || _cons.includes('memory-consolidate') || _cons.includes('memory-consolidation') ||
         /\bmemory consolidation\b|\bnightly memory\b/i.test(toStr(envelope.instruction))) {
       log('INFO', 'Memory write: skipping consolidation-born envelope (avoid self-pollution)');
       return;
@@ -2275,18 +2276,8 @@ async function writeMemory(envelope) {
     const texture = outputText ? ` -> ${outputText.replace(/\s+/g, ' ').trim().substring(0, 120)}` : '';
 
     // 2. Append one-line summary to MEMORY.md (working memory accumulates during the day)
-    const memoryPath = `${CORE_DIR}/workspace/MEMORY.md`;
-    if (existsSync(memoryPath)) {
-      const currentSize = readFileSync(memoryPath, 'utf8').length;
-      if (currentSize < 3000) { // Size guard — prevent unbounded growth
-        const datestamp = new Date().toISOString().substring(0, 10);
-        const oneLiner = `- [${datestamp}] ${envelope.type}: ${instruction}${texture}\n`;
-        appendFileSync(memoryPath, oneLiner);
-        log('INFO', `Memory write: MEMORY.md appended (${currentSize + oneLiner.length} chars)`);
-      } else {
-        log('INFO', `Memory write: MEMORY.md at ${currentSize} chars, skipping append (await consolidation)`);
-      }
-    }
+    const datestamp = new Date().toISOString().substring(0, 10);
+    appendWorkingMemory(`- [${datestamp}] ${envelope.type}: ${instruction}${texture}\n`, 'mission line');
 
     // 3. Mark envelope as memory-written (for archival)
     const token = await getAuthToken();
@@ -2306,48 +2297,63 @@ async function writeMemory(envelope) {
   }
 }
 
-// ---- Context auto-maintenance: temporal-memory refreshes a touched project's context ----
-// (RFC PROCESS_AS_NARRATIVE.md §6b) Best-effort, flag-gated, never throws. The organ PRODUCES the
-// note (C-5); the daemon writes it to the root `projects/<id>` doc's context.auto_maintenance.
-// Bounded (only the touched project), conservative (skips when nothing durable was learned), and
-// it never ships or touches production — it only curates context.
-async function maintainContext(mission) {
-  // Two independent, best-effort refreshes after a mission completes: the touched PROJECT's context,
-  // and any PLAYBOOK narratives the mission drew on. Each self-gates on the flag and never throws; one
-  // failing never blocks the other, and neither ever blocks mission completion.
-  await maintainProjectContext(mission);
-  await maintainPlaybookNarratives(mission);
+// Append one line to working memory (MEMORY.md) — the scratchpad the nightly consolidation triages
+// into Core Memory or prunes (BRAIN_CANON B-5). Size-guarded: past 3,000 chars a line waits for the
+// next consolidation rather than growing every cortex prompt. Returns whether it was written.
+function appendWorkingMemory(line, what = 'line') {
+  if (!line) return false;
+  const memoryPath = `${CORE_DIR}/workspace/MEMORY.md`;
+  if (!existsSync(memoryPath)) return false;
+  const currentSize = readFileSync(memoryPath, 'utf8').length;
+  if (currentSize >= 3000) {
+    log('INFO', `Memory write: MEMORY.md at ${currentSize} chars, skipping ${what} (await consolidation)`);
+    return false;
+  }
+  appendFileSync(memoryPath, line);
+  log('INFO', `Memory write: MEMORY.md appended ${what} (${currentSize + line.length} chars)`);
+  return true;
 }
 
-async function maintainProjectContext(mission) {
+// ---- Lesson reflex: what a mission taught about its project and playbooks → working memory ----
+// (RFC PROCESS_AS_NARRATIVE.md §6b, re-scoped by the memory boundary.) After a completed mission,
+// temporal-memory is asked for a DURABLE lesson about the project it worked in and each playbook it
+// drew on. The organ PRODUCES the lesson (C-5); the daemon appends it to WORKING MEMORY, and the
+// nightly consolidation decides what earns Core Memory — the same gate as every other learning.
+// It never writes the project record or the playbook: those are definitions, read-only to memory.
+// (This used to write `projects/<id>.context.auto_maintenance` and REPLACE playbook narratives.)
+// Best-effort, flag-gated (dispatch.context_maintenance), never throws, never blocks completion.
+async function recordMissionLessons(mission) {
+  if (isMemoryScoped(mission)) return; // a memory mission's own record is its consolidation report
+  await recordProjectLesson(mission);
+  await recordPlaybookLessons(mission);
+}
+
+async function recordProjectLesson(mission) {
   try {
     const plan = shouldMaintainContext(mission, CONTRACTS);
     if (!plan.run) return;
     let proj = null;
     try { proj = await firestoreRead('projects', plan.projectId); } catch { /* fall back to cache */ }
     proj = proj || PROJECTS[plan.projectId];
-    if (!proj) { log('INFO', `[context-maintenance] project ${plan.projectId} not found — skip`); return; }
+    if (!proj) { log('INFO', `[memory-lesson] project ${plan.projectId} not found — skip`); return; }
     const result = await callAgent('temporal-memory', {
       instruction: buildMaintenancePrompt(mission, proj),
-      accept_criteria: 'Return exactly one JSON object {"update":"<durable note, or empty string if nothing durable was learned>"}.',
+      accept_criteria: 'Return exactly one JSON object {"lesson":"<durable lesson, or empty string if nothing durable was learned>"}.',
     });
-    if (!result || !result.success) { log('INFO', `[context-maintenance] no organ result for project ${plan.projectId}`); return; }
-    const { update } = parseMaintenanceResponse(toStr(result.output));
-    if (!update) { log('INFO', `[context-maintenance] nothing durable learned for project ${plan.projectId}`); return; }
-    const ctx = (proj.context && typeof proj.context === 'object' && !Array.isArray(proj.context)) ? proj.context : {};
-    ctx.auto_maintenance = { note: update, from_mission: mission.id, at: now() };
-    await firestoreWrite('projects', plan.projectId, { ...proj, context: ctx });
-    log('INFO', `[context-maintenance] refreshed project ${plan.projectId} context from ${mission.id} (${update.length} chars)`);
+    if (!result || !result.success) { log('INFO', `[memory-lesson] no organ result for project ${plan.projectId}`); return; }
+    const { lesson } = parseMaintenanceResponse(toStr(result.output));
+    if (!lesson) { log('INFO', `[memory-lesson] nothing durable learned for project ${plan.projectId}`); return; }
+    appendWorkingMemory(lessonLine({ scope: 'project', id: plan.projectId, lesson }), `project lesson (${plan.projectId}, from ${mission.id})`);
   } catch (e) {
-    log('WARN', `[context-maintenance] project failed (non-fatal): ${e.message}`);
+    log('WARN', `[memory-lesson] project lesson failed (non-fatal): ${e.message}`);
   }
 }
 
-// Refine the narrative of any PLAYBOOK the mission drew on (recalled_processes, stamped by checkpoint_plan
-// when a playbook's intent_keywords matched the mission goal). Bounded (≤3), conservative (the organ
-// leaves it as-is unless the run revealed something durable), additive (writes to the living Firestore
-// store + bumps version). Never touches production; only curates the shared library.
-async function maintainPlaybookNarratives(mission) {
+// A lesson for each PLAYBOOK the mission drew on (recalled_processes, stamped by checkpoint_plan when a
+// playbook's intent_keywords matched the mission goal). Bounded (≤3), conservative (the organ stays
+// silent unless the run revealed something the narrative does not carry). The playbook is READ for
+// context and never written — a Fleet Definition record changes only through its own plane (C-29).
+async function recordPlaybookLessons(mission) {
   try {
     const pplan = shouldMaintainProcesses(mission, CONTRACTS);
     if (!pplan.run) return;
@@ -2359,22 +2365,18 @@ async function maintainPlaybookNarratives(mission) {
         if (!proc || proc.status === 'deprecated') continue;
         const r = await callAgent('temporal-memory', {
           instruction: buildProcessMaintenancePrompt(proc, mission),
-          accept_criteria: 'Return exactly one JSON object {"update":"<the refined narrative, or empty string to leave it as-is>"}.',
+          accept_criteria: 'Return exactly one JSON object {"lesson":"<durable lesson, or empty string if the run revealed nothing new>"}.',
         });
         if (!r || !r.success) continue;
-        const { update } = parseMaintenanceResponse(toStr(r.output), 700);
-        if (!update || update === String(proc.narrative || '').trim()) continue;
-        await firestoreWrite('processes', pid, {
-          ...proc, narrative: update, version: (Number(proc.version) || 1) + 1,
-          updated_at: now(), updated_by: 'temporal-memory', last_refined_from: mission.id,
-        });
-        log('INFO', `[context-maintenance] refined playbook ${pid} narrative from ${mission.id} (${update.length} chars)`);
+        const { lesson } = parseMaintenanceResponse(toStr(r.output));
+        if (!lesson) continue;
+        appendWorkingMemory(lessonLine({ scope: 'playbook', id: pid, lesson }), `playbook lesson (${pid}, from ${mission.id})`);
       } catch (e) {
-        log('WARN', `[context-maintenance] playbook ${pid} refresh failed (non-fatal): ${e.message}`);
+        log('WARN', `[memory-lesson] playbook ${pid} lesson failed (non-fatal): ${e.message}`);
       }
     }
   } catch (e) {
-    log('WARN', `[context-maintenance] playbook maintenance failed (non-fatal): ${e.message}`);
+    log('WARN', `[memory-lesson] playbook lessons failed (non-fatal): ${e.message}`);
   }
 }
 
@@ -2515,12 +2517,12 @@ async function completeEnvelope(envelope, opts) {
     }
   }
 
-  // Step 5b: Context auto-maintenance (RFC §6b) — after a completed mission that touched a project,
-  // temporal-memory refreshes that project's context from what just happened. Flag-gated + best-effort
-  // (maintainContext self-gates on dispatch.context_maintenance and never throws); never blocks completion.
+  // Step 5b: Lesson reflex (RFC §6b, re-scoped) — after a completed mission, temporal-memory records
+  // what it taught about its project and playbooks into WORKING MEMORY (never into the definitions).
+  // Flag-gated + best-effort (self-gates on dispatch.context_maintenance, never throws); never blocks completion.
   if (status === 'complete' && envelope.type === 'M') {
-    try { await maintainContext(envelope); } catch (e) {
-      log('WARN', `[context-maintenance] hook failed (non-fatal): ${e.message}`);
+    try { await recordMissionLessons(envelope); } catch (e) {
+      log('WARN', `[memory-lesson] hook failed (non-fatal): ${e.message}`);
     }
   }
 

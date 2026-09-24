@@ -267,6 +267,11 @@ export const RESPONSIBILITY_SCHEMA = definitionSchema('responsibility', 2, {
     type: 'string', enum: ['skip', 'once', 'all'], default: 'once',
     describe: 'What to do about fires missed while the agent was down',
   },
+  effect_scope: {
+    type: 'string', enum: ['world', 'memory'], default: 'world',
+    describe: 'memory = a firing writes ONLY the agent\'s memory layers (working memory, Core Memory, Deep Truths), '
+      + 'all of it by temporal-memory; enforced by the checkpoint executor (platform/work/memory-scope.mjs)',
+  },
 
   instruction: { type: 'string', required: true, minLength: 10, describe: 'The goal handed to the agent when this fires' },
   success_criteria: { type: 'string', required: true, minLength: 10, describe: 'How the agent knows the firing succeeded' },

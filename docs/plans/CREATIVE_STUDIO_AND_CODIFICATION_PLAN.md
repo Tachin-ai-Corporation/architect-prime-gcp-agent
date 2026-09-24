@@ -129,7 +129,7 @@ This is the *only* new "workflow," and it is expressed in the existing closed se
 
 ### 2e. Codification surface — the real gap: authoring a responsibility *cleanly*
 
-- **Process authoring: solved.** `process-ops {list,get,write,retire}` (`corekit/memory/process-ops`) PATCHes the global Firestore `processes/{id}` at runtime. The temporal-memory post-mission reflex already refines recalled playbooks.
+- **Process authoring: solved.** `process-ops {list,get,write,retire}` (`corekit/brain/process-ops`) PATCHes the global Firestore `processes/{id}` at runtime. ~~The temporal-memory post-mission reflex already refines recalled playbooks.~~ *(Superseded v2026.09.24.1.2 — memory is a closed set (BRAIN_CANON B-5): the reflex now records a lesson about a playbook into working memory and never rewrites the playbook; process-ops moved out of `corekit/memory/`.)*
 - **Responsibility authoring: missing.** Responsibilities are manifest-managed files (`specialties/*/responsibilities-*.json`); `processRef` is inert; there is no `responsibility-ops`. So "turn it into a responsibility cleanly" today means a repo edit + redeploy — not something an agent does in-loop. **Propose a `responsibility-ops` capability** (author/enable/disable a responsibility as **Fleet Definition** via the registry→`compiler.mjs` path + Firestore, honoring C-29: Prime authors within policy, human-gated), plus a dashboard control. This is the missing rung that makes the converge step first-class.
 - **Templates:** there is no template registry — templates and brand guides are plain Google Docs in "Master Templates," referenced by id. A light **template/brand-guide convention** (a Project resource ref to the master + brand doc) is enough; no new mechanism.
 

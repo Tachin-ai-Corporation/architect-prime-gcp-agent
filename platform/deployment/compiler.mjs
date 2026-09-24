@@ -347,6 +347,7 @@ function responsibilityRecord(r) {
     event: r.event ?? null,
     timezone: r.timezone ?? 'UTC',
     catch_up: r.catch_up ?? 'once',
+    effect_scope: r.effect_scope ?? 'world',
     instruction: r.instruction,
     success_criteria: r.success_criteria,
     singleton: r.singleton === true,

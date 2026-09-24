@@ -3,10 +3,10 @@
 // Exposes CoreKit scripts as simplified tool objects for direct vendor SDKs.
 // Removes Vercel AI SDK wrappers entirely.
 
-import { exec as execCb } from 'node:child_process';
+import { exec as execCb, execFile as execFileCb } from 'node:child_process';
 import { promisify } from 'node:util';
 import { readFileSync, writeFileSync, readdirSync, statSync, existsSync } from 'node:fs';
-import { join, isAbsolute } from 'node:path';
+import { join, isAbsolute, resolve, basename } from 'node:path';
 import { getContracts } from './config.mjs';
 
 const execAsync = promisify(execCb);
@@ -162,23 +162,30 @@ export const runCommand = {
       console.log(`[tools] runCommand ✓ ${Date.now() - t0}ms ${output.length}b`);
       return { result: capResult(output, 'command output') || '(no output)' };
     } catch (err) {
-      const elapsed = Date.now() - t0;
-      const timedOut = err.killed || err.signal === 'SIGTERM' || /timed?\s?out/i.test(err.message || '');
-      if (timedOut) {
-        console.warn(`[tools] runCommand TIMEOUT ${elapsed}ms (limit ${TOOL_TIMEOUT()}ms) → ${brief}`);
-        return { error: `ERROR: command timed out after ${Math.round(elapsed / 1000)}s (limit ${Math.round(TOOL_TIMEOUT() / 1000)}s): ${brief}\n`
-          + 'The command did not finish — treat this as "unknown", not "failed". Re-run a narrower version (one file/id at a time, add --limit, or filter with grep) rather than repeating it verbatim.' };
-      }
-      if (err.code === 'ENOBUFS' || /maxBuffer/i.test(err.message || '')) {
-        console.warn(`[tools] runCommand OVERFLOW ${elapsed}ms → ${brief}`);
-        return { error: `ERROR: command produced more than the ${MAX_BUFFER()}-byte output limit: ${brief}\n`
-          + 'Redirect it to a file and read a range, or filter the output (grep/head) before returning it.' };
-      }
-      console.warn(`[tools] runCommand ✗ ${elapsed}ms → ${brief}: ${String(err.message).slice(0, 200)}`);
-      return { error: capResult(`ERROR: ${err.message}${err.stderr ? `\nSTDERR: ${err.stderr}` : ''}`, 'error output') };
+      return execFailure('runCommand', err, Date.now() - t0, brief);
     }
   },
 };
+
+/**
+ * The tool result for a command that did not complete — shared by runCommand and memoryCommand
+ * so a timeout reads as "unknown, narrow it" and an overflow as "filter it", identically.
+ */
+function execFailure(tool, err, elapsed, brief) {
+  const timedOut = err.killed || err.signal === 'SIGTERM' || /timed?\s?out/i.test(err.message || '');
+  if (timedOut) {
+    console.warn(`[tools] ${tool} TIMEOUT ${elapsed}ms (limit ${TOOL_TIMEOUT()}ms) → ${brief}`);
+    return { error: `ERROR: command timed out after ${Math.round(elapsed / 1000)}s (limit ${Math.round(TOOL_TIMEOUT() / 1000)}s): ${brief}\n`
+      + 'The command did not finish — treat this as "unknown", not "failed". Re-run a narrower version (one file/id at a time, add --limit, or filter with grep) rather than repeating it verbatim.' };
+  }
+  if (err.code === 'ENOBUFS' || /maxBuffer/i.test(err.message || '')) {
+    console.warn(`[tools] ${tool} OVERFLOW ${elapsed}ms → ${brief}`);
+    return { error: `ERROR: command produced more than the ${MAX_BUFFER()}-byte output limit: ${brief}\n`
+      + 'Redirect it to a file and read a range, or filter the output (grep/head) before returning it.' };
+  }
+  console.warn(`[tools] ${tool} ✗ ${elapsed}ms → ${brief}: ${String(err.message).slice(0, 200)}`);
+  return { error: capResult(`ERROR: ${err.message}${err.stderr ? `\nSTDERR: ${err.stderr}` : ''}`, 'error output') };
+}
 
 export const readFileTool = {
   name: 'readFile',
@@ -274,6 +281,208 @@ export const listDirTool = {
         }
       });
       return { result: capResult(entries.join('\n'), `listing of ${path}`, 'List a narrower subdirectory.') || '(empty directory)' };
+    } catch (err) {
+      return { error: `ERROR: ${err.message}` };
+    }
+  },
+};
+
+// ---- Memory-scoped tools (the memory boundary — BRAIN_CANON B-5 + organ table) ----------
+//
+// Memory is a CLOSED set of three layers — working memory (MEMORY.md), Core Memory and the
+// Deep Truths region — and the memory system writes nothing else. Processes, projects, skills
+// and responsibilities are definitions: memory READS them and never writes them. Temporal-Memory
+// is tooled only to consolidate, and then config.mjs hands it THESE tools instead of
+// runCommand/writeFile. Before, a tooled temporal-memory got every tool (allowedTools null) —
+// a full shell — and a consolidation pass wrote project context through project-manage.
+
+// Exactly the `scripts` of the skills whose agent_part is temporal-memory (memory-consolidate ∪
+// memory-recall), and exactly the CLIs in corekit/memory/ — tests/memory-boundary.test.mjs holds
+// all three in agreement, so a new memory CLI is a deliberate, reviewed addition.
+export const MEMORY_CLIS = Object.freeze([
+  'core-memory-read', 'core-memory-write', 'core-memory-retire', 'update-deep-truths', 'session-summary',
+]);
+
+// Read-only views of the definitions memory reconciles against. Memory may LIST and GET a
+// playbook or a project — to see what the agent already has, and to retire a memory that merely
+// restates one — never write, retire or add context to one.
+export const MEMORY_READ_VIEWS = Object.freeze({
+  'process-ops': Object.freeze(['list', 'get']),
+  'project-manage': Object.freeze(['list', 'get', 'team-list', 'canon-list', 'get-artifacts-root']),
+});
+
+// The files memory writes: working memory, and the consolidation report (the verifiable record
+// of a consolidation pass). SOUL.md is not here — its Deep Truths region changes only through
+// update-deep-truths, which verifies before it writes.
+export const MEMORY_FILES = Object.freeze(['MEMORY.md', 'consolidation_report.md', 'memory_consolidation_report.md']);
+const MEMORY_HOME = () => process.env.MEMORY_HOME || join(process.env.CORE_DIR || '/opt/corekit', 'workspace');
+const MEMORY_MD_TARGET = 2_000;   // the working-memory budget the consolidation skill prunes to
+const MEMORY_MD_HARD_CAP = 8_000; // a runaway rewrite must not flood every cortex prompt
+
+/**
+ * Split a command line into argv WITHOUT a shell. Quotes group; nothing expands. An unquoted
+ * shell operator is refused rather than passed through — memoryCommand runs one CLI, and a
+ * `;`, pipe, redirect or `$(...)` is an attempt to run something else.
+ *
+ * @param {string} line
+ * @returns {string[]}
+ */
+export function splitCommandLine(line) {
+  const argv = [];
+  let cur = '';
+  let quote = null;
+  let started = false;
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i];
+    if (quote) {
+      if (c === quote) { quote = null; continue; }
+      if (c === '\\' && quote === '"' && i + 1 < line.length) { cur += line[++i]; continue; }
+      cur += c;
+      continue;
+    }
+    if (c === "'" || c === '"') { quote = c; started = true; continue; }
+    if (c === '\\' && i + 1 < line.length) { cur += line[++i]; started = true; continue; }
+    if (/\s/.test(c)) {
+      if (started) { argv.push(cur); cur = ''; started = false; }
+      continue;
+    }
+    if (/[;&|<>`$(){}]/.test(c)) {
+      throw new Error(`shell operator '${c}' is refused — memoryCommand runs ONE memory CLI with no shell`);
+    }
+    cur += c;
+    started = true;
+  }
+  if (quote) throw new Error('unterminated quote');
+  if (started) argv.push(cur);
+  return argv;
+}
+
+/**
+ * Decide whether argv is a command the memory authority may run. Pure.
+ *
+ * @param {string[]} argv
+ * @param {string} [binDir]
+ * @returns {{ok:true, name:string, path:string} | {ok:false, reason:string}}
+ */
+export function checkMemoryCommand(argv, binDir = BIN_DIR) {
+  if (!Array.isArray(argv) || !argv[0]) return { ok: false, reason: 'empty command' };
+  let name = argv[0];
+  if (name.includes('/')) {
+    // A path is accepted only when it IS the installed CLI — never an arbitrary binary.
+    const base = name.slice(name.lastIndexOf('/') + 1);
+    if (name !== `${binDir}/${base}`) return { ok: false, reason: `'${name}' is not an installed memory CLI` };
+    name = base;
+  }
+  if (MEMORY_CLIS.includes(name)) return { ok: true, name, path: `${binDir}/${name}` };
+  const views = MEMORY_READ_VIEWS[name];
+  if (views) {
+    if (views.includes(argv[1])) return { ok: true, name, path: `${binDir}/${name}` };
+    const attempted = [name, argv[1]].filter(Boolean).join(' ');
+    return {
+      ok: false,
+      reason: `'${attempted}' is not a read-only view — memory may run only ${name} ${views.join('|')}; definitions are read, never written`,
+    };
+  }
+  const readViews = Object.entries(MEMORY_READ_VIEWS).map(([k, v]) => `${k} ${v.join('|')}`).join(', ');
+  return {
+    ok: false,
+    reason: `'${name}' is not a memory command. Memory writes only working memory, Core Memory and Deep Truths `
+      + `(${MEMORY_CLIS.join(', ')}); definitions are read-only (${readViews}).`,
+  };
+}
+
+/**
+ * Resolve a path to one of the memory files, or null when it is anything else. Pure.
+ *
+ * @param {string} path - absolute, or relative to the memory home (the cortex workspace)
+ * @param {string} [home]
+ * @returns {string|null} the absolute target when writable by memory
+ */
+export function memoryFileTarget(path, home = MEMORY_HOME()) {
+  if (!path) return null;
+  const target = resolve(isAbsolute(path) ? path : join(home, path));
+  return MEMORY_FILES.map((f) => resolve(join(home, f))).includes(target) ? target : null;
+}
+
+export const memoryCommand = {
+  name: 'memoryCommand',
+  description: `Run ONE memory command — the only commands the memory authority runs. Memory CLIs: ${MEMORY_CLIS.join(', ')}. `
+    + `Read-only definition views: process-ops list|get, project-manage list|get|team-list|canon-list (definitions are read, never written). `
+    + `Pass the command line exactly as the memory-consolidate skill shows it, e.g. "core-memory-read --category resources --limit 50". `
+    + `It runs WITHOUT a shell: pipes, redirects, ";", "&&" and "$(...)" are refused. Put long free text (quotes, apostrophes, newlines) in 'stdin' for a CLI that reads it.`,
+  schema: {
+    type: 'object',
+    properties: {
+      command: { type: 'string', description: 'The memory CLI and its arguments, e.g. core-memory-retire --id mem-20260919-99f5bccd --reason "duplicate of mem-20260915-4f7ad67c"' },
+      stdin: { type: 'string', description: 'Optional text piped to the CLI on stdin.' },
+    },
+    required: ['command'],
+  },
+  execute: async ({ command, stdin }) => {
+    const brief = String(command ?? '').replace(/\s+/g, ' ').slice(0, 200);
+    let argv;
+    try {
+      argv = splitCommandLine(String(command ?? '').trim());
+    } catch (e) {
+      console.warn(`[tools] memoryCommand ✗ refused → ${brief}: ${e.message}`);
+      return { error: `REFUSED (memory boundary): ${e.message}` };
+    }
+    const check = checkMemoryCommand(argv);
+    if (!check.ok) {
+      console.warn(`[tools] memoryCommand ✗ refused → ${brief}: ${check.reason}`);
+      return { error: `REFUSED (memory boundary): ${check.reason}` };
+    }
+    const t0 = Date.now();
+    console.log(`[tools] memoryCommand → ${brief}`);
+    try {
+      const env = { ...process.env, PATH: `${BIN_DIR}:${process.env.PATH}`, NODE_OPTIONS: '--dns-result-order=ipv4first' };
+      const token = await getFirebaseToken();
+      if (token) env.FIREBASE_TOKEN = token;
+      const opts = { cwd: MEMORY_HOME(), timeout: TOOL_TIMEOUT(), maxBuffer: MAX_BUFFER(), env };
+      const { stdout, stderr } = await new Promise((res, rej) => {
+        const child = execFileCb(check.path, argv.slice(1), opts, (err, so, se) => {
+          if (err) { err.stdout = so; err.stderr = se; rej(err); } else res({ stdout: so, stderr: se });
+        });
+        // Always close stdin: a CLI that reads it must not hang waiting for input nobody sends.
+        try { child.stdin.end(typeof stdin === 'string' ? stdin : ''); } catch { /* child already exited */ }
+      });
+      const output = (stdout + (stderr ? `\nSTDERR: ${stderr}` : '')).trim();
+      console.log(`[tools] memoryCommand ✓ ${Date.now() - t0}ms ${output.length}b`);
+      return { result: capResult(output, 'command output') || '(no output)' };
+    } catch (err) {
+      return execFailure('memoryCommand', err, Date.now() - t0, brief);
+    }
+  },
+};
+
+export const writeMemoryFile = {
+  name: 'writeMemoryFile',
+  description: `Write one of the memory authority's own files: working memory (MEMORY.md — keep it under ${MEMORY_MD_TARGET.toLocaleString('en-US')} characters) `
+    + `or the consolidation report (consolidation_report.md). These are the ONLY files memory writes: any other path is refused — `
+    + 'process, project, skill and organ files are read-only to memory, and Deep Truths change only through update-deep-truths.',
+  schema: {
+    type: 'object',
+    properties: {
+      path: { type: 'string', description: `One of: ${MEMORY_FILES.join(', ')} (in the agent workspace)` },
+      content: { type: 'string', description: 'The complete file content' },
+    },
+    required: ['path', 'content'],
+  },
+  execute: async ({ path, content }) => {
+    const target = memoryFileTarget(String(path ?? ''));
+    if (!target) {
+      console.warn(`[tools] writeMemoryFile ✗ refused → ${path}`);
+      return { error: `REFUSED (memory boundary): '${path}' is not a memory file. Memory writes only ${MEMORY_FILES.join(', ')} in the agent workspace.` };
+    }
+    const text = typeof content === 'string' ? content : String(content ?? '');
+    const isWorkingMemory = basename(target) === 'MEMORY.md';
+    if (isWorkingMemory && text.length > MEMORY_MD_HARD_CAP) {
+      return { error: `REFUSED: MEMORY.md would be ${text.length} chars (hard cap ${MEMORY_MD_HARD_CAP}; target < ${MEMORY_MD_TARGET}). Prune further — working memory is loaded into every cortex prompt.` };
+    }
+    try {
+      writeFileSync(target, text, 'utf8');
+      const over = isWorkingMemory && text.length > MEMORY_MD_TARGET ? ` — over the ${MEMORY_MD_TARGET}-char target; prune further` : '';
+      return { result: `Written ${text.length} chars to ${basename(target)}${over}` };
     } catch (err) {
       return { error: `ERROR: ${err.message}` };
     }
@@ -406,15 +615,22 @@ export function getAllTools() {
     readFile: readFileTool,
     writeFile: writeFileTool,
     listDir: listDirTool,
+    memoryCommand,
+    writeMemoryFile,
     report_pass: reportPass,
     report_fail: reportFail,
     request_probe: requestProbe,
   };
 }
 
+// Tools that exist only for a scoped organ's allowlist — never part of the open set an
+// unrestricted organ (allowedTools null) receives. The memory tools are narrower duplicates of
+// runCommand/writeFile; handing them to motor would only cost it prompt tokens.
+const SCOPED_ONLY = new Set(['memoryCommand', 'writeMemoryFile']);
+
 export function getFilteredTools(allowList) {
   const all = getAllTools();
-  if (!allowList) return all;
+  if (!allowList) return Object.fromEntries(Object.entries(all).filter(([k]) => !SCOPED_ONLY.has(k)));
   if (Array.isArray(allowList) && allowList.length === 0) return undefined;
   return Object.fromEntries(
     allowList.map(name => [name, all[name]]).filter(([, v]) => v)

@@ -1,7 +1,10 @@
-// tests/context-maintenance.test.mjs — pure-core tests for the temporal-memory auto-maintenance reflex.
+// tests/context-maintenance.test.mjs — pure-core tests for the temporal-memory LESSON reflex.
+//
+// Re-scoped by the memory boundary (BRAIN_CANON B-5): the reflex used to write project context and
+// REPLACE playbook narratives; it now asks for a lesson that the daemon appends to working memory.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { shouldMaintainContext, buildMaintenancePrompt, parseMaintenanceResponse, shouldMaintainProcesses, buildProcessMaintenancePrompt } from '../platform/context/context-maintenance.mjs';
+import { shouldMaintainContext, buildMaintenancePrompt, parseMaintenanceResponse, shouldMaintainProcesses, buildProcessMaintenancePrompt, lessonLine } from '../platform/context/context-maintenance.mjs';
 
 const FLAG_ON = { dispatch: { context_maintenance: true } };
 const FLAG_OFF = { dispatch: { context_maintenance: false } };
@@ -29,43 +32,60 @@ describe('shouldMaintainContext', () => {
 });
 
 describe('buildMaintenancePrompt', () => {
-  it('carries the steward disposition, the project, the outcome, and a strict JSON contract', () => {
+  it('asks for a lesson for MEMORY, shows the project context read-only, with a strict JSON contract', () => {
     const p = buildMaintenancePrompt(M({ title: 'Add FAQ', output: 'FAQ planned' }), { id: 'marketing-site', name: 'Tachin Web', context: { a: 1 } });
     assert.match(p, /temporal-memory organ/);
-    assert.match(p, /steward/i);
+    assert.match(p, /MEMORY/);
+    assert.match(p, /never written into the project record/i);
+    assert.match(p, /PROJECT CONTEXT \(read-only\)/);
     assert.match(p, /Tachin Web/);
     assert.match(p, /Add FAQ/);
     assert.match(p, /FAQ planned/);
-    assert.match(p, /"update"/);
+    assert.match(p, /"lesson"/);
+    assert.doesNotMatch(p, /"update"/, 'the old contract asked for a project-context update');
     assert.match(p, /EMPTY string if nothing durable/i);
   });
   it('bounds long outcomes and is null-safe on context', () => {
     const p = buildMaintenancePrompt(M({ output: 'x'.repeat(9000) }), { id: 'p' });
     assert.ok(p.length < 4000, 'prompt stays bounded');
-    assert.match(p, /CURRENT CONTEXT: \(none\)/);
+    assert.match(p, /PROJECT CONTEXT \(read-only\): \(none\)/);
   });
 });
 
 describe('parseMaintenanceResponse', () => {
-  it('extracts a durable update', () => {
-    assert.equal(parseMaintenanceResponse('{"update": "Now uses a git source of truth."}').update, 'Now uses a git source of truth.');
+  it('extracts a durable lesson', () => {
+    assert.equal(parseMaintenanceResponse('{"lesson": "Now uses a git source of truth."}').lesson, 'Now uses a git source of truth.');
+  });
+  it('still reads the pre-re-scope "update" key, so an organ on the old contract lands in memory', () => {
+    assert.equal(parseMaintenanceResponse('{"update": "X changed."}').lesson, 'X changed.');
   });
   it('returns empty when nothing was learned', () => {
-    assert.equal(parseMaintenanceResponse('{"update": ""}').update, '');
+    assert.equal(parseMaintenanceResponse('{"lesson": ""}').lesson, '');
   });
-  it('extracts JSON embedded in prose', () => {
-    assert.equal(parseMaintenanceResponse('Here is my note:\n{"update": "X changed."}\ndone').update, 'X changed.');
+  it('extracts JSON embedded in prose and flattens whitespace to one line', () => {
+    assert.equal(parseMaintenanceResponse('Here is my note:\n{"lesson": "X\\nchanged."}\ndone').lesson, 'X changed.');
   });
-  it('never throws on garbage / empty / non-string update', () => {
-    assert.equal(parseMaintenanceResponse('not json').update, '');
-    assert.equal(parseMaintenanceResponse('').update, '');
-    assert.equal(parseMaintenanceResponse('{"update": 42}').update, '');
+  it('never throws on garbage / empty / non-string lesson', () => {
+    assert.equal(parseMaintenanceResponse('not json').lesson, '');
+    assert.equal(parseMaintenanceResponse('').lesson, '');
+    assert.equal(parseMaintenanceResponse('{"lesson": 42}').lesson, '');
   });
-  it('caps the update at 400 chars by default', () => {
-    assert.equal(parseMaintenanceResponse(JSON.stringify({ update: 'y'.repeat(900) })).update.length, 400);
+  it('caps the lesson at 300 chars by default, and honors a custom cap', () => {
+    assert.equal(parseMaintenanceResponse(JSON.stringify({ lesson: 'y'.repeat(900) })).lesson.length, 300);
+    assert.equal(parseMaintenanceResponse(JSON.stringify({ lesson: 'y'.repeat(900) }), 120).lesson.length, 120);
   });
-  it('honors a custom cap (playbook narratives use 700)', () => {
-    assert.equal(parseMaintenanceResponse(JSON.stringify({ update: 'y'.repeat(900) }), 700).update.length, 700);
+});
+
+describe('lessonLine', () => {
+  it('is one scoped working-memory line', () => {
+    assert.equal(lessonLine({ scope: 'project', id: 'general', lesson: 'Folder ids live in the project.', date: '2026-09-24' }),
+      '- [2026-09-24] lesson (project general): Folder ids live in the project.\n');
+    assert.equal(lessonLine({ scope: 'playbook', id: 'p-audit', lesson: 'Read before  you\nwrite.', date: '2026-09-24' }),
+      '- [2026-09-24] lesson (playbook p-audit): Read before you write.\n');
+  });
+  it('is empty when there is no lesson — nothing is appended', () => {
+    assert.equal(lessonLine({ scope: 'project', id: 'x', lesson: '   ' }), '');
+    assert.equal(lessonLine(), '');
   });
 });
 
@@ -90,19 +110,21 @@ describe('shouldMaintainProcesses', () => {
 });
 
 describe('buildProcessMaintenancePrompt', () => {
-  it('frames a conservative narrative refinement with the playbook, the mission, and a strict JSON contract', () => {
+  it('asks for a lesson about the playbook — never a rewrite — with the narrative shown read-only', () => {
     const p = buildProcessMaintenancePrompt({ id: 'p-audit', name: 'Codebase Audit', narrative: 'An audit measures.' }, MP({ title: 'Audit X', output: 'found 3 issues' }));
     assert.match(p, /PROCESS PLAYBOOK/);
     assert.match(p, /Codebase Audit/);
-    assert.match(p, /An audit measures/);
+    assert.match(p, /PLAYBOOK NARRATIVE \(read-only\): An audit measures/);
     assert.match(p, /Audit X/);
+    assert.match(p, /read-only to memory: you never rewrite it/i);
     assert.match(p, /NO tool[\s\S]*syntax/i);
-    assert.match(p, /EMPTY string to leave it as-is/i);
-    assert.match(p, /"update"/);
+    assert.match(p, /"lesson"/);
+    assert.doesNotMatch(p, /FULL refined narrative|complete replacement narrative/i,
+      'the old contract asked for a replacement narrative the daemon wrote over the playbook');
   });
   it('bounds long outcomes and is null-safe on narrative', () => {
     const p = buildProcessMaintenancePrompt({ id: 'p' }, MP({ output: 'z'.repeat(9000) }));
     assert.ok(p.length < 4000, 'prompt stays bounded');
-    assert.match(p, /CURRENT NARRATIVE: \(none\)/);
+    assert.match(p, /PLAYBOOK NARRATIVE \(read-only\): \(none\)/);
   });
 });

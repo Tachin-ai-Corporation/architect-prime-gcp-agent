@@ -241,7 +241,9 @@ flags, `p-*` ids, project tokens) in any organ body.
 
 **Violation looks like:** a `--flag` or backtick command in a SOUL; a `p-*` process id or an
 improvement-module taxonomy frozen into an organ; a mission particular, failure-mode, or transient
-state written to project context; a bash/curl block or an operator id inside a process narrative; a
+state written to project context; memory writing a definition — a consolidation pass or post-mission
+reflex that edits a process narrative or a project record instead of recording a lesson as memory
+(memory is a closed set, B-5); a bash/curl block or an operator id inside a process narrative; a
 process written as executable steps / agent-per-step / gates instead of a narrative; a "skill" that
 governs zero tools and is really a playbook narrative; an organ edited without re-pinning the lock.
 

@@ -1,18 +1,21 @@
-// context-maintenance.mjs — the temporal-memory AUTO-MAINTENANCE reflex (RFC PROCESS_AS_NARRATIVE.md §6b).
+// context-maintenance.mjs — the temporal-memory LESSON reflex (RFC PROCESS_AS_NARRATIVE.md §6b, re-scoped).
 //
-// After a mission touches a project (or, later, draws on a process playbook), the temporal-memory organ
-// refreshes that item's CONTEXT from what just happened — so the project's context (and the global
-// playbook library) track reality, not the day they were written. This file holds the PURE pieces:
-// the decision (should we maintain?), the craft-context prompt (temporal-memory's procedure + steward
-// disposition), and the response parse. The daemon does the dispatch + the write (C-5: the organ
-// produces the text, the daemon moves it).
+// After a mission works in a project or draws on a process playbook, the temporal-memory organ is
+// asked what DURABLE lesson the run taught about that project or playbook. The lesson is MEMORY: the
+// daemon appends it to working memory (MEMORY.md), where the nightly consolidation decides whether it
+// earns a place in Core Memory — the same gate every other learning passes (BRAIN_CANON B-5).
 //
-// Design guardrails (RFC §6b): bounded (only the item the mission touched), conservative (skip when
-// nothing durable was learned — no busywork edits), honest (B-29 — never fabricate), additive (refine,
-// don't clobber), and it NEVER touches production or ships anything — it only curates context.
+// It is never written into the project record or the playbook. Those are definitions, read-only to
+// memory. This reflex used to do exactly that — replace a playbook's narrative and write a note into
+// project context — which let one mission's view silently rewrite a Fleet Definition record (C-29) and
+// put history into a project's 40,000-ft view (C-28).
+//
+// This file holds the PURE pieces: the decisions (should we ask?), the prompts, the response parse,
+// and the working-memory line. The daemon does the dispatch + the append (C-5: the organ produces the
+// text, the daemon moves it).
 
 /**
- * Decide whether a completed mission should trigger context maintenance, and for what.
+ * Decide whether a completed mission should be asked for a project lesson, and for which project.
  * Pure. Runs only when the flag is on, the envelope is a completed mission, and it touched a project.
  * @returns {{run:boolean, projectId?:string, reason?:string}}
  */
@@ -26,9 +29,9 @@ export function shouldMaintainContext(mission, contracts) {
 }
 
 /**
- * Build the instruction the temporal-memory organ follows to craft a refreshed project-context note.
- * Carries the steward disposition inline (the "personality"): keep what we know current, refine not
- * restate, and say nothing if nothing durable was learned. Pure.
+ * Build the instruction the temporal-memory organ follows to record what a mission taught about the
+ * project it worked in. The project's own context is shown READ-ONLY — so the lesson never restates
+ * what the project already declares — and the output is a lesson for memory, not a project edit. Pure.
  */
 export function buildMaintenancePrompt(mission, project) {
   const goal = String(mission?.title || mission?.instruction || '').replace(/\s+/g, ' ').slice(0, 500);
@@ -39,45 +42,46 @@ export function buildMaintenancePrompt(mission, project) {
     if (c && typeof c === 'object' && Object.keys(c).length) current = JSON.stringify(c).slice(0, 2000);
   } catch { current = ''; }
   return [
-    'You are the temporal-memory organ, keeping a prime-project\'s CONTEXT current after a mission touched it.',
-    'Your stance: you steward what we KNOW about this project. When a mission works it, you refresh that',
-    'knowledge from what JUST happened — tightening what proved out, recording what changed or what worked.',
-    'You refine rather than restate, you keep it lean, and if nothing DURABLE was learned you say so plainly.',
-    'You never invent, never log routine task chatter, and never include secrets.',
+    'You are the temporal-memory organ, recording what a mission taught us about a project it worked in.',
+    'What you write is MEMORY — a lesson the agent recalls the next time it works in this project. It is',
+    'never written into the project record: the project context below is read-only, shown so you do not',
+    'restate what it already declares. Record only something DURABLE this run revealed (a constraint, an',
+    'approach that worked, a pitfall worth naming); if the run was routine, say nothing — silence is the',
+    'honest default. Never invent, never log task chatter, never include secrets.',
     '',
     `PROJECT: ${project?.name || project?.id || 'unknown'} (${project?.id || ''})`,
-    `CURRENT CONTEXT: ${current || '(none)'}`,
+    `PROJECT CONTEXT (read-only): ${current || '(none)'}`,
     '',
     `MISSION GOAL: ${goal}`,
     `MISSION OUTCOME: ${outcome || '(none)'}`,
     '',
     'Respond with exactly ONE JSON object and nothing else:',
-    '  {"update": "<a concise, durable note about the project\'s state/approach worth remembering, or an EMPTY string if nothing durable was learned>"}',
-    'The note is prose, <= 400 chars, about the project — not a task log.',
+    '  {"lesson": "<one durable lesson about working in this project, <= 300 chars, or an EMPTY string if nothing durable was learned>"}',
   ].join('\n');
 }
 
 /**
- * Parse the organ's response into a bounded update. Pure. Never throws.
+ * Parse the organ's response into a bounded lesson. Pure. Never throws. Reads `lesson`, and the
+ * pre-re-scope `update` key so an organ answering the old contract still lands in memory.
  * @param {string} text
- * @param {number} [maxLen=400] cap on the update length (project notes 400; playbook narratives longer)
- * @returns {{update:string}}  update is '' when nothing durable was learned (or on any parse failure).
+ * @param {number} [maxLen=300]
+ * @returns {{lesson:string}}  lesson is '' when nothing durable was learned (or on any parse failure).
  */
-export function parseMaintenanceResponse(text, maxLen = 400) {
-  if (!text) return { update: '' };
+export function parseMaintenanceResponse(text, maxLen = 300) {
+  if (!text) return { lesson: '' };
   try {
     const m = String(text).match(/\{[\s\S]*\}/);
-    if (!m) return { update: '' };
+    if (!m) return { lesson: '' };
     const obj = JSON.parse(m[0]);
-    const update = typeof obj.update === 'string' ? obj.update.trim().slice(0, maxLen) : '';
-    return { update };
+    const raw = typeof obj.lesson === 'string' ? obj.lesson : (typeof obj.update === 'string' ? obj.update : '');
+    return { lesson: raw.replace(/\s+/g, ' ').trim().slice(0, maxLen) };
   } catch {
-    return { update: '' };
+    return { lesson: '' };
   }
 }
 
 /**
- * Decide whether a completed mission should refine any PLAYBOOK narratives it drew on.
+ * Decide whether a completed mission should be asked for lessons about the PLAYBOOKS it drew on.
  * Pure. Runs only when the flag is on, the envelope is a completed mission, and the planner recalled
  * one or more playbooks (mission.recalled_processes, stamped by checkpoint_plan when a playbook's
  * intent_keywords matched the mission goal). Bounded to at most `max` so one mission can never fan out.
@@ -95,31 +99,47 @@ export function shouldMaintainProcesses(mission, contracts, max = 3) {
 }
 
 /**
- * Build the instruction the temporal-memory organ follows to REFINE a playbook's narrative from what
- * a mission that drew on it just did. Same steward disposition, conservative + additive: refine ONLY if
- * the run genuinely revealed something the pattern should carry; else leave it as-is (empty update). A
- * playbook narrative is tool-syntax-free prose about HOW a recurring kind of work is done well. Pure.
+ * Build the instruction the temporal-memory organ follows to record what a mission taught about a
+ * playbook it drew on. The narrative is shown READ-ONLY: memory never rewrites a playbook — changing
+ * one is an authoring decision for the definition plane. Pure.
  */
 export function buildProcessMaintenancePrompt(process, mission) {
   const goal = String(mission?.title || mission?.instruction || '').replace(/\s+/g, ' ').slice(0, 500);
   const outcome = String(mission?.output || '').replace(/\s+/g, ' ').slice(0, 2000);
   const current = String(process?.narrative || '').replace(/\s+/g, ' ').slice(0, 1200);
   return [
-    'You are the temporal-memory organ, keeping a shared PROCESS PLAYBOOK current after a mission drew on it.',
-    'A playbook is a remembered narrative — HOW a recurring kind of work is done well, in prose, with NO tool',
-    'syntax, NO step lists, NO commands. Refine the narrative ONLY if this mission genuinely revealed something',
-    'the pattern should carry going forward (a sharper way, a pitfall worth naming, a step that proved to matter).',
-    'If the run was routine and the narrative already covers it, say nothing — silence is the honest default.',
-    'You refine and tighten; you never bloat, never restate the mission, never invent, never add tool syntax.',
+    'You are the temporal-memory organ, recording what a mission taught us about a PROCESS PLAYBOOK it drew on.',
+    'What you write is MEMORY — a lesson recalled the next time this kind of work comes up. The playbook is a',
+    'definition and is read-only to memory: you never rewrite it. Record a lesson ONLY if this run revealed',
+    'something the narrative below does not already carry (a sharper way, a pitfall worth naming, a step that',
+    'proved to matter); if the run was routine, say nothing — silence is the honest default. NO tool syntax,',
+    'NO commands, NO step lists, never invent.',
     '',
     `PLAYBOOK: ${process?.name || process?.id || 'unknown'} (${process?.id || ''})`,
-    `CURRENT NARRATIVE: ${current || '(none)'}`,
+    `PLAYBOOK NARRATIVE (read-only): ${current || '(none)'}`,
     '',
     `MISSION THAT USED IT — GOAL: ${goal}`,
     `MISSION OUTCOME: ${outcome || '(none)'}`,
     '',
     'Respond with exactly ONE JSON object and nothing else:',
-    '  {"update": "<the FULL refined narrative prose if it should change, or an EMPTY string to leave it as-is>"}',
-    'When non-empty, "update" is the complete replacement narrative (<= 700 chars), tool-syntax-free prose.',
+    '  {"lesson": "<one durable lesson about this kind of work, <= 300 chars, or an EMPTY string if nothing durable was learned>"}',
   ].join('\n');
+}
+
+/**
+ * The working-memory line a lesson becomes. Scoped so consolidation (and recall) know what it is
+ * about. Pure; one line, whitespace-normalized.
+ *
+ * @param {object} p
+ * @param {'project'|'playbook'} p.scope
+ * @param {string} p.id
+ * @param {string} p.lesson
+ * @param {string} [p.date] - YYYY-MM-DD (default: today, UTC)
+ * @returns {string} the line, newline-terminated; '' when there is no lesson
+ */
+export function lessonLine({ scope, id, lesson, date } = {}) {
+  const text = String(lesson || '').replace(/\s+/g, ' ').trim();
+  if (!text) return '';
+  const day = date || new Date().toISOString().slice(0, 10);
+  return `- [${day}] lesson (${scope === 'playbook' ? 'playbook' : 'project'} ${id || 'unknown'}): ${text}\n`;
 }
