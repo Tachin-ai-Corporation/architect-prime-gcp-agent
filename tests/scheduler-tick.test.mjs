@@ -226,6 +226,23 @@ describe('shipped responsibilities', () => {
     assert.doesNotMatch(playbook, /shareable|update that one|at exactly those ids/i, 'the playbook must not contradict the responsibility');
   });
 
+  it('the weekly exec update briefs only this week\'s notes, found by name among the files shared with it', () => {
+    // 2026-09-24: the agent is now INVITED to the meetings, so Meet shares each transcript with it
+    // file by file — while the host's folders fork, so a folder id is stale by construction. And
+    // "the most recent notes, flagged if old" re-briefed the same late-August meetings for weeks.
+    const r = JSON.parse(readFileSync(join(repo, 'specialties', 'assistant', 'responsibilities-assistant.json'), 'utf8'))
+      .responsibilities.find((x) => x.id === 'r-weekly-exec-update');
+    const text = JSON.stringify(r);
+    assert.match(text, /mimeType = 'application\/vnd\.google-apps\.document'/, 'Docs only: no recording video, shortcut, or "(recurring)" folder');
+    assert.match(text, /date -u -d '7 days ago'/, 'the window is this time last week, derived rather than guessed');
+    assert.match(text, /Do NOT fall back to an older week/);
+    assert.match(text, /If NO designated meeting has anything newer than the cutoff, create nothing/);
+    assert.doesNotMatch(text, /list the resource's folder|still use them and FLAG them as stale/i, 'no folder fallback, no stale backfill');
+    const playbook = JSON.parse(readFileSync(join(repo, 'operator', 'processes', 'p-weekly-exec-update.json'), 'utf8')).narrative;
+    assert.doesNotMatch(playbook, /they are not calendar events|carry its most recent notes|in the same folder/i, 'the playbook must not contradict the responsibility');
+    assert.match(playbook, /Never fold in an older week/);
+  });
+
   it('declare only five-field schedules in timezones the scheduler can honor', () => {
     // An unknown zone only WARNs at runtime and schedules in UTC — a typo in shipped
     // content would move a fire time by hours with nothing but a log line to show it.
