@@ -43,6 +43,18 @@ describe('the memory CLI set is one list, held three ways', () => {
     assert.ok(existsSync(join(repo, 'corekit', 'brain', 'process-ops')), 'process-ops lives with the other definition CLIs');
   });
 
+  it('no memory CLI pastes free text into Python source', () => {
+    // core-memory-retire built json.dumps('${REASON}') — an apostrophe in a retire reason ended the
+    // literal and the retire failed with a SyntaxError (hit live, 2026-09-24); core-memory-write did
+    // the same with '''${FACT}'''. Free text must reach Python through the environment.
+    for (const cli of MEMORY_CLIS) {
+      const src = read(`corekit/memory/${cli}`);
+      for (const line of src.split('\n').filter((l) => /python3 -c /.test(l) && !l.trim().startsWith('#'))) {
+        assert.doesNotMatch(line, /'{1,3}\$\{/, `${cli}: shell text interpolated into a Python literal: ${line.trim()}`);
+      }
+    }
+  });
+
   it('process-ops stays motor-owned and is installed from its new home', () => {
     assert.equal(JSON.parse(read('skills/process-ops/skill.json')).agent_part, 'motor');
     for (const m of ['infra/manifests/role-fleet.txt', 'infra/manifests/role-prime.txt']) {

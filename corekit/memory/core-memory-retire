@@ -104,7 +104,9 @@ if [[ "$CURRENT_STATUS" == "superseded" ]]; then
 fi
 
 # ── PATCH: set status=retired, retiredAt, retireReason ──────────
-REASON_ESCAPED=$(python3 -c "import json; print(json.dumps('${REASON}'))")
+# The reason reaches Python through the environment, never pasted into its source: an
+# apostrophe in '${REASON}' ended the literal and every such retire failed with a SyntaxError.
+REASON_ESCAPED=$(_V="$REASON" python3 -c "import json,os; print(json.dumps(os.environ['_V']))")
 
 RESPONSE=$(curl -sf \
   -H "Authorization: Bearer ${TOKEN}" \

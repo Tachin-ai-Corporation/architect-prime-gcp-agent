@@ -100,14 +100,16 @@ fi
 
 SOURCE_DETAIL_FIELD=""
 if [[ -n "$SOURCE_DETAIL" ]]; then
-  SOURCE_DETAIL_FIELD="\"sourceDetail\": {\"stringValue\": $(python3 -c "import json; print(json.dumps('${SOURCE_DETAIL}'))")},"
+  # Free text reaches Python through the environment, never pasted into its source: an
+  # apostrophe in '${VAR}' ended the literal and turned the write into a SyntaxError.
+  SOURCE_DETAIL_FIELD="\"sourceDetail\": {\"stringValue\": $(_V="$SOURCE_DETAIL" python3 -c "import json,os; print(json.dumps(os.environ['_V']))")},"
 fi
 
 DOC_BODY=$(cat <<EOF
 {
   "fields": {
     "id": {"stringValue": "${ENTRY_ID}"},
-    "fact": {"stringValue": $(python3 -c "import json; print(json.dumps('''${FACT}'''))")},
+    "fact": {"stringValue": $(_V="$FACT" python3 -c "import json,os; print(json.dumps(os.environ['_V']))")},
     "category": {"stringValue": "${CATEGORY}"},
     "tags": {"arrayValue": {"values": ${TAGS_JSON}}},
     "confidence": {"doubleValue": ${CONFIDENCE}},
