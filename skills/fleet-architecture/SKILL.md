@@ -156,7 +156,23 @@ into its own plan, never a step list the daemon executes. If it reads as numbere
 skill wearing the wrong hat.
 
 **Responsibility.** A trigger, an instruction, and success criteria the agent can judge itself
-against. State the timezone; a schedule without one silently shifts.
+against. State the timezone; a schedule without one silently shifts. There are two ways to change one,
+and the difference is scope:
+
+- **For every agent of a role**, change the role's default through this lifecycle:
+  `fleet-config change update responsibility` → validate → release → assign. Use this when the
+  change is right for the role itself.
+- **For one agent**, write that agent's own responsibility store with `responsibility-manage` (its syntax is in the work-management skill):
+  `responsibility-manage --agent <id> update <responsibility-id> '<json>' --note "<evidence>"`, or
+  `create` for a duty only that agent should carry. It's live on that agent within a minute, it's
+  a revision the agent's `history` shows with you as the author, and `revert` undoes it. Inspect
+  what you've set with `responsibility-manage --agent <id> list`. The dashboard's introspect shows
+  the agent's full effective set.
+
+Agents also change their own responsibilities, and their store is where those edits live. So read
+`list` before you overwrite something the agent chose. A per-agent edit that keeps recurring across
+agents of one role is evidence for a role default. Platform upkeep (memory consolidation, git
+cleanup, your own fleet reviews) is `locked`; changing it is a Platform Finding.
 
 ## Diagnosing from evidence, not anecdote
 

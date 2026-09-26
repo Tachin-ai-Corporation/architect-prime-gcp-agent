@@ -254,8 +254,12 @@ is; the plane says *who may change it and how*. Base cortex wiring and a designe
 both organ content; only the first is platform firmware.
 - **Foundation** — deployment-independent mechanism. Repo-owned, release-versioned (`platformVersion`).
 - **Fleet Definition** — this deployment's roles, soul overlays, declarative skills, processes,
-  responsibilities, policies, assignments and eval suites. Deployment-owned, Prime-authored
-  (`fleetRelease` / `agentSpecDigest`).
+  responsibilities, policies, assignments and eval suites. Deployment-owned. Prime authors it through
+  releases (`fleetRelease` / `agentSpecDigest`). Improving the fleet is Prime's job, so Prime may also
+  edit a single agent's responsibilities directly. **An agent authors its own responsibilities**
+  without going through Prime: overrides of its defaults, and duties it takes on. They are kept in its
+  responsibility store, beside its Core Memory (C-36). Platform upkeep responsibilities are
+  Foundation, `locked`, and no store record changes them (C-30).
 - **Runtime State** — live work, memory, approvals, health, evidence (`stateSchemaVersion`).
 
 No domain is wholly one plane. Brain, Roles, Souls, Skills, Tools, Processes, Responsibilities,
@@ -264,8 +268,9 @@ Projects, Culture of Work, Memory, Secrets, Models, Fleet, Artifacts and Evals e
 The classification test and the domain-by-domain table are
 [`ADR-001`](adr/ADR-001-three-planes-two-loops.md) and [`MODULE_CHARTER`](MODULE_CHARTER.md).
 
-**Violation looks like:** a deployment-specific role, soul overlay or playbook that can only change by a
-generic repository commit; a platform mechanism made editable from a deployment; a document or table
+**Violation looks like:** a deployment-specific role, soul overlay, playbook or responsibility that can
+only change by a generic repository commit; an agent that must ask Prime, or wait for an upgrade, to
+change its own schedule; a platform mechanism made editable from a deployment; a document or table
 that treats the four semantic layers as the mutability boundary; "is it an organ?" answered as if it
 settled "who may change it?"
 
@@ -349,10 +354,16 @@ A Foundation upgrade, rollback, reboot or agent replacement never erases or sile
 deployment-owned content. No manifest owns a path that holds tenant definitions. Definition schemas
 carry an N/N-1 compatibility policy with shipped migrations, validated before activation. Rolling out
 fleet content never invokes a CoreKit upgrade, and the dashboard never labels one as the other.
+An installed responsibility file holds only product defaults. What an agent, Prime or the dashboard
+changes for one agent lives in that agent's responsibility store (Firestore). The scheduler re-reads
+the store on its own clock, and every change there is a revision. No writer edits an installed
+responsibility file in place.
 
 **Violation looks like:** a manifest line that overwrites a tenant-authored soul, responsibility or
-skill; content rollout implemented as a platform upgrade; an upgrade that drops assignments, profiles or
-memory; a definition schema bump with no migration and no compatibility window.
+skill; an agent's own responsibility change written into an installed file, where the next upgrade
+silently reinstalls the default over it; content rollout implemented as a platform upgrade; an upgrade
+that drops assignments, profiles or memory; a definition schema bump with no migration and no
+compatibility window.
 
 ### C-37 · Cognitive latitude is a posture; the spine and the fence are not
 The determinism of C-4/C-5 and the structural capability fencing of C-21 are invariant across every

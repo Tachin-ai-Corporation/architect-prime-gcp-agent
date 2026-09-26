@@ -1,8 +1,8 @@
 {
   "id": "work-management",
   "name": "Culture of Work Tools",
-  "version": 2,
-  "description": "Manage responsibilities and projects — the R/M/C/T infrastructure. Read work and task logs.",
+  "version": 3,
+  "description": "Manage your own responsibilities (live within a minute, no Prime or upgrade) and projects — the R/M/C/T infrastructure. Read work and task logs.",
   "author": "architect-prime",
   "origin": "core",
   "category": "work",

@@ -65,7 +65,7 @@ Every domain splits three ways: **mechanism** (Foundation) · **definition** (Fl
 | **Skills** | package schema, resolver, validator, sandbox, tool-provider ABI, installer/synchronizer | procedure, triggers, recovery guidance, examples, approved tool bindings, assignments | installed digest, use telemetry, deviations, eval results |
 | **Executable tools** | privileged provider implementation, connector, secret injection, IAM and egress policy | references to already-approved providers; sandboxed script package where policy permits | invocation record, result metadata, audit event |
 | **Processes** | schema, version/scope resolver, recall/matching, registry API | narrative playbooks, intent cues, applicable scopes | use evidence and outcomes |
-| **Responsibilities** | scheduler, leasing, idempotency, event matching, timezone/catch-up rules | schedule/event rule, instruction, target, success criteria, enablement | cursor, lease, last/next fire, execution history |
+| **Responsibilities** | scheduler, leasing, idempotency, event matching, timezone/catch-up rules; the store merge and its validation (`platform/work/responsibility-store.mjs`); platform upkeep (`locked`) | schedule/event rule, instruction, target, success criteria, enablement — a role's defaults by Prime release, and each agent's own overrides and duties in its responsibility store, authored by the agent itself (or by Prime improving it) with no release and no upgrade | cursor, lease, last/next fire, execution history, store revisions |
 | **Projects** | schema, hierarchy, context inheritance, dependency semantics, repository API | project templates and deployment conventions | project records, membership, accumulated context, status |
 | **Culture of work** | R→M→C→T state machine, transition reducer, approvals, waits, delegation, artifact/outbox rules | approval thresholds and routing policy within platform bounds; narrative processes | envelopes, approvals, handoffs, checkpoints, tasks, artifacts |
 | **Memory** | storage/retrieval, consolidation, supersession, provenance, retention and prompt-budget algorithms | memory/retention policy, role-specific recall priorities | facts, observations, summaries, preferences, lessons — held ONLY in working memory (`MEMORY.md`), Core Memory and the Deep Truths region; see *The memory boundary* |
@@ -209,7 +209,7 @@ Enforced in the runtime rather than by the gate:
   | | Core Memory — agent-scoped, with supersession, provenance, weight | Temporal-Memory in consolidation (promote, supersede, retire); an explicit "remember this" by the acting organ |
   | | Deep Truths — the managed region of the cortex `SOUL.md` | `update-deep-truths` in consolidation only |
   | | the consolidation report | Temporal-Memory — the pass's verifiable record |
-  | **Read, never written by memory** | processes · projects (incl. their resource references) · skills · organ bodies · responsibilities | their own planes (C-29) |
+  | **Read, never written by memory** | processes · projects (incl. their resource references) · skills · organ bodies · responsibilities (incl. the agent's responsibility store) | their own planes (C-29); the store by `responsibility-manage` |
   | | the work ledger, incl. compaction digests · the responsibility learnings overlay | the daemon (C-17) |
   | | the conversation / thread ledger | deterministic context (B-32) |
 

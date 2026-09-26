@@ -356,5 +356,11 @@ function responsibilityRecord(r) {
     target_agent: r.target_agent ?? null,
     project_id: r.project_id ?? null,
     enabled: r.enabled !== false,
+    // Read by the scheduler (the playbook prior) and the brain (run-on-request), and
+    // dropped here until now — a released responsibility lost both on the way through.
+    processRef: r.processRef ?? null,
+    processParameters: r.processParameters ?? null,
+    triggerable: r.triggerable === true,
+    locked: r.locked === true,
   };
 }

@@ -1,7 +1,7 @@
 {
   "id": "fleet-architecture",
   "name": "Fleet Architecture (author, evaluate, release, roll back fleet definitions)",
-  "version": 1,
+  "version": 2,
   "description": "Evolve this deployment's roles, soul overlays, declarative skills, playbooks and responsibilities through the Fleet Definition lifecycle — draft, validate, evaluate, canary, promote, roll back — and file a Platform Finding when a need genuinely requires the platform to change.",
   "author": "architect-prime",
   "origin": "core",

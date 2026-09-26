@@ -294,6 +294,27 @@ export const RESPONSIBILITY_SCHEMA = definitionSchema('responsibility', 2, {
   target_agent: { type: 'string', nullable: true, describe: 'Agent id, or null to run on whichever agent holds the role' },
   project_id: { type: 'string', nullable: true, pattern: ID_PATTERN },
   enabled: { type: 'boolean', default: true },
+
+  // Read by the scheduler and the brain but undeclared here, so the release path
+  // could not carry them: a released responsibility lost its playbook and its
+  // "run now" opt-in on the way through the compiler.
+  processRef: {
+    type: 'string', nullable: true, pattern: ID_PATTERN,
+    describe: 'The playbook a firing recalls as its planning prior (platform/work/scheduler.mjs)',
+  },
+  processParameters: {
+    type: 'object', open: true, nullable: true,
+    describe: 'Parameters carried alongside processRef for the playbook',
+  },
+  triggerable: {
+    type: 'boolean', default: false,
+    describe: 'A user may ask the agent to run this out of turn (trigger_responsibility)',
+  },
+  locked: {
+    type: 'boolean', default: false,
+    describe: 'Platform upkeep: no agent, Prime or dashboard edit may override or disable it — it changes only '
+      + 'through a platform release (C-30). See platform/work/responsibility-store.mjs.',
+  },
 }, (r) => {
   const hasSchedule = Boolean(r.schedule);
   const hasEvent = Boolean(r.event);

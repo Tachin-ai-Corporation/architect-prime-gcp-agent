@@ -1,15 +1,21 @@
 // platform/work/scheduler.mjs — Responsibility cron scheduler + event triggers
 // Extracted from agent-brain.mjs Phase 2A
 //
-// Manages cron-scheduled responsibilities (load from disk JSON, compute next
-// fire times, periodic check loop) and event-triggered responsibilities
-// (on_complete, on_deploy, on_failure). A schedule is matched in the
-// responsibility's declared IANA `timezone` (default UTC).
+// Manages cron-scheduled responsibilities (compute next fire times, periodic
+// check loop) and event-triggered responsibilities (on_complete, on_deploy,
+// on_failure). A schedule is matched in the responsibility's declared IANA
+// `timezone` (default UTC).
+//
+// What runs is the shipped files (platform base + role overlays) with the agent's
+// OWN store applied — its overrides and the responsibilities it created — merged by
+// platform/work/responsibility-store.mjs. The store is re-read every
+// contracts.responsibility_store.refresh_ms, so an agent, Prime or the dashboard
+// can change a responsibility without a release or an upgrade.
 //
 // All Firestore/brain access uses injected dependencies — no global state.
 // cronNextFire() is also exported standalone as a pure utility.
 
-import { readFileSync, existsSync, readdirSync } from 'fs';
+import { loadShipped, mergeResponsibilities, storeSignature, describeProvenance, DEFAULT_POLICY } from './responsibility-store.mjs';
 
 // A responsibility "cycle in progress" (for the singleton guard) means an M mission
 // that is executing or about to. Everything else — complete/failed/cancelled AND
@@ -159,6 +165,8 @@ export function cronNextFire(expression, timeZone, from = new Date()) {
  * @param {function} deps.firestoreWrite           - async (collection, docId, data) => result
  * @param {function} [deps.firestoreQuery]          - async (collection, filters) => docs[] — for singleton check
  * @param {function} [deps.getProcess]             - async (id) => playbook|null — resolves a responsibility's processRef
+ * @param {function} [deps.loadStore]              - async () => docs[] — the agent's own responsibility store; throws when unreadable
+ * @param {object}   [deps.policy]                 - resolved contracts.responsibility_store (refresh_ms, min_interval_minutes, max_per_agent)
  * @param {function} deps.getDefaultProjectId      - () => string|null
  * @returns {object} Scheduler API
  */
@@ -174,6 +182,8 @@ export function createScheduler(deps) {
     firestoreQuery,
     getProcess,
     getDefaultProjectId,
+    loadStore,
+    policy = DEFAULT_POLICY,
   } = deps;
 
   const log = deps.logger || ((level, msg) => console.log(`[scheduler] ${level}: ${msg}`));
@@ -193,6 +203,15 @@ export function createScheduler(deps) {
   const _respRearmAt = {};    // id → ms of the last attempt to arm a null next-fire
   const _badZoneWarned = new Set();
   let _intervalId = null;
+
+  let _shipped = [];          // the shipped files, as loadShipped() read them
+  let _storeDocs = [];        // the agent's own store, as last read successfully
+  let _storeSig = '';
+  let _storeCheckedAt = -Infinity;
+  let _storeWarnedAt = -Infinity;
+  const _issuesLogged = new Set();
+  let _armed = false;         // start() has run — changes re-arm from then on
+  const _armedSig = {};       // id → the schedule signature its current slot was armed for
 
   /** ISO timestamp */
   function now() {
@@ -228,49 +247,108 @@ export function createScheduler(deps) {
 
   // ---- Responsibility loading ----
 
+  /** What a responsibility's armed slot depends on — a change to any of it re-arms. */
+  function armSignature(r) {
+    return `${Boolean(r.enabled)}|${r.schedule || ''}|${r.timezone || 'UTC'}`;
+  }
+
+  function armOne(r, now_) {
+    _armedSig[r.id] = armSignature(r);
+    if (r.enabled && r.schedule) {
+      _respNextFire[r.id] = nextFireFor(r, now_);
+      const nextStr = _respNextFire[r.id]
+        ? _respNextFire[r.id].toISOString()
+        : 'none within 8d (re-armed automatically as it comes into range)';
+      log('INFO', `Responsibility ${r.id}: next fire ${nextStr} (${r.schedule} ${zoneFor(r)}) — ${describeProvenance(r)}`);
+    } else {
+      delete _respNextFire[r.id];
+    }
+  }
+
   /**
-   * Load responsibilities from on-disk JSON config files.
-   * Reads corekit/responsibilities.json (fleet base) first, then every
+   * Swap in a new effective set. Before start() nothing is armed, so this only
+   * records it. After start(), ONLY the responsibilities whose schedule, zone or
+   * enabled flag changed are re-armed: a full re-arm computes every next fire from
+   * "now", which silently drops any slot that came due in the seconds before the
+   * next tick — once a minute, the store refresh would make that a real loss.
+   */
+  function applyEffective(next, now_) {
+    RESPONSIBILITIES = next;
+    if (!_armed) return;
+    const ids = new Set(next.map((r) => r.id));
+    for (const r of next) {
+      if (_armedSig[r.id] !== armSignature(r)) armOne(r, now_);
+    }
+    for (const id of Object.keys(_armedSig)) {
+      if (ids.has(id)) continue;
+      delete _armedSig[id];
+      delete _respNextFire[id];
+      log('INFO', `Responsibility ${id}: no longer defined — unscheduled`);
+    }
+  }
+
+  function recompute(now_) {
+    const { effective, issues } = mergeResponsibilities(_shipped, _storeDocs, { policy, nextFire: cronNextFire });
+    for (const issue of issues) {
+      const key = `${issue.id}:${issue.reason}`;
+      if (_issuesLogged.has(key)) continue;
+      _issuesLogged.add(key);
+      log('WARN', `Responsibility ${issue.id}: ${issue.reason}`);
+    }
+    applyEffective(effective, now_);
+  }
+
+  /**
+   * Load the shipped responsibilities from disk and re-apply the agent's store.
+   * Reads corekit/responsibilities.json (platform base) first, then every
    * corekit/responsibilities-*.json overlay (job, operator, role) sorted for
-   * determinism, merging by ID (first-seen wins, so the base stays authoritative).
+   * determinism, merging by ID (first-seen wins, so the base stays authoritative)
+   * — see loadShipped(). The old code hardcoded only responsibilities.json +
+   * responsibilities-job.json, which silently dropped operator/role overlays.
    *
-   * @returns {Array<object>} Loaded responsibilities array
+   * @returns {Array<object>} The effective responsibilities
    */
   function loadResponsibilities() {
-    // Read the fleet base first (authoritative under first-seen-wins), then EVERY
-    // responsibilities-*.json overlay present, sorted for determinism. The old code
-    // hardcoded only responsibilities.json + responsibilities-job.json, which
-    // silently dropped operator/role overlays mapped to any other
-    // responsibilities-*.json destination — e.g. operator responsibilities installed
-    // as corekit/responsibilities-devops.json (job-tachin-website.txt) never fired.
-    const dir = coreDir + '/corekit';
-    const files = [];
-    const basePath = dir + '/responsibilities.json';
-    if (existsSync(basePath)) files.push(basePath);
+    _shipped = loadShipped(coreDir, {
+      onError: (file, e) => log('WARN', `Responsibility file ${file} unreadable: ${e.message}`),
+    });
+    recompute(new Date());
+    if (RESPONSIBILITIES.length > 0) {
+      log('INFO', `Responsibilities loaded: ${RESPONSIBILITIES.map(r => r.id).join(', ')}`);
+    }
+    return RESPONSIBILITIES;
+  }
+
+  /**
+   * Re-read the agent's own store and apply it if it changed. Throttled to
+   * policy.refresh_ms. An unreadable store keeps the last good set: an outage must
+   * never read as "the agent has no responsibilities of its own".
+   *
+   * @param {Date} [now_=new Date()]
+   * @param {{force?: boolean}} [opts]
+   * @returns {Promise<boolean>} true when the effective set changed
+   */
+  async function refreshStore(now_ = new Date(), { force = false } = {}) {
+    if (!loadStore) return false;
+    if (!force && now_.getTime() - _storeCheckedAt < policy.refresh_ms) return false;
+    _storeCheckedAt = now_.getTime();
+    let docs;
     try {
-      const overlays = readdirSync(dir)
-        .filter(f => /^responsibilities-.+\.json$/.test(f))
-        .sort();
-      for (const f of overlays) files.push(dir + '/' + f);
-    } catch { /* corekit dir may not exist in some contexts */ }
-    const merged = [];
-    const seen = new Set();
-    for (const f of files) {
-      try {
-        const data = JSON.parse(readFileSync(f, 'utf8'));
-        for (const r of (data.responsibilities || [])) {
-          if (!seen.has(r.id)) {
-            seen.add(r.id);
-            merged.push(r);
-          }
-        }
-      } catch { /* file may not exist */ }
+      docs = (await loadStore()) || [];
+    } catch (e) {
+      if (now_.getTime() - _storeWarnedAt > 15 * 60_000) {
+        _storeWarnedAt = now_.getTime();
+        log('WARN', `Responsibility store unreadable (${e.message}) — keeping the last good set (${_storeDocs.length} record(s))`);
+      }
+      return false;
     }
-    RESPONSIBILITIES = merged;
-    if (merged.length > 0) {
-      log('INFO', `Responsibilities loaded: ${merged.map(r => r.id).join(', ')}`);
-    }
-    return merged;
+    const sig = storeSignature(docs);
+    if (sig === _storeSig) return false;
+    _storeSig = sig;
+    _storeDocs = docs;
+    log('INFO', `Responsibility store changed — ${docs.length} record(s): ${sig || 'none'}`);
+    recompute(now_);
+    return true;
   }
 
   // ---- Fire a single responsibility ----
@@ -308,8 +386,11 @@ export function createScheduler(deps) {
     if (resp.context?.reference_files?.length) {
       contextParts.push(`REFERENCE FILES: ${resp.context.reference_files.join(', ')}`);
     }
+    // Top-level first, like accept_criteria below. This line printed
+    // resp.context.success_criteria unconditionally — "SUCCESS CRITERIA: undefined"
+    // for every responsibility that declares the field where the contract puts it.
     if ((resp.success_criteria ?? resp.context?.success_criteria)) {
-      contextParts.push(`SUCCESS CRITERIA: ${resp.context.success_criteria}`);
+      contextParts.push(`SUCCESS CRITERIA: ${(resp.success_criteria ?? resp.context?.success_criteria)}`);
     }
     // SESSION_CONTEXT_PLAN Phase 3b: merge machine-fed learnings from the
     // Firestore overlay (written by completeEnvelope from compaction digests)
@@ -337,6 +418,15 @@ export function createScheduler(deps) {
         + 'responsibilities are read as context and never written.');
     }
     const scopeMeta = memoryScoped ? { effect_scope: 'memory' } : {};
+    // C-32: the work records exactly which definition produced it — a shipped
+    // default, an override, or the agent's own record, at which store revision.
+    const prov = resp._provenance;
+    if (prov) {
+      scopeMeta.responsibility_origin = prov.origin;
+      if (prov.revision != null) scopeMeta.responsibility_revision = prov.revision;
+    }
+    // Carried back into the completion event so fireEvent can refuse to chain.
+    if (resp._firedByEvent) scopeMeta.fired_by_event = resp._firedByEvent;
     const contextSummary = contextParts.join('\n\n');
 
     // Create type=R Responsibility envelope
@@ -511,23 +601,21 @@ export function createScheduler(deps) {
    * @param {Date} [now_=new Date()] - The instant next-fires are computed from
    */
   function start(now_ = new Date()) {
+    // Arm everything known now. It used to return early when nothing was
+    // configured — harmless while the only source was installed files, fatal once an
+    // agent can create its first responsibility at runtime: the loop that would
+    // fire it never started.
+    _armed = true;
+    for (const r of RESPONSIBILITIES) armOne(r, now_);
     if (RESPONSIBILITIES.length === 0) {
-      log('INFO', 'No responsibilities configured, scheduler idle');
-      return;
+      log('INFO', 'No responsibilities yet — the scheduler keeps checking the agent\'s store');
     }
-
-    // Calculate initial next-fire times
-    for (const r of RESPONSIBILITIES) {
-      if (r.enabled && r.schedule) {
-        _respNextFire[r.id] = nextFireFor(r, now_);
-        const nextStr = _respNextFire[r.id]
-          ? _respNextFire[r.id].toISOString()
-          : 'none within 8d (re-armed automatically as it comes into range)';
-        log('INFO', `Responsibility ${r.id}: next fire ${nextStr} (${r.schedule} ${zoneFor(r)})`);
-      }
-    }
+    // The agent's own store, read now rather than a minute from now, so its
+    // responsibilities are armed as soon as the brain is up.
+    refreshStore(now_, { force: true }).catch((e) => log('WARN', `Responsibility store refresh failed: ${e.message}`));
 
     // Check every 60 seconds
+    if (_intervalId) clearInterval(_intervalId);
     _intervalId = setInterval(() => {
       tick().catch(e => log('ERROR', `Scheduler tick failed: ${e.message}`));
     }, 60_000);
@@ -540,6 +628,7 @@ export function createScheduler(deps) {
    * @param {Date} [now_=new Date()]
    */
   async function tick(now_ = new Date()) {
+    await refreshStore(now_);
     for (const r of RESPONSIBILITIES) {
       if (!r.enabled || !r.schedule) continue;
       let nextFire = _respNextFire[r.id];
@@ -605,12 +694,14 @@ export function createScheduler(deps) {
   }
 
   /**
-   * Recalculate next-fire times after a config reload.
-   * Called by the brain when watchFile detects changes.
+   * Recalculate every next-fire time from `now_`. loadResponsibilities() already
+   * re-arms exactly what changed; this full recompute stays for callers that want
+   * it and drops any slot that came due since the last tick.
    */
   function recalcNextFires(now_ = new Date()) {
     _respNextFire = {};
     for (const r of RESPONSIBILITIES) {
+      _armedSig[r.id] = armSignature(r);
       if (r.enabled && r.schedule) _respNextFire[r.id] = nextFireFor(r, now_);
     }
   }
@@ -627,17 +718,10 @@ export function createScheduler(deps) {
   async function fireEvent(eventType, eventContext = {}) {
     if (!eventType) return;
 
-    let eventResps = [];
-    try {
-      const respFile = coreDir + '/corekit/responsibilities.json';
-      if (existsSync(respFile)) {
-        const parsed = JSON.parse(readFileSync(respFile, 'utf8'));
-        eventResps = Array.isArray(parsed) ? parsed : (parsed.responsibilities || []);
-      }
-    } catch (e) {
-      log('WARN', `Failed to load responsibilities for event trigger: ${e.message}`);
-      return;
-    }
+    // The effective set — the same one the clock fires from. This re-read only the
+    // platform base file, so an event responsibility in a role overlay, or one an
+    // agent created for itself, could never fire.
+    const eventResps = RESPONSIBILITIES;
 
     const matching = eventResps.filter(r => {
       if (!r.enabled) return false;
@@ -649,18 +733,28 @@ export function createScheduler(deps) {
     });
 
     if (matching.length === 0) return;
+    // No event chains. A mission an EVENT responsibility produced never fires another
+    // event responsibility, and no responsibility fires from its own mission: once an
+    // agent can write an `on_complete` responsibility for itself, either of those is a
+    // loop that runs a mission on every completion, forever.
+    if (eventContext.fired_by_event) {
+      log('INFO', `Event '${eventType}' from an event-fired mission (${eventContext.mission_id || '?'}) — not chaining`);
+      return;
+    }
     log('INFO', `Event '${eventType}' triggered — ${matching.length} matching responsibilities`);
 
     for (const resp of matching) {
       try {
-        // Check min_spacing
-        if (resp.min_spacing_minutes && resp._lastFired) {
-          const elapsed = (Date.now() - new Date(resp._lastFired).getTime()) / 60000;
-          if (elapsed < resp.min_spacing_minutes) {
-            log('INFO', `Event resp ${resp.id}: skipping (${elapsed.toFixed(0)}m since last, min ${resp.min_spacing_minutes}m)`);
-            continue;
-          }
+        if (eventContext.responsibility_id === resp.id) continue;
+        // Spacing, with the store's floor. This read `resp._lastFired`, a field nothing
+        // ever set, so an event responsibility had no spacing at all.
+        const spacingMin = Math.max(resp.min_spacing_minutes || 0, policy.min_interval_minutes || 0);
+        const lastFired = _respLastFired[resp.id];
+        if (lastFired && (Date.now() - lastFired) < spacingMin * 60_000) {
+          log('INFO', `Event resp ${resp.id}: skipping (${Math.round((Date.now() - lastFired) / 60_000)}m since last, min ${spacingMin}m)`);
+          continue;
         }
+        _respLastFired[resp.id] = Date.now();
 
         // Inject event context into instruction
         let instruction = resp.instruction || '';
@@ -671,7 +765,7 @@ export function createScheduler(deps) {
           instruction += `\nProject: ${eventContext.project_id}`;
         }
 
-        const eventResp = { ...resp, instruction };
+        const eventResp = { ...resp, instruction, _firedByEvent: eventType };
         await fireResponsibility(eventResp);
         log('INFO', `Event resp ${resp.id} fired for '${eventType}'`);
       } catch (e) {
@@ -697,7 +791,9 @@ export function createScheduler(deps) {
     fireById,
     /** Recalculate next-fire times (after config hot-reload). */
     recalcNextFires,
-    /** Get the current loaded responsibilities array. */
+    /** Re-read the agent's own store now (throttled unless forced); resolves true when the set changed. */
+    refreshStore,
+    /** Get the current effective responsibilities array (shipped + the agent's store). */
     getResponsibilities: () => [...RESPONSIBILITIES],
     /** Get internal next-fire map (for diagnostics). */
     getNextFires: () => ({ ..._respNextFire }),

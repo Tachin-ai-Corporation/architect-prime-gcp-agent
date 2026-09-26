@@ -48,6 +48,7 @@ corekit/brain/assemble-persona bin/assemble-persona
 corekit/brain/task-log-write bin/task-log-write
 corekit/brain/task-log-read bin/task-log-read
 corekit/brain/responsibility-manage bin/responsibility-manage
+corekit/brain/responsibility-manage.mjs corekit/brain/responsibility-manage.mjs
 corekit/brain/project-manage bin/project-manage
 
 # Brain module (AI SDK gateway)
@@ -162,6 +163,7 @@ platform/control-plane/project-context.mjs platform/control-plane/project-contex
 platform/work/process-registry.mjs platform/work/process-registry.mjs
 platform/work/verdict.mjs platform/work/verdict.mjs
 platform/work/scheduler.mjs platform/work/scheduler.mjs
+platform/work/responsibility-store.mjs platform/work/responsibility-store.mjs
 platform/work/approvals.mjs platform/work/approvals.mjs
 platform/persistence/archival.mjs platform/persistence/archival.mjs
 platform/persistence/artifacts.mjs platform/persistence/artifacts.mjs

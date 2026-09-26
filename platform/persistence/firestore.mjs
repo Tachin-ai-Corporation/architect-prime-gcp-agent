@@ -124,6 +124,18 @@ export class StoreUnavailable extends Error {
 }
 
 /**
+ * A write refused because its precondition no longer held: the document changed
+ * (or came into existence) after the caller read it. Nothing was applied. The
+ * caller re-reads and decides again rather than overwriting someone else's edit.
+ */
+export class StoreConflict extends Error {
+  constructor(path, body) {
+    super(`Firestore commit ${path}: the document changed since it was read — ${String(body).slice(0, 160)}`);
+    this.name = 'StoreConflict';
+  }
+}
+
+/**
  * How long any single Firestore call may take.
  *
  * There was no timeout at all: the token fetch had AbortSignal.timeout(5_000)
@@ -343,5 +355,59 @@ export function createClient(config) {
     return true;
   }
 
-  return { read, write, query, patch, del };
+  /**
+   * Read a document together with its server `updateTime` — the version token a
+   * compare-and-swap write needs. null only for a 404; every other failure throws,
+   * because a CAS caller that mistook an outage for "absent" would create over the
+   * top of a document it could not see.
+   *
+   * @param {string} path
+   * @returns {Promise<{data: object, updateTime: string}|null>}
+   */
+  async function readDoc(path) {
+    const token = await getGceToken();
+    const resp = await fetch(`${BASE}/${path}`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+      signal: abort(),
+    });
+    if (resp.status === 404) return null;
+    if (!resp.ok) throw new StoreUnavailable('read', path, resp.status, await resp.text());
+    const doc = await resp.json();
+    return { data: firestoreDecode(doc.fields || {}), updateTime: doc.updateTime };
+  }
+
+  /**
+   * Apply several document writes atomically — all or none. Each write may carry
+   * a precondition: `{ exists: false }` (create only) or `{ updateTime }` (only if
+   * unchanged since read). A failed precondition throws StoreConflict.
+   *
+   * @param {Array<{path: string, data: object, precondition?: object}>} writes
+   */
+  async function commit(writes) {
+    const token = await getGceToken();
+    const docRoot = `projects/${config.projectId}/databases/(default)/documents`;
+    const body = {
+      writes: writes.map((w) => ({
+        update: { name: `${docRoot}/${w.path}`, fields: firestoreEncode(w.data) },
+        ...(w.precondition ? { currentDocument: w.precondition } : {}),
+      })),
+    };
+    const resp = await fetch(`${BASE}:commit`, {
+      method: 'POST',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+      signal: abort(),
+    });
+    if (!resp.ok) {
+      const text = await resp.text();
+      const where = writes.map((w) => w.path).join(', ');
+      if (resp.status === 409 || /FAILED_PRECONDITION|ALREADY_EXISTS|ABORTED/.test(text)) {
+        throw new StoreConflict(where, text);
+      }
+      throw new StoreUnavailable('commit', where, resp.status, text);
+    }
+    return resp.json();
+  }
+
+  return { read, write, query, patch, del, readDoc, commit };
 }

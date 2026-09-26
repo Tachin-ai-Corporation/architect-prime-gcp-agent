@@ -11,6 +11,12 @@ import { join, basename } from 'path';
 import { hostname } from 'os';
 import { execSync } from 'child_process';
 import { getGceToken } from '../security/gce-auth.mjs';
+import { createClient } from '../persistence/firestore.mjs';
+import { cronNextFire } from '../work/scheduler.mjs';
+import {
+  STORE_COLLECTION, REVISIONS_COLLECTION, storeParent, resolvePolicy, loadShipped,
+  mergeResponsibilities, planWrite, describeProvenance,
+} from '../work/responsibility-store.mjs';
 
 // ---- Config ----
 const GCP_PROJECT = process.env.GCP_PROJECT_ID;
@@ -362,7 +368,7 @@ function handleWorkspace() {
   return { workspaces, files };
 }
 
-function handleBrainConfig() {
+async function handleBrainConfig() {
   const contractsPath = join(COREKIT_DIR, 'contracts.json');
 
   if (!existsSync(contractsPath)) {
@@ -394,7 +400,7 @@ function handleBrainConfig() {
     brain: contracts?.dispatch?.model || null,
   };
 
-  return { default: defaultModel, slots, daemonModels, responsibilities: readResponsibilityEntries() };
+  return { default: defaultModel, slots, daemonModels, responsibilities: await readResponsibilityEntries() };
 }
 
 function handleSetModel(params) {
@@ -448,76 +454,98 @@ function handleSetModel(params) {
 }
 
 // ---- Shared: read responsibility entries from config files ----
-function readResponsibilityEntries() {
-  const results = [];
-  const possibleFiles = [
-    join(COREKIT_DIR, 'responsibilities.json'),
-    join(COREKIT_DIR, 'responsibilities-job.json'),
-  ];
-  for (const filePath of possibleFiles) {
-    if (!existsSync(filePath)) continue;
-    try {
-      const data = JSON.parse(readFileSync(filePath, 'utf8'));
-      for (const r of (data.responsibilities || [])) {
-        results.push({
-          id: r.id || 'unknown',
-          name: r.name || r.id || 'Unnamed',
-          schedule: r.schedule || '',
-          enabled: r.enabled !== false,
-          min_spacing_minutes: r.min_spacing_minutes || 0,
-          instruction: (r.instruction || '').substring(0, 200),
-          has_process: !!(r.context?.process?.length),
-          process_steps: r.context?.process?.length || 0,
-          source: basename(filePath),
-        });
-      }
-    } catch (err) {
-      log('Error reading responsibilities file', { path: filePath, error: err.message });
-    }
+// ---- Responsibilities: shipped files + this agent's own store ----
+//
+// The same merge the scheduler runs (platform/work/responsibility-store.mjs), so the
+// dashboard shows what actually fires — including the agent's overrides and the
+// responsibilities it created — and a toggle lands in the store the scheduler reads.
+// This used to read two hardcoded files and toggle by editing them in place, which
+// the next CoreKit upgrade silently reverted (C-36).
+
+const _db = GCP_PROJECT ? createClient({ projectId: GCP_PROJECT, logger: (level, m) => log(`firestore ${level}: ${m}`) }) : null;
+
+function respStoreParent() {
+  return storeParent({ primeId: PRIME_ID, agentId: AGENT_HOSTNAME, isPrime: false });
+}
+
+function respPolicy() {
+  try { return resolvePolicy(JSON.parse(readFileSync(join(COREKIT_DIR, 'contracts.json'), 'utf8'))); } catch { return resolvePolicy({}); }
+}
+
+async function readStoreDocs() {
+  if (!_db || !PRIME_ID) return { docs: [], storeError: 'Firestore unavailable' };
+  try {
+    return { docs: await _db.query(respStoreParent(), STORE_COLLECTION, [], { noOrderBy: true, strict: true, limit: 200 }) };
+  } catch (e) {
+    return { docs: [], storeError: e.message };
   }
-  return results;
+}
+
+async function readResponsibilityEntries() {
+  const shipped = loadShipped(CORE_DIR, {
+    onError: (file, err) => log('Error reading responsibilities file', { file, error: err.message }),
+  });
+  const { docs, storeError } = await readStoreDocs();
+  const { effective, issues } = mergeResponsibilities(shipped, docs, { policy: respPolicy(), nextFire: cronNextFire });
+  if (storeError) log('Responsibility store unreadable — showing shipped defaults only', { error: storeError });
+  for (const i of issues) log('Responsibility store record ignored', { id: i.id, reason: i.reason });
+  return effective.map((r) => ({
+    id: r.id || 'unknown',
+    name: r.name || r.id || 'Unnamed',
+    schedule: r.schedule || (r.event ? `on ${r.event}` : ''),
+    timezone: r.timezone || 'UTC',
+    enabled: r.enabled !== false,
+    min_spacing_minutes: r.min_spacing_minutes || 0,
+    instruction: (r.instruction || '').substring(0, 200),
+    has_process: !!(r.context?.process?.length),
+    process_steps: r.context?.process?.length || 0,
+    source: describeProvenance(r),
+    origin: r._provenance?.origin || 'shipped',
+    revision: r._provenance?.revision ?? null,
+    updated_by: r._provenance?.updated_by ?? null,
+    locked: r.locked === true,
+  }));
 }
 
 // ---- handleResponsibilities ----
-function handleResponsibilities() {
-  return { responsibilities: readResponsibilityEntries() };
+async function handleResponsibilities() {
+  return { responsibilities: await readResponsibilityEntries() };
 }
 
 // ---- handleSetResponsibilityEnabled ----
-function handleSetResponsibilityEnabled(params) {
+async function handleSetResponsibilityEnabled(params) {
   const { id, enabled } = params;
   if (!id) return { success: false, error: 'Missing required param: id' };
   if (enabled === undefined) return { success: false, error: 'Missing required param: enabled' };
+  if (!_db || !PRIME_ID) return { success: false, error: 'Firestore unavailable' };
 
   const targetEnabled = enabled === true || enabled === 'true';
-  const respFiles = [
-    join(COREKIT_DIR, 'responsibilities.json'),
-    join(COREKIT_DIR, 'responsibilities-job.json'),
-  ];
-
-  for (const filePath of respFiles) {
-    if (!existsSync(filePath)) continue;
-    try {
-      const data = JSON.parse(readFileSync(filePath, 'utf8'));
-      const resps = data.responsibilities || [];
-      const idx = resps.findIndex(r => r.id === id);
-      if (idx === -1) continue;
-
-      resps[idx].enabled = targetEnabled;
-      writeFileSync(filePath, JSON.stringify(data, null, 2));
-      log(`Set responsibility ${id} enabled=${targetEnabled}`, { file: basename(filePath) });
-      return {
-        success: true,
-        id,
-        enabled: targetEnabled,
-        message: `Responsibility '${resps[idx].name || id}' ${targetEnabled ? 'enabled' : 'disabled'}. Brain scheduler will reload within 10 seconds.`,
-      };
-    } catch (err) {
-      return { success: false, error: `Failed to update ${basename(filePath)}: ${err.message}` };
-    }
+  const shipped = loadShipped(CORE_DIR);
+  const docPath = `${respStoreParent()}/${STORE_COLLECTION}/${id}`;
+  try {
+    const current = await _db.readDoc(docPath);
+    const plan = planWrite({
+      verb: 'update', id, input: { enabled: targetEnabled },
+      current: current?.data || null,
+      shipped: shipped.find((r) => r.id === id) || null,
+      actor: 'dashboard', policy: respPolicy(), nextFire: cronNextFire,
+    });
+    if (!plan.ok) return { success: false, error: plan.error };
+    const doc = { ...plan.doc, prime_id: PRIME_ID, agent_id: AGENT_HOSTNAME };
+    await _db.commit([
+      { path: docPath, data: doc, precondition: current ? { updateTime: current.updateTime } : { exists: false } },
+      { path: `${docPath}/${REVISIONS_COLLECTION}/${doc.revision}`, data: doc, precondition: { exists: false } },
+    ]);
+    log(`Set responsibility ${id} enabled=${targetEnabled}`, { revision: doc.revision });
+    return {
+      success: true,
+      id,
+      enabled: targetEnabled,
+      message: `Responsibility '${id}' ${targetEnabled ? 'enabled' : 'disabled'} (revision ${doc.revision}). The scheduler picks it up within a minute; it survives upgrades.`,
+    };
+  } catch (err) {
+    return { success: false, error: `Failed to update '${id}': ${err.message}` };
   }
-
-  return { success: false, error: `Responsibility '${id}' not found in any config file` };
 }
 
 // ---- handleRunResponsibility ----
@@ -528,7 +556,7 @@ function handleSetResponsibilityEnabled(params) {
 async function handleRunResponsibility(params) {
   const { id } = params;
   if (!id) return { success: false, error: 'Missing required param: id' };
-  const known = readResponsibilityEntries().find(e => e.id === id);
+  const known = (await readResponsibilityEntries()).find(e => e.id === id);
   if (!known) return { success: false, error: `Responsibility '${id}' not found` };
   if (!FIRESTORE_URL) return { success: false, error: 'Firestore unavailable' };
 

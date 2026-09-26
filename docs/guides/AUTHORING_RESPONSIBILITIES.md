@@ -4,28 +4,37 @@ This guide covers how to write Responsibility definitions for the Culture of Wor
 
 ---
 
-## File Location
+## Where a responsibility lives, and who writes it
 
-- **Fleet config:** `corekit/config/responsibilities.json`
-- **Prime-only config:** `corekit/config/responsibilities-prime.json`
+| You are… | You write… | With |
+|----------|-----------|------|
+| **The product** (this repo) | platform upkeep every agent runs — `corekit/config/responsibilities.json`, `responsibilities-prime.json` — marked `"locked": true` | a commit + platform release |
+| **The product** (this repo) | a role's shipped defaults — `specialties/<role>/responsibilities-<role>.json`, installed on the agent as its job overlay, `responsibilities-job.json` | a commit + platform release |
+| **Prime**, for a whole role | the role's defaults in this deployment | `fleet-config change update responsibility` → release → assign |
+| **An agent**, for itself | overrides of its defaults, and responsibilities of its own | `responsibility-manage` |
+| **Prime**, for one agent | that agent's overrides and own responsibilities | `responsibility-manage --agent <id>` |
+| **The operator**, from the dashboard | enable / disable | the introspect command `set_responsibility_enabled` |
 
-Both files share the same schema. Prime-only responsibilities are loaded only on Prime VMs.
+The last three write the agent's **store** in Firestore (`primes/{prime}/fleet/{agent}/responsibilities/{id}`). The scheduler re-reads it every minute and merges it over the shipped defaults. A change there is live without a Fleet release or a CoreKit upgrade, and it survives both. See [the Responsibility primitive](../primitives/06-RESPONSIBILITY.md#where-responsibilities-live-and-who-changes-them) for the layering, validation, revisions and limits.
+
+**Product content stays generic.** A responsibility that names one deployment's meetings, folders or people belongs in that deployment: in an agent's store or a Prime release, with its ids in a Project. It never goes in a shipped specialty file (C-28, C-29).
 
 ---
 
 ## Schema Reference
 
-### Config File Structure
+### Shipped File Structure
 
 ```json
 {
-  "version": 1,
+  "version": 2,
   "responsibilities": [
-    { /* responsibility definition */ },
     { /* responsibility definition */ }
   ]
 }
 ```
+
+In the agent's store, each responsibility is one document. `responsibility-manage` writes and revisions it, so you only ever supply the definition body.
 
 ### Responsibility Definition
 
@@ -34,9 +43,13 @@ Both files share the same schema. Prime-only responsibilities are loaded only on
   "id": "r-example",
   "name": "Example Responsibility",
   "schedule": "0 8 * * *",
+  "timezone": "America/Chicago",
   "enabled": true,
+  "singleton": true,
+  "triggerable": false,
   "min_spacing_minutes": 720,
   "instruction": "Do the thing...",
+  "success_criteria": "What counts as success",
   "context": {
     "purpose": "Why this responsibility exists",
     "process": [
@@ -44,59 +57,65 @@ Both files share the same schema. Prime-only responsibilities are loaded only on
       "STEP 2 — Do second thing"
     ],
     "reference_files": ["workspace/MEMORY.md"],
-    "success_criteria": "What counts as success",
     "prior_learnings": "Lessons from past executions"
   },
   "processRef": null,
-  "processParameters": null,
-  "project_id": null,
-  "trigger": null
+  "project_id": null
 }
 ```
 
 | Field | Type | Required | Description |
 |-------|------|:---:|-------------|
-| `id` | `string` | ✓ | Unique identifier. Convention: `r-{descriptive-name}` |
-| `name` | `string` | ✓ | Human-readable name (shown in dashboard and logs) |
-| `schedule` | `string` | ✓ | 5-field cron expression |
-| `enabled` | `boolean` | ✓ | Whether the scheduler fires this responsibility |
-| `min_spacing_minutes` | `number` | ✓ | Minimum minutes between firings |
-| `instruction` | `string` | ✓ | What the agent should do. Injected into the Mission instruction. |
-| `context` | `object` | ✗ | Rich context (see below) |
+| `id` | `string` | ✓ | Unique identifier, lowercase letters, digits and dashes. Convention: `r-{descriptive-name}` |
+| `name` | `string` | ✓ | Human-readable name (shown in dashboard and logs), ≤ 80 chars |
+| `schedule` | `string` | one of | Five-field cron, read in `timezone` |
+| `event` | `string` | one of | `on_complete` or `on_failure` — fires on that event instead of a clock |
+| `timezone` | `string` | ✗ | IANA zone for `schedule` (default `UTC`) |
+| `enabled` | `boolean` | ✗ | Whether the scheduler fires it (default `true` when created through `responsibility-manage`) |
+| `instruction` | `string` | ✓ | What the agent should do. Injected into the Mission instruction |
+| `success_criteria` | `string` | ✓ | What a successful execution looks like. Becomes the Mission's `accept_criteria` |
+| `context` | `object` | ✓ for an agent's own | `purpose` and `process` are required when an agent creates one |
+| `singleton` | `boolean` | ✗ | Skip firing while a previous firing is still in progress |
+| `triggerable` | `boolean` | ✗ | A user may ask the agent to run it out of turn |
+| `min_spacing_minutes` | `number` | ✗ | Minimum minutes between firings |
+| `effect_scope` | `'world' \| 'memory'` | ✗ | `memory` confines a firing to the agent's memory layers |
 | `processRef` | `string \| null` | ✗ | Playbook ID the fired Mission recalls as a planning prior |
 | `processParameters` | `object \| null` | ✗ | Optional parameters carried with the reference |
-| `project_id` | `string \| null` | ✗ | Project for generated Missions (default: agent's default project) |
-| `trigger` | `string \| null` | ✗ | Event trigger type (see below) |
-| `singleton` | `boolean` | ✗ | If true, skip firing when a non-terminal mission exists for this responsibility |
+| `project_id` | `string \| null` | ✗ | Project for generated Missions (default: agent's default project) — where its deployment ids live |
+| `locked` | `boolean` | platform only | Platform upkeep that no store record may change |
 
 ---
 
 ## Cron Expressions
 
-Standard 5-field cron syntax:
+Standard 5-field cron syntax, matched in the responsibility's `timezone`:
 
 ```
 ┌───────────── minute (0–59)
-│ ┌───────────── hour (0–23, UTC)
+│ ┌───────────── hour (0–23, in `timezone`)
 │ │ ┌───────────── day of month (1–31)
 │ │ │ ┌───────────── month (1–12)
-│ │ │ │ ┌───────────── day of week (0–7, 0 and 7 = Sunday)
+│ │ │ │ ┌───────────── day of week (0–6, 0 = Sunday)
 │ │ │ │ │
 * * * * *
 ```
+
+The scheduler reads exactly these forms: `*`, `*/N`, a number, a range `a-b`, and a list `a,b`. Names (`MON`), stepped ranges (`1-5/2`) and `7` for Sunday are refused, because they would parse, never match, and leave a responsibility that silently never fires.
 
 ### Common Patterns
 
 | Expression | Meaning |
 |-----------|---------|
-| `0 8 * * *` | Daily at 8:00 UTC |
+| `0 8 * * *` | Daily at 8:00 |
 | `*/30 * * * *` | Every 30 minutes |
 | `0 */6 * * *` | Every 6 hours |
-| `0 2 * * 1` | Every Monday at 2:00 UTC |
+| `0 2 * * 1` | Every Monday at 2:00 |
+| `20 10 * * 4` + `America/Chicago` | Every Thursday at 10:20 Central, through DST |
 | `0 0 1 * *` | First day of every month at midnight |
-| `0 0 31 2 *` | Never fires (Feb 31st — for event-only triggers) |
 
 > **Note:** The brain daemon evaluates cron expressions every 60 seconds. Precision is ±1 minute.
+> A schedule an agent or Prime writes must not fire more often than every
+> `responsibility_store.min_interval_minutes` (15).
 
 ---
 
@@ -107,37 +126,26 @@ Prevents rapid re-firing. Even if the cron expression matches multiple times, th
 **Examples:**
 - `min_spacing_minutes: 720` (12 hours) — At most twice per day
 - `min_spacing_minutes: 1440` (24 hours) — At most once per day
-- `min_spacing_minutes: 15` — At most every 15 minutes
 
 **Use cases:**
 - Nightly jobs: set to 720–1440 to prevent double-firing across timezone boundaries
-- Monitoring jobs: set to 5–60 for frequent checks
 - Event-triggered: set to the minimum recovery time between events
+
+A manual run counts toward the spacing, so don't test a weekly job with a 24-hour spacing inside the 24 hours before its slot.
 
 ---
 
 ## singleton
 
-When `true`, the scheduler checks Firestore for any non-terminal mission (status `pending`, `active`, or `waiting`) with `source_meta.responsibility_id` matching this responsibility's `id`. If one exists, the firing is skipped and the responsibility sleeps until the next cron tick.
+When `true`, the scheduler checks Firestore for any in-progress mission (status `pending`, `active`, `queued` or `waiting`) whose `source_meta.responsibility_id` matches this responsibility's `id`. If one exists, the firing is skipped and the responsibility sleeps until the next cron tick.
 
 This prevents overlapping executions of long-running responsibilities like improvement cycles.
-
-**Example:**
-```json
-{
-  "id": "r-repo-improvement",
-  "schedule": "0 * * * *",
-  "singleton": true
-}
-```
-
-With `singleton: true` and an hourly schedule, the responsibility fires at most once per hour, but only if the previous cycle has completed.
 
 ---
 
 ## Context
 
-The `context` object provides rich information to the agent when the responsibility fires. Each field is optional but recommended for complex responsibilities.
+The `context` object provides rich information to the agent when the responsibility fires.
 
 ### Fields
 
@@ -146,7 +154,6 @@ The `context` object provides rich information to the agent when the responsibil
 | `purpose` | `string` | Why this responsibility exists. Helps the agent understand the "why" behind the work. |
 | `process` | `string[]` | Step-by-step instructions. Each string is one step. Prefixed with `STEP N —`. |
 | `reference_files` | `string[]` | Files the agent should read. Paths relative to agent workspace root. |
-| `success_criteria` | `string` | What a successful execution looks like. Becomes the Mission's `accept_criteria`. |
 | `prior_learnings` | `string` | Lessons from previous executions. Helps agents avoid repeating mistakes. |
 
 ### Context Injection
@@ -161,9 +168,11 @@ PROCESS:
 2. <context.process[1]>
 ...
 
+PLAYBOOK — <name> (<processRef>): <narrative>
+
 REFERENCE FILES: <context.reference_files>
 
-SUCCESS CRITERIA: <context.success_criteria>
+SUCCESS CRITERIA: <success_criteria>
 
 PRIOR LEARNINGS: <context.prior_learnings>
 ```
@@ -173,8 +182,8 @@ PRIOR LEARNINGS: <context.prior_learnings>
 ## processRef — Referencing a Playbook
 
 When `processRef` is set, the fired Mission **recalls** the named playbook's narrative as a planning
-prior. The scheduler does not run a step hierarchy — the Mission goes through the normal cortex decide
-loop and the agent plans its own checkpoints (C-15), informed by the playbook:
+prior. The scheduler does not run a step hierarchy. The Mission goes through the normal cortex decide
+loop, and the agent plans its own checkpoints (C-15), informed by the playbook:
 
 ```json
 {
@@ -187,48 +196,34 @@ loop and the agent plans its own checkpoints (C-15), informed by the playbook:
 }
 ```
 
-`processParameters` is optional context carried with the reference; a narrative playbook has no
+`processParameters` is optional context carried with the reference. A narrative playbook has no
 parameters of its own, so nothing is substituted into steps (there are no steps).
-
-### What the reference buys you
-
-- **Consistency**: the fired Mission is shaped by a proven pattern the fleet has captured
-- **Adaptable**: the agent recalls the narrative and plans its own checkpoints — never locked to a fixed sequence
-- **Traceable**: the Mission records the recalled playbook in `process_id`
 
 ---
 
-## Event Triggers
+## Event Responsibilities
 
-The `trigger` field enables event-driven responsibilities:
+Set `event` instead of `schedule`:
 
 ```json
 {
-  "id": "r-post-deploy-verify",
-  "trigger": "on_failure",
-  "schedule": "0 0 31 2 *",
-  "min_spacing_minutes": 30,
-  "processRef": "p-deploy-verify"
+  "id": "r-failure-review",
+  "event": "on_failure",
+  "min_spacing_minutes": 60,
+  "instruction": "Review the blocked mission and record what stopped it",
+  "success_criteria": "A short review names the blocking cause and the next step."
 }
 ```
 
-| Trigger Value | Fires When |
+| `event` | Fires When |
 |--------------|-----------|
-| `on_complete` | A Mission completes successfully |
-| `on_merge` | A code merge or PR is completed **(not yet implemented)** |
-| `on_deploy` | A deployment finishes (success or failure) **(not yet implemented)** |
-| `on_failure` | A Mission fails |
-| `null` | Cron-only (default) |
+| `on_complete` | A Mission completes |
+| `on_failure` | A Mission ends blocked |
 
-### Event-Only Responsibilities
-
-For responsibilities that should **only** fire on events (not on a cron schedule), set the cron to a value that never matches:
-
-```json
-"schedule": "0 0 31 2 *"
-```
-
-February 31st never exists, so the cron will never fire. The responsibility will only fire when its event trigger matches.
+A responsibility takes a schedule **or** an event, never both. The old "never-matching cron" trick
+(`0 0 31 2 *`) is refused. Event firing never chains: a Mission that an event responsibility produced
+never fires another event responsibility, and every event responsibility is spaced by at least the
+store's floor.
 
 ---
 
@@ -236,22 +231,22 @@ February 31st never exists, so the cron will never fire. The responsibility will
 
 Every responsibility firing creates two WorkEnvelopes:
 
-1. **R envelope** (type `R`) — Immediately `complete`. Records the trigger metadata:
+1. **R envelope** (type `R`), immediately `complete`. It records the trigger metadata:
    - `source_meta.responsibility_id`
    - `source_meta.responsibility_name`
    - `source_meta.schedule`
-   - `source_meta.fired_at`
 
-2. **M envelope** (type `M`) — Active Mission with the actual work:
+2. **M envelope** (type `M`), an active Mission with the actual work:
    - `parent_id` → R envelope ID
    - `project_id` → from `resp.project_id` or default
-   - `process_id` → from `resp.processRef` (if set)
+   - `source_meta.responsibility_origin` / `responsibility_revision`: which definition produced it
+   - `source_meta.process_ref` → from `resp.processRef` (if set)
 
 ---
 
 ## Examples
 
-### Nightly Memory Consolidation (Context-Driven)
+### Nightly Memory Consolidation (platform upkeep, locked)
 
 ```json
 {
@@ -259,58 +254,46 @@ Every responsibility firing creates two WorkEnvelopes:
   "name": "Nightly Memory Consolidation",
   "schedule": "0 8 * * *",
   "enabled": true,
+  "locked": true,
+  "effect_scope": "memory",
   "min_spacing_minutes": 720,
   "instruction": "Execute the nightly memory consolidation cycle...",
   "context": {
     "purpose": "MEMORY.md is the agent's working scratchpad...",
     "process": [
       "STEP 1 — GATHER WORKING MEMORY: Read workspace/MEMORY.md",
-      "STEP 2 — GATHER SESSIONS: Run session-summary --hours 24",
-      "STEP 3 — TRIAGE: Classify entries as ACTIVE/COMPLETED/STALE/PROMOTE"
+      "STEP 2 — GATHER SESSIONS: Run session-summary --hours 24"
     ],
-    "reference_files": ["workspace/MEMORY.md", "workspace/SOUL.md"],
-    "success_criteria": "MEMORY.md rewritten under 2,000 chars. Core Memory reconciled.",
-    "prior_learnings": "Be conservative with promotions AND retirements."
+    "success_criteria": "MEMORY.md rewritten under 2,000 chars. Core Memory reconciled."
   }
 }
 ```
 
-### Hourly Health Check (Process-Linked)
+### An agent's own weekly report
 
-```json
+The agent creates it for itself, so it never ships in a specialty file:
+
+```bash
+responsibility-manage create --note "asked for in the ops channel" --stdin <<'EOF'
 {
-  "id": "r-health-check",
-  "name": "Hourly Fleet Health Check",
-  "schedule": "0 * * * *",
-  "enabled": true,
-  "min_spacing_minutes": 55,
-  "instruction": "Check health of all fleet agents",
-  "processRef": "p-deploy-verify",
-  "processParameters": {
-    "target": "fleet"
-  },
-  "project_id": "proj-operations"
+  "id": "r-weekly-ops-report",
+  "name": "Weekly Ops Report",
+  "schedule": "0 9 * * 1",
+  "timezone": "America/Chicago",
+  "singleton": true,
+  "min_spacing_minutes": 1440,
+  "instruction": "Summarize last week's operational work into the ops report doc.",
+  "success_criteria": "This week's report exists and its sections were read back.",
+  "project_id": "ops-reporting",
+  "context": {
+    "purpose": "Leadership reads one ops summary every Monday.",
+    "process": ["Read last week's completed work", "Write the report", "Read it back"]
+  }
 }
+EOF
 ```
 
-### Post-Failure Analysis (Event-Triggered)
-
-```json
-{
-  "id": "r-failure-analysis",
-  "name": "Post-Failure Analysis",
-  "schedule": "0 0 31 2 *",
-  "enabled": true,
-  "min_spacing_minutes": 60,
-  "instruction": "Investigate the failed mission and document findings",
-  "trigger": "on_failure",
-  "processRef": "p-investigate",
-  "processParameters": {
-    "topic": "Mission failure root cause analysis"
-  },
-  "project_id": null
-}
-```
+Moving it later is one command: `responsibility-manage update r-weekly-ops-report '{"schedule":"30 9 * * 1"}'`.
 
 ---
 
@@ -318,15 +301,14 @@ Every responsibility firing creates two WorkEnvelopes:
 
 Before adding a new responsibility:
 
-- [ ] `id` follows `r-{descriptive-name}` convention
+- [ ] It's written in the right layer. Platform upkeep and generic role defaults go in the repo. A deployment's own duty goes in the agent's store or a Prime release
+- [ ] `id` follows the `r-{descriptive-name}` convention
 - [ ] `name` is clear and descriptive
-- [ ] `schedule` is a valid 5-field cron expression
+- [ ] Exactly one of `schedule` (a five-field cron in the supported forms) or `event`
+- [ ] `timezone` is set when the time of day matters
 - [ ] `min_spacing_minutes` prevents accidental rapid-firing
 - [ ] `instruction` is a clear, complete directive
-- [ ] `context.success_criteria` defines what success looks like
-- [ ] `context.prior_learnings` captures lessons (add after first few executions)
+- [ ] `success_criteria` defines what success looks like
+- [ ] `context.purpose` and `context.process` say why and how
 - [ ] `processRef` points to an existing playbook ID (if used)
-- [ ] `processParameters`, if set, carries only what the fired Mission actually needs (a playbook has no required parameters)
-- [ ] `project_id` is set if the work belongs to a specific project
-- [ ] `trigger` is one of `on_complete`, `on_failure`, `on_merge` **(not yet implemented)**, `on_deploy` **(not yet implemented)**, or `null`
-- [ ] Added to the correct config file (`responsibilities.json` for fleet, `responsibilities-prime.json` for prime-only)
+- [ ] `project_id` is set if the work belongs to a specific project, and deployment ids live in that project, not in the text

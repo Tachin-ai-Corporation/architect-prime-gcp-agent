@@ -108,5 +108,5 @@ GChat message → agent-ears → intake (Firestore) → agent-brain → work env
 5. **Recovery sweep** — find and re-process orphaned active/pending M envelopes
 6. Start intake polling (every 3s)
 7. Start responsibility scheduler (cron-based)
-8. Watch responsibility config files for hot-reload
+8. Watch responsibility config files for hot-reload; the scheduler also re-reads the agent's own responsibility store (Firestore) every `responsibility_store.refresh_ms` and re-arms only what changed
 9. Initial poll

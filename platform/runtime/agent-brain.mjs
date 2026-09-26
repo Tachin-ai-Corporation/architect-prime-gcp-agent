@@ -39,6 +39,7 @@ import { createVertexText, CORTEX_SCHEMAS, smartTruncate } from '../providers/ve
 import { createProjectRegistry } from '../control-plane/projects.mjs';
 import { createProcessRegistry } from '../work/process-registry.mjs';
 import { createScheduler } from '../work/scheduler.mjs';
+import { storeParent, resolvePolicy, STORE_COLLECTION } from '../work/responsibility-store.mjs';
 import { createApprovalChecker, scopeApprovalsToAgent } from '../work/approvals.mjs';
 import { createArchivalSweeper } from '../persistence/archival.mjs';
 import { createArtifactManager } from '../persistence/artifacts.mjs';
@@ -2572,6 +2573,10 @@ async function completeEnvelope(envelope, opts) {
       await fireEventResponsibilities(eventType, {
         mission_id: envelope.id,
         project_id: envelope.project_id,
+        // Where this mission came from, so an event responsibility never fires from
+        // its own mission or from any event-fired mission (scheduler.fireEvent).
+        responsibility_id: envelope.source_meta?.responsibility_id || null,
+        fired_by_event: envelope.source_meta?.fired_by_event || null,
       });
     } catch (e) {
       log('WARN', `fireEventResponsibilities failed: ${e.message}`);
@@ -5734,8 +5739,11 @@ async function main() {
     for (const f of respFiles) {
       watchFile(f, { interval: 10000 }, () => {
         log('INFO', `Responsibility config changed: ${f}`);
+        // Re-arms only what changed; a full recalc here dropped any slot that came
+        // due between the last tick and the file change. The agent's OWN
+        // responsibilities do not come through files at all — the scheduler re-reads
+        // its Firestore store every contracts.responsibility_store.refresh_ms.
         loadResponsibilities();
-        if (_scheduler) _scheduler.recalcNextFires();
       });
     }
   }
@@ -5748,6 +5756,20 @@ async function main() {
 
 let _approvalChecker = null;
 
+// The agent's own responsibilities (overrides + the ones it created) — Firestore,
+// next to its Core Memory. Read strictly: an outage must throw, so the scheduler keeps
+// its last good set instead of concluding the agent has none.
+function _loadResponsibilityStore() {
+  let parent;
+  try {
+    parent = storeParent({ primeId: PRIME_ID, agentId: AGENT_ID, isPrime: IS_PRIME });
+  } catch (e) {
+    log('WARN', `Responsibility store unavailable: ${e.message} — running shipped responsibilities only`);
+    return null;
+  }
+  return () => _db.query(parent, STORE_COLLECTION, [], { noOrderBy: true, strict: true, limit: 200 });
+}
+
 function _initScheduler() {
   _scheduler = createScheduler({
     processEnvelope,
@@ -5757,6 +5779,8 @@ function _initScheduler() {
     firestoreWrite,
     firestoreRead,
     firestoreQuery,
+    loadStore: _loadResponsibilityStore(),
+    policy: resolvePolicy(CONTRACTS),
     // Resolves a responsibility's processRef into its playbook (local seeds + the global library).
     getProcess: async (id) => { await ensureProcessesLoaded(); return PROCESSES[id] || null; },
     getDefaultProjectId: () => DEFAULT_PROJECT_ID,
@@ -5794,9 +5818,18 @@ function loadResponsibilities() {
   RESPONSIBILITIES = _scheduler.getResponsibilities();
 }
 
+// The effective set lives in the scheduler, which re-reads the agent's store on its
+// own clock — a copy taken at load time would miss every change made since.
+function currentResponsibilities() {
+  if (!_scheduler) _initScheduler();
+  if (RESPONSIBILITIES.length === 0) loadResponsibilities();
+  RESPONSIBILITIES = _scheduler.getResponsibilities();
+  return RESPONSIBILITIES;
+}
+
 function startResponsibilityScheduler() {
   if (!_scheduler) _initScheduler();
-  loadResponsibilities(); // Must load before start() — start() exits early if RESPONSIBILITIES is empty
+  loadResponsibilities(); // arm the shipped set at start(); the agent's store follows seconds later
   _scheduler.start();
 }
 
@@ -5814,8 +5847,7 @@ async function fireEventResponsibilities(eventType, eventContext) {
 // action) and the operator path (responsibility_triggers poll). Delegates to the
 // scheduler's fireById primitive; ensures the responsibility set is loaded first.
 async function fireResponsibilityById(id, opts = {}) {
-  if (!_scheduler) _initScheduler();
-  if (RESPONSIBILITIES.length === 0) loadResponsibilities();
+  currentResponsibilities();
   return _scheduler.fireById(id, opts);
 }
 
@@ -5823,9 +5855,7 @@ async function fireResponsibilityById(id, opts = {}) {
 // turn (opt-in via `triggerable: true`). Injected into the Cortex decide payload
 // and used by the trigger_responsibility handler to validate the requested id.
 function getTriggerableResponsibilities() {
-  if (!_scheduler) _initScheduler();
-  if (RESPONSIBILITIES.length === 0) loadResponsibilities();
-  return RESPONSIBILITIES
+  return currentResponsibilities()
     .filter(r => r.enabled !== false && r.triggerable === true)
     .map(r => ({
       id: r.id,

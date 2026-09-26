@@ -140,13 +140,15 @@ entry reads back as intended.
 4. **Gate:** Submit the plan for user approval before delegating.
 
 ### Manage Responsibilities
-1. List active responsibilities using `responsibility-manage list`.
-2. Run updates to include new learnings:
+Your responsibilities are your own to change. Changes are live within a minute, with no Prime and no upgrade. The full procedure is in the work-management skill.
+1. List what you run, and where each comes from: `responsibility-manage list`.
+2. Record new learnings (context merges key by key, so the rest of the context is kept):
    ```bash
-   responsibility-manage update --id <responsibility-id> --prior-learnings "<new learnings>"
+   responsibility-manage update <responsibility-id> '{"context":{"prior_learnings":"<new learnings>"}}' --note "<why>"
    ```
-3. Enable or disable a responsibility as needed using `responsibility-manage update --id <id> --enabled true/false`.
-4. Verify: Confirm the update successfully registers and reloads.
+   Free text with quotes or apostrophes is safest on `--stdin`.
+3. Enable or disable a responsibility: `responsibility-manage toggle <responsibility-id> on|off`.
+4. Verify: `responsibility-manage show <responsibility-id>` shows the change and its new revision. `history` and `revert` undo it.
 
 ### Track Delegation Progress
 1. Check active missions delegated by this agent:

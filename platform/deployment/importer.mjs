@@ -220,25 +220,38 @@ export function isTemplatePlaceholder(value) {
 
 const orNull = (v) => (isTemplatePlaceholder(v) ? null : (v ?? null));
 
-/** Import a responsibility from a bundled responsibilities file entry. */
+/**
+ * Import a responsibility from a bundled responsibilities file entry — in the flat
+ * v2 shape RESPONSIBILITY_SCHEMA validates. This still emitted v1's nested `trigger`
+ * object, which the v2 schema refuses as an undeclared field, so seeding the registry
+ * from the catalog could not produce a single valid responsibility; and it dropped
+ * the context, guards and playbook link the scheduler reads.
+ */
 export function importResponsibility(raw, roleId) {
-  const kind = raw.schedule || raw.cron ? 'schedule' : 'event';
-  return {
+  const schedule = raw.schedule || raw.cron || null;
+  const out = {
     id: raw.id || `${roleId}-${String(raw.name || 'responsibility').toLowerCase().replace(/[^a-z0-9]+/g, '-')}`,
     name: raw.name || raw.id,
-    trigger: {
-      kind,
-      cron: raw.cron || raw.schedule || null,
-      timezone: raw.timezone || 'UTC',
-      event: raw.event || null,
-      catch_up: raw.catch_up || 'once',
-    },
+    schedule,
+    event: schedule ? null : (raw.event || null),
+    timezone: raw.timezone || 'UTC',
+    catch_up: raw.catch_up || 'once',
+    effect_scope: raw.effect_scope || 'world',
     instruction: raw.instruction || raw.description || '',
-    success_criteria: raw.success_criteria || raw.accept_criteria || 'The scheduled work completed and reported its outcome.',
+    success_criteria: raw.success_criteria || raw.context?.success_criteria || raw.accept_criteria
+      || 'The scheduled work completed and reported its outcome.',
+    singleton: raw.singleton === true,
+    min_spacing_minutes: Number.isInteger(raw.min_spacing_minutes) ? raw.min_spacing_minutes : null,
+    context: raw.context || {},
     target_agent: orNull(raw.target_agent),
     project_id: orNull(raw.project_id),
     enabled: raw.enabled !== false,
+    triggerable: raw.triggerable === true,
+    locked: raw.locked === true,
   };
+  if (raw.processRef) out.processRef = raw.processRef;
+  if (raw.processParameters) out.processParameters = raw.processParameters;
+  return out;
 }
 
 /**

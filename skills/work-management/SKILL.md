@@ -16,9 +16,9 @@ When creating, updating, listing, or querying responsibilities or projects in th
   Output: Formatted header (status, type, title, timestamps) followed by full output text. With `--json`: raw JSON with all fields.
 
 ### Write
-- `responsibility-manage` — Manage responsibility configurations.
-  - Subcommands: `list`, `create '<json>'`, `update '<id>' '<json>'`, `remove '<id>'`, `toggle '<id>' [on|off]`.
-  - Output: Status or configuration JSON.
+- `responsibility-manage` — Manage **your own** responsibilities (your recurring duties). Changes go to your responsibility store and are live within a minute, with no Prime and no upgrade, and they survive upgrades.
+  - Subcommands: `list`, `show '<id>'`, `create`, `update '<id>'`, `toggle '<id>' [on|off]`, `remove '<id>'`, `reset '<id>'`, `adopt '<id>'`, `history '<id>'`, `revert '<id>' --to <n>`.
+  - Output: What changed and the new revision (`--json` for machine-readable).
 - `project-manage` — Manage project details and teams in Firestore.
   - Subcommands: `list`, `get '<id>'`, `create '<json>'`, `update '<id>' '<json>'`, `complete '<id>'`, `pause '<id>'`, `archive '<id>'`, `team-add '<id>' '<json>'`, `team-remove '<id>' '<email>'`, `team-list '<id>'`, `add-context '<id>' '<key>' '<value>'`.
   - Output: Status confirmation, team lists, or project JSON.
@@ -31,11 +31,20 @@ When creating, updating, listing, or querying responsibilities or projects in th
 3. Add team members by running `project-manage team-add <project_id> "<member_email>" "<role>"`.
 4. Verify: Run `project-manage team-list <project_id>` and confirm the team members are added.
 
-### Create and update a responsibility
-1. Define a responsibility config as a JSON string containing `id`, `name`, `schedule`, and `instruction`.
-2. Run `responsibility-manage create '<json>'` to add it.
-3. Verify: Run `responsibility-manage list` and check that the responsibility ID appears.
-4. Update the responsibility by running `responsibility-manage update '<id>' '<partial-json>'`.
+### Take on a new recurring duty (create a responsibility)
+Use this when someone asks you to do something on a schedule ("every Monday, send the ops summary") or on an event ("when a mission gets blocked, write a review").
+1. Write the definition as JSON: `id` (`r-<name>`, lowercase with dashes), `name`, `schedule` (five-field cron) with `timezone` (IANA zone, e.g. `America/Chicago`) **or** `event` (`on_complete` / `on_failure`), `instruction`, `success_criteria`, `context.purpose`, and `context.process` (the steps). Put any ids it depends on (folders, docs) in a **project** and set `project_id`, never in the text.
+2. Create it, passing free text on stdin: `responsibility-manage create --note "<who asked, and why>" --stdin` with the JSON as the tool's stdin.
+3. Verify: `responsibility-manage list` shows it with its schedule and `agent-owned (rev 1, …)`.
+
+### Change one of your responsibilities
+1. `responsibility-manage list` shows every responsibility you run and where it comes from: a shipped default, a default you've overridden, or your own.
+2. Change only the fields that should change: `responsibility-manage update r-<id> '{"schedule":"20 10 * * 4","timezone":"America/Chicago"}'`. On a shipped default this stores an override of just those fields, so later product fixes to the rest still reach you.
+3. Pause or resume: `responsibility-manage toggle r-<id> off` (or `on`).
+4. Verify: `responsibility-manage show r-<id>` shows the new values and revision.
+5. Undo: `responsibility-manage history r-<id>`, then `responsibility-manage revert r-<id> --to <n>`. To drop every change you made to a shipped default, run `reset`.
+
+You cannot change platform upkeep (nightly memory consolidation, git cleanup). Those are `locked` and change only through a platform release.
 
 ### Query an agent's recent task history
 1. Identify the agent name (e.g., `stan`).
@@ -60,45 +69,41 @@ Use this when a task asks you to review, learn from, or report on your own past 
 
 ### responsibility-manage
 
-Manages responsibility configs in `responsibilities-job.json`.
-The Brain daemon's cron scheduler auto-reloads changes within 10 seconds.
+Authors **your own** responsibilities. It writes your responsibility store in Firestore, beside your Core Memory. The scheduler re-reads that store every minute and runs it over the defaults your role ships with. A change needs no Prime and no upgrade, it survives upgrades and VM rebuilds, and every change is a revision you can undo. It never edits an installed file.
+
+What you run is three layers:
+- **Platform upkeep** (`locked`): nightly memory consolidation, git cleanup. You can't change these.
+- **Your role's defaults**: you can override fields, pause them (`toggle`), drop your changes (`reset`), or take one over completely (`adopt`, after which you stop receiving product updates to it).
+- **Your own**: ones you created. You can do anything with these.
 
 #### Subcommands
 
-**list** — List all responsibilities
 ```
-exec responsibility-manage list
-```
-
-**create** — Create a new responsibility
-```
-exec responsibility-manage create '<json>' [--process-ref <processId>] [--process-params '<json>']
-```
-Required JSON fields: `id`, `name`, `schedule`, `instruction`
-Required context fields: `context.purpose`, `context.process` (array of steps), `context.success_criteria`
-Defaults: `enabled=true`, `min_spacing_minutes=30`
-
-**update** — Update an existing responsibility
-```
-exec responsibility-manage update '<id>' '<partial-json>' [--process-ref <processId>] [--process-params '<json>']
-```
-Deep-merges the `context` field; shallow-merges everything else.
-
-**remove** — Remove a responsibility by ID
-```
-exec responsibility-manage remove '<id>'
+exec responsibility-manage list                         # everything you run, and where each comes from
+exec responsibility-manage show '<id>'                  # one responsibility as it runs, plus its store record
+exec responsibility-manage create --stdin               # JSON on stdin (shell-safe); or '<json>' / --file <path>
+exec responsibility-manage update '<id>' '<json>'       # only the fields that change; context merges key by key
+exec responsibility-manage toggle '<id>' [on|off]       # without on/off, flips it
+exec responsibility-manage remove '<id>'                # one you created (a shipped default: toggle off or reset)
+exec responsibility-manage reset '<id>'                 # back to the shipped default
+exec responsibility-manage adopt '<id>' ['<json>']      # make a shipped default fully yours
+exec responsibility-manage history '<id>'               # every revision: who, when, what
+exec responsibility-manage revert '<id>' --to <n>       # restore revision n (as a new revision)
 ```
 
-**toggle** — Enable or disable a responsibility
-```
-exec responsibility-manage toggle '<id>' [on|off]
-```
-Without `on`/`off`, flips the current state.
+Options: `--note "<why>"` records the reason on the revision, and `--json` gives machine-readable output. On create and update, `--process-ref <playbook-id>` links a playbook (`""` clears it) and `--process-params '<json>'` carries parameters.
 
-#### Optional flags (create/update)
-- `--process-ref <processId>` — Link responsibility to a process definition
-- `--process-params '<json>'` — JSON parameter overrides for the process
-- Use `--process-ref ""` to clear the process link on update
+**create requires** `id`, `name`, `schedule` (five-field cron) **or** `event` (`on_complete` / `on_failure`), `instruction`, `success_criteria`, `context.purpose`, and `context.process` (array of steps). Defaults are `enabled: true` and `min_spacing_minutes: 30`. `timezone` is an IANA zone (default `UTC`).
+
+**Refused, with the reason printed:**
+- A cron form the scheduler can't read. Use `*`, `*/N`, numbers, `a-b`, `a,b`. Names like `MON` and `7` for Sunday are refused.
+- An unknown timezone.
+- A schedule that fires more often than every 15 minutes.
+- Any change to a `locked` responsibility.
+- Owning more than 25 responsibilities.
+- Creating an id your role already ships. Use `update` or `adopt` instead.
+
+If you and someone else edit the same responsibility at the same moment, one of you gets "changed at the same moment — run the command again".
 
 ---
 

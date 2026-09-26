@@ -42,7 +42,10 @@ interface Responsibility {
   min_spacing_minutes: number;
   instruction: string;
   has_process: boolean;
+  /** Where the running definition comes from — shipped file, an override, or the agent's own (with revision). */
   source: string;
+  timezone?: string;
+  locked?: boolean;
 }
 
 interface BrainConfig {
@@ -130,11 +133,12 @@ export function PersonaPanel({ primeId, agentName, workspaceFiles, workspaceLoad
     const resps = brainConfig?.responsibilities || [];
     return resps.map((r) => {
       const lines: string[] = [];
-      lines.push(`Schedule: ${r.schedule}`);
+      lines.push(`Schedule: ${r.schedule}${r.timezone && r.timezone !== "UTC" ? ` (${r.timezone})` : ""}`);
       lines.push(`Enabled: ${r.enabled ? "yes" : "no"}`);
       if (r.min_spacing_minutes) lines.push(`Min spacing: ${r.min_spacing_minutes} min`);
       if (r.has_process) lines.push("Process: attached");
       lines.push(`Source: ${r.source}`);
+      if (r.locked) lines.push("Locked: platform upkeep — changes only with a platform release");
       lines.push("");
       lines.push("--- Instruction ---");
       lines.push(r.instruction);

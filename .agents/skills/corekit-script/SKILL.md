@@ -7,6 +7,7 @@ description: Use when creating/editing CoreKit scripts in corekit/{brain,fleet,c
 ## Directory Layout
 Scripts live under `corekit/` grouped by domain:
 - `corekit/brain/` — web-search, agent-status, assemble-persona, brain-telemetry-read, brain-telemetry-write, responsibility-manage, project-manage, task-log-read, task-log-write
+  - `responsibility-manage` is a bash launcher (`bin/`) over an ES module, `corekit/brain/responsibility-manage.mjs`, installed at its repo path so its `../../platform/...` imports resolve — the fleet-config pattern. Use it when a tool needs a shared platform module (here `platform/work/responsibility-store.mjs`) instead of re-implementing the rule in bash/python.
 - `corekit/fleet/` — fleet-deploy, fleet-teardown, fleet-hire, fleet-fire, fleet-verify, fleet-upgrade, fleet-monitor, fleet-status, fleet-health-check
 - `corekit/chat/` — chat-send, chat-read, dwd-token
 - `platform/runtime/` — agent-ears.mjs, agent-mouth.mjs, agent-brain.mjs, agent-brain.service, start-agent-ears, start-agent-mouth, ears-health-check, mouth-health-check

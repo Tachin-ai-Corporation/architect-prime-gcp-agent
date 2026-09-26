@@ -60,7 +60,7 @@ Secret material lives only in GCP Secret Manager, managed from the dashboard's S
 
 All work flows through a closed set of eight primitives. The execution spine is **R → M → C → T**:
 
-- **Responsibilities (R):** Recurring duties — cron-scheduled or event-triggered, configured in JSON, hot-reloaded. Singleton responsibilities guarantee at most one live cycle at a time.
+- **Responsibilities (R):** Recurring duties, cron-scheduled or event-triggered. The platform and each role ship defaults. Each agent changes its own responsibilities, and Prime improves them, through the agent's responsibility store. Changes are live within a minute, with no release and no upgrade. Singleton responsibilities guarantee at most one live cycle at a time.
 - **Missions (M):** Multi-checkpoint objectives with definitions of done. Every request becomes a mission. Missions are always flat — they never nest — and every mission belongs to a project.
 - **Checkpoints (C):** Observable milestones within a mission, executed strictly in sequence. Verification gates their closure.
 - **Tasks (T):** Atomic steps dispatched to the cognitive organs, always nested under a checkpoint.

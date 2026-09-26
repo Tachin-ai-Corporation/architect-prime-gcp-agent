@@ -188,3 +188,29 @@ attributed and replayed.
 
 > **Foundation releases control the machinery. Fleet releases control the deployed society. Runtime
 > state records what that society does. Prime evolves the society; maintainers evolve the machinery.**
+
+## Amendment — 2026-09-26: agents author their own responsibilities
+
+The operator's requirement: a fleet agent must be able to create and change its own responsibilities
+without going through Prime and without a CoreKit upgrade. Prime keeps its ability to improve them.
+
+A role's default responsibilities stay where this ADR put them: Fleet Definition, released by Prime.
+An agent's own layer (its overrides of those defaults, and the duties it takes on) lives in a
+per-agent **responsibility store** in Firestore, beside its Core Memory. That store is written through
+one validated verb, `responsibility-manage`, by the agent itself, by Prime (`--agent <id>`), or by the
+dashboard.
+
+This is not the rejected "mutable Firestore documents" alternative:
+- Every write is a new revision with an immutable copy (`revisions/{n}`).
+- Writes are compare-and-swap.
+- `revert` is the rollback.
+- The fired work pins the revision it ran (C-32).
+
+What it trades away is the release gate: a per-agent change is live within a minute, with no evaluation
+or canary. That is acceptable because its blast radius is one agent's schedule, and it is bounded by:
+- schema validation;
+- a frequency floor;
+- a per-agent cap;
+- the lock on platform upkeep, which no store record can override.
+
+See PRODUCT_CANON C-29 and C-36, and `platform/work/responsibility-store.mjs`.

@@ -170,11 +170,11 @@ See [AUTHORING_PROCESSES.md](guides/AUTHORING_PROCESSES.md) for how to author an
 
 ## Responsibilities — Scheduled Work
 
-Responsibilities are **scheduled or event-triggered work definitions** that produce R→M envelope pairs when they fire. They are defined in `corekit/config/responsibilities.json` and managed by the brain daemon's cron scheduler.
+Responsibilities are **scheduled or event-triggered work definitions** that produce R→M envelope pairs when they fire. The brain daemon's scheduler runs the shipped defaults (`corekit/responsibilities*.json`: platform upkeep, which is `locked`, plus the role's defaults) with the agent's **own** changes applied. Those changes are overrides and duties it took on, kept in its responsibility store (Firestore, beside its Core Memory). The agent writes them itself with `responsibility-manage`, and Prime can write them when it improves that agent. They are live within a minute, with no release and no upgrade. See [the Responsibility primitive](primitives/06-RESPONSIBILITY.md#where-responsibilities-live-and-who-changes-them).
 
 ### How They Fire
 
-1. Every 60 seconds, the brain daemon checks all enabled responsibilities
+1. Every 60 seconds, the brain daemon re-reads the agent's store (when `responsibility_store.refresh_ms` has passed) and checks all enabled responsibilities
 2. For each responsibility whose cron expression matches: check `min_spacing_minutes`
 3. If spacing allows: fire the responsibility
 4. Firing creates an `R` envelope (immediately complete) wrapping an `M` envelope
@@ -182,9 +182,7 @@ Responsibilities are **scheduled or event-triggered work definitions** that prod
 
 ### Event Triggers
 
-The `trigger` field enables event-driven responsibilities. Implemented triggers: `on_complete` (fires when a mission completes) and `on_failure` (fires when a mission fails). When a matching event occurs, `fireEventResponsibilities(eventType)` fires all responsibilities with that trigger.
-
-Planned triggers (not yet implemented): `on_merge`, `on_deploy`.
+A responsibility with an `event` instead of a `schedule` fires on that event: `on_complete` (a mission completes) or `on_failure` (a mission ends blocked). `fireEventResponsibilities(eventType)` fires every matching responsibility in the effective set. Event firing never chains: a mission an event responsibility produced never fires another one. Each event responsibility is also spaced by at least the store's floor.
 
 See [AUTHORING_RESPONSIBILITIES.md](guides/AUTHORING_RESPONSIBILITIES.md) for the full schema reference.
 
