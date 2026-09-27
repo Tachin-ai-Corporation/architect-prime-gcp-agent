@@ -464,6 +464,10 @@ export function planWrite({
         return { ok: true, doc: { ...base, mode: 'override', patch: current.patch, status: 'removed' }, summary: `'${id}' is back to its shipped default` };
       }
       if (current?.mode === 'own' && isActive(current) && current.adopted_from) {
+        // Once the product stops shipping it, "back to the default" would silently delete it.
+        if (shippedKnown && !shipped) {
+          return fail(`'${id}' no longer ships as a default — it is only this agent's own now; use remove to delete it`);
+        }
         return { ok: true, doc: { ...base, mode: 'own', body: current.body, status: 'removed', adopted_from: current.adopted_from }, summary: `'${id}' is back to its shipped default` };
       }
       return fail(`'${id}' has no changes to reset`);

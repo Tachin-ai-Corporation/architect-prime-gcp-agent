@@ -160,6 +160,16 @@ describe('authoring: planWrite decides every write', () => {
     assert.equal(reset.doc.status, 'removed');
   });
 
+  it('an adopted responsibility outlives its shipped default — reset will not silently delete it', () => {
+    // The weekly exec update was adopted on Millie, then removed from the product repo.
+    const adopted = { id: 'r-exec', mode: 'own', status: 'active', revision: 1, adopted_from: 'responsibilities-job.json', body: { ...shippedExec(), _source: undefined }, updateTime: 't' };
+    const { effective } = mergeResponsibilities([], [adopted], opts);
+    assert.deepEqual(effective.map((r) => r.id), ['r-exec'], 'still runs once the default is gone');
+    const reset = planWrite({ ...base, verb: 'reset', id: 'r-exec', current: adopted, shipped: null });
+    assert.match(reset.error, /no longer ships as a default/);
+    assert.equal(planWrite({ ...base, verb: 'remove', id: 'r-exec', current: adopted }).doc.status, 'removed', 'remove still deletes it on purpose');
+  });
+
   it('adopt copies the running definition (default + override) into the agent\'s own record', () => {
     const override = { id: 'r-exec', mode: 'override', status: 'active', revision: 1, patch: { schedule: '20 10 * * 4' }, updateTime: 't' };
     const p = planWrite({ ...base, verb: 'adopt', id: 'r-exec', current: override, shipped: shippedExec() });

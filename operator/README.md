@@ -8,6 +8,7 @@ under `operator/` is specific to a particular deployment or organization.
 
 ```
 operator/
+├── agents/            # Records of individual agents' OWN responsibilities (never installed)
 ├── docs/              # Operator-specific design docs, plans, and references
 ├── manifests/         # Job manifests for install.sh --job <name>
 ├── processes/         # Operator-specific process definitions (JSON)
@@ -32,6 +33,16 @@ manifest maps files from `operator/` into the paths expected on the VM.
 
 This reads `operator/manifests/job-tachin-website.txt` and copies each file from its
 `operator/` source path to the corresponding VM destination path.
+
+## An agent's own responsibilities (`agents/`)
+
+A duty this deployment gives one agent, such as Millie's weekly executive update, is **that agent's own
+responsibility**. It lives in the agent's responsibility store in Firestore and changes with
+`responsibility-manage`, either on the agent or from Prime with `--agent <id>`. A change is live within a
+minute, with no release and no upgrade. `agents/<agent>/responsibilities.json` is only the operator's git
+record of it. No manifest installs it, because anything a manifest installs is reinstalled on the next
+upgrade over the agent's own changes. Use it to re-create a responsibility if the store is ever lost, and
+keep it in step with the store if you want the history in git.
 
 ## Adding New Operator Content
 

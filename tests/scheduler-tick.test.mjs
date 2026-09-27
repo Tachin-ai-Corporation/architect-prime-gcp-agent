@@ -15,6 +15,15 @@ import { fileURLToPath } from 'node:url';
 import { createScheduler } from '../platform/work/scheduler.mjs';
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), '..');
+// The weekly exec update is Millie's OWN responsibility (her store, adopted 2026-09-27) — a deployment's
+// duty, not product content. This is the operator's git record of it; the live copy is the store.
+const EXEC_RECORD = join(repo, 'operator', 'agents', 'millie', 'responsibilities.json');
+const agentRecords = () => {
+  const dir = join(repo, 'operator', 'agents');
+  if (!existsSync(dir)) return [];
+  return readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory())
+    .map((d) => join(dir, d.name, 'responsibilities.json')).filter((f) => existsSync(f));
+};
 
 function harness(responsibilities, extraDeps = {}) {
   const root = mkdtempSync(join(tmpdir(), 'sched-tick-'));
@@ -188,6 +197,7 @@ describe('shipped responsibilities', () => {
       ...readdirSync(join(repo, 'specialties'), { withFileTypes: true }).filter((d) => d.isDirectory())
         .flatMap((d) => readdirSync(join(repo, 'specialties', d.name)).filter((f) => /^responsibilities-.+\.json$/.test(f))
           .map((f) => join(repo, 'specialties', d.name, f))),
+      ...agentRecords(),
     ];
     let refs = 0;
     for (const f of files) {
@@ -201,7 +211,7 @@ describe('shipped responsibilities', () => {
   });
 
   it('the weekly exec update takes its bindings from a project, not from memory', () => {
-    const r = JSON.parse(readFileSync(join(repo, 'specialties', 'assistant', 'responsibilities-assistant.json'), 'utf8'))
+    const r = JSON.parse(readFileSync(EXEC_RECORD, 'utf8'))
       .responsibilities.find((x) => x.id === 'r-weekly-exec-update');
     assert.equal(r.project_id, 'exec-briefing');
     assert.equal(r.processRef, 'p-weekly-exec-update');
@@ -214,7 +224,7 @@ describe('shipped responsibilities', () => {
     // 2026-09-24: a run edited a TRASHED doc it remembered by id, and added "anyone with the link"
     // to an executive briefing because the text asked for a "shareable link". Google also re-creates
     // its Meet folders whenever the root is shared, so a pinned folder id goes stale.
-    const r = JSON.parse(readFileSync(join(repo, 'specialties', 'assistant', 'responsibilities-assistant.json'), 'utf8'))
+    const r = JSON.parse(readFileSync(EXEC_RECORD, 'utf8'))
       .responsibilities.find((x) => x.id === 'r-weekly-exec-update');
     const text = JSON.stringify(r);
     assert.doesNotMatch(text, /shareable/i, '"shareable link" read as "make it link-shareable"');
@@ -230,7 +240,7 @@ describe('shipped responsibilities', () => {
     // 2026-09-24: the agent is now INVITED to the meetings, so Meet shares each transcript with it
     // file by file — while the host's folders fork, so a folder id is stale by construction. And
     // "the most recent notes, flagged if old" re-briefed the same late-August meetings for weeks.
-    const r = JSON.parse(readFileSync(join(repo, 'specialties', 'assistant', 'responsibilities-assistant.json'), 'utf8'))
+    const r = JSON.parse(readFileSync(EXEC_RECORD, 'utf8'))
       .responsibilities.find((x) => x.id === 'r-weekly-exec-update');
     const text = JSON.stringify(r);
     assert.match(text, /mimeType = 'application\/vnd\.google-apps\.document'/, 'Docs only: no recording video, shortcut, or "(recurring)" folder');
@@ -243,6 +253,26 @@ describe('shipped responsibilities', () => {
     assert.match(playbook, /Never fold in an older week/);
   });
 
+  it('a product specialty ships no one deployment\'s duty — a concrete project id is deployment data', () => {
+    // 2026-09-24/26: the weekly exec update (one company's four meetings, project exec-briefing)
+    // shipped in specialties/assistant, so every change to it needed a repo commit AND an upgrade
+    // — three in one day. A deployment's duty belongs in its agent's own store (C-28, C-29).
+    const placeholder = (v) => v == null || /^YOUR[_-]/i.test(v) || /^your-/i.test(v);
+    let n = 0;
+    for (const d of readdirSync(join(repo, 'specialties'), { withFileTypes: true })) {
+      if (!d.isDirectory()) continue;
+      for (const f of readdirSync(join(repo, 'specialties', d.name))) {
+        if (!/^responsibilities-.+\.json$/.test(f)) continue;
+        for (const r of JSON.parse(readFileSync(join(repo, 'specialties', d.name, f), 'utf8')).responsibilities || []) {
+          n += 1;
+          assert.ok(placeholder(r.project_id), `${d.name}/${f}: ${r.id} names project '${r.project_id}' — author it into the agent's store`);
+        }
+      }
+    }
+    assert.ok(n >= 1, 'the shipped specialty responsibilities were read');
+    assert.equal(JSON.parse(readFileSync(EXEC_RECORD, 'utf8')).responsibilities[0].schedule, '20 10 * * 4');
+  });
+
   it('declare only five-field schedules in timezones the scheduler can honor', () => {
     // An unknown zone only WARNs at runtime and schedules in UTC — a typo in shipped
     // content would move a fire time by hours with nothing but a log line to show it.
@@ -253,6 +283,7 @@ describe('shipped responsibilities', () => {
     };
     add(join(repo, 'corekit', 'config'), /^responsibilities.*\.json$/);
     add(join(repo, 'operator', 'responsibilities'), /\.json$/);
+    files.push(...agentRecords());
     for (const d of readdirSync(join(repo, 'specialties'), { withFileTypes: true })) {
       if (d.isDirectory()) add(join(repo, 'specialties', d.name), /^responsibilities-.+\.json$/);
     }
