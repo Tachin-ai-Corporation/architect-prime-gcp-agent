@@ -5870,6 +5870,9 @@ function _initApprovals() {
       primeId: PRIME_ID,
       gcpProject: GCP_PROJECT,
       agentEmail: AGENT_EMAIL,
+      // The owner this brain stamps when it has no email (a Prime) — without it the
+      // poller had no identity and resumed every agent's approved gates on this host.
+      agentId: AGENT_ID,
     },
   });
 }

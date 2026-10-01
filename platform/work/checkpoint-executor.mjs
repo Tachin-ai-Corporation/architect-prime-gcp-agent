@@ -20,6 +20,7 @@ import { markCheckpoint, spineSummary, checkpointFailureHalts } from './checkpoi
 import { deployTargetLine } from '../control-plane/deploy-target.mjs';
 import { checkpointAssignee, sameAgent, missionOriginator, handoffPatch, handoffModelEnabled } from './baton.mjs';
 import { isMemoryScoped, fenceMemoryTask } from './memory-scope.mjs';
+import { describeApprovalGate } from './approvals.mjs';
 import { expandToolResults, TOOL_RESULTS_COLLECTION } from '../context/tool-record.mjs';
 
 const VALID_TASK_AGENTS = new Set(['motor', 'temporal-research', 'temporal-memory']);
@@ -489,6 +490,21 @@ export async function executeCheckpoints(checkpoints, opts) {
       if (stepType === 'approval_gate') {
         log('INFO', `[checkpoint-executor] CP${cpNum} Task ${taskNum}: Approval gate — pausing checkpoint`);
 
+        // What the operator is saying yes to: the work that runs once this is approved —
+        // the rest of this checkpoint, else the next checkpoint. Not taskCriteria: for a
+        // gate that is its own pass condition ("Approval granted."), which the approval
+        // then showed as its description while it was still pending.
+        const _taskText = (t) => toStr(isPreStamped ? t?.instruction : (t?.task || t?.instruction));
+        let gateNext = cpTasks.slice(ti + 1).map(_taskText).filter(Boolean);
+        if (gateNext.length === 0 && ci + 1 < checkpoints.length) {
+          const nextCp = checkpoints[ci + 1];
+          gateNext = [toStr(isPreStamped ? nextCp?.cEnvelope?.instruction : nextCp?.instruction)].filter(Boolean);
+        }
+        const gateDescription = describeApprovalGate({
+          message: isPreStamped ? (tEnv.source_meta?.approval_message || '') : '',
+          next: gateNext,
+        });
+
         const approvalId = generateId('apr');
         try {
           const token = await getAuthToken();
@@ -503,7 +519,7 @@ export async function executeCheckpoints(checkpoints, opts) {
                 taskIndex: { integerValue: String(ti) },
                 checkpointIndex: { integerValue: String(ci) },
                 title: { stringValue: taskDesc.substring(0, 200) },
-                description: { stringValue: taskCriteria || taskDesc },
+                description: { stringValue: gateDescription },
                 processId: { stringValue: envelope.process_id || '' },
                 processName: { stringValue: PROJECTS[envelope.project_id]?.name || '' },
                 planId: { stringValue: envelope.plan_id || '' },
@@ -565,14 +581,17 @@ export async function executeCheckpoints(checkpoints, opts) {
         envelope.updated_at = new Date().toISOString();
         await firestoreWrite('work', envelope.id, envelope);
 
-        // Send notification via mouth (creates a deliverable envelope)
-        const rawStepData = cpResults.map(r => ({
+        // Send notification via mouth (creates a deliverable envelope). The steps are the
+        // mission's work so far, not just this checkpoint's: a gate that opens its
+        // checkpoint has no results of its own, and an empty list left the notification
+        // writer nothing to say about what was done.
+        const rawStepData = allResults.slice(-8).map(r => ({
           step: r.step, agent: r.agent, success: r.success,
           result: toStr(r.result).substring(0, 1500),
         }));
-        const customMessage = isPreStamped ? (tEnv.source_meta?.approval_message || '') : taskCriteria;
+        const customMessage = gateDescription;
         const approvalTitle = isPreStamped ? (tEnv.title || tEnv.instruction || 'Approval needed') : taskDesc;
-        const fallbackNotif = `🔔 **Approval needed**\n\n**${approvalTitle.substring(0, 200)}**\n\n${customMessage ? `Criteria: ${customMessage}\n\n` : ''}Reply \`approve\` or \`reject\` here, or use the dashboard.`;
+        const fallbackNotif = `🔔 **Approval needed**\n\n**${approvalTitle.substring(0, 200)}**\n\n${customMessage}\n\nReply \`approve\` or \`reject\` here, or use the dashboard.`;
         
         let cleanNotif = fallbackNotif;
         if (summarizeForDelivery) {
@@ -607,8 +626,13 @@ export async function executeCheckpoints(checkpoints, opts) {
           context_forward: null,
           error: null,
           iteration: 0,
-          delivery_status: envelope.parent_id ? 'internal' : 'pending',
-          ...(envelope.parent_id ? {} : { delivery_address: addressFromMeta ? addressFromMeta(envelope.source_meta, envelope.source_channel) : makeAddress('dashboard') }),
+          // A gate is a question for the operator, so it is always delivered. Missions never
+          // nest (C-15): a mission's parent is the Responsibility that fired it, and an R
+          // has no conversation to carry the question — marking a parented mission's gate
+          // 'internal' left every scheduled run's approval request undelivered, waiting
+          // where no one would look.
+          delivery_status: 'pending',
+          delivery_address: addressFromMeta ? addressFromMeta(envelope.source_meta, envelope.source_channel) : makeAddress('dashboard'),
         });
 
         log('INFO', `[checkpoint-executor] Checkpoint paused at CP${cpNum} task ${taskNum} — awaiting approval ${approvalId}`);

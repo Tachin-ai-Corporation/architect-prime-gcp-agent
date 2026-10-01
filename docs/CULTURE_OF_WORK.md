@@ -283,12 +283,22 @@ a feature of any process.
 1. The plan includes a step with `"type": "approval_gate"` and `"intent": "approval_gate"`
 2. When the daemon reaches this step:
    - Generates an approval ID
-   - Writes an approval document to `primes/{id}/approvals/{approvalId}`
+   - Writes an approval document to the root `approvals` collection (`approvals/{approvalId}`), stamped
+     with its `prime_id` and its `owner` — the agent whose mission it is
+   - Gives it a title (the gate step's own text) and a **description of what runs once it is approved** —
+     the rest of the checkpoint, else the next checkpoint — never the gate's accept criteria, which a
+     planner writes as the gate's own pass condition ("Approval granted.")
    - Marks the Task, Checkpoint, and Mission as `awaiting_approval`
-   - Sends a notification to the operator (via Mouth → dashboard/chat — the sole outbound egress, C-27)
-3. Operator approves or rejects via dashboard
-4. On approval: the daemon marks the gate task complete and resumes the mission from the next step
-5. On rejection: Mission status transitions to `rejected`
+   - Sends a notification to the operator (via Mouth → dashboard/chat — the sole outbound egress, C-27),
+     written from the mission's work so far and what runs next. It is **always delivered**: a scheduled
+     mission's parent is the Responsibility that fired it, which has no conversation to carry the
+     question, so its gate goes to the operator like any top-level mission's
+3. Operator approves or rejects — in the dashboard, or by replying `approve` / `reject` in the conversation
+4. On approval: **only the owning agent resumes it.** Every brain under a prime polls the same approvals;
+   each resumes only gates whose owner is itself (its Workspace email, else its agent id — a Prime has
+   no email) and leaves the rest, unmarked, for their owners. It marks the gate task complete and
+   continues the plan from the task after the gate — on its own host, with its own tools
+5. On rejection: the Mission fails, carrying the rejection reason
 
 The approval gate is **hierarchical** — it pauses the entire M→C→T stack, not just the individual Task.
 

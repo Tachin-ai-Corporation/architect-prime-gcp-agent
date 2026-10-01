@@ -3,7 +3,9 @@
 //
 // Polls Firestore for approved/rejected approvals and resumes the corresponding
 // paused envelopes by continuing their checkpoint plan (resumeCheckpointPlan), or
-// fails the envelope on reject.
+// fails the envelope on reject — only the brain that OWNS a gate resumes it.
+// Also the pure rules the gate itself uses: who owns an approval, and what its
+// description says (what runs once it is approved).
 //
 // All Firestore access uses injected dependencies — no raw globals.
 
@@ -17,6 +19,9 @@ import { getGceToken } from '../security/gce-auth.mjs';
  * @param {object}   deps.config
  * @param {string}   deps.config.primeId        - e.g. 'chuck'
  * @param {string}   deps.config.gcpProject     - GCP project ID
+ * @param {string}   [deps.config.agentEmail]   - this brain's Workspace email (AGENT_EMAIL)
+ * @param {string}   [deps.config.agentId]      - this brain's agent id (AGENT_ID) — the owner it
+ *                                                stamps when it has no email, as a Prime does
  * @param {function} deps.processEnvelope       - async (envelope, memory) => void — Cortex loop re-entry
  * @param {function} deps.recallMemory          - async (query, ctx) => memory
  * @param {function} deps.firestoreWrite        - async (collection, docId, data) => result
@@ -41,7 +46,18 @@ export function createApprovalChecker(deps) {
     primeId,
     gcpProject,
     agentEmail,
+    agentId,
   } = config;
+
+  // Who this poller resumes for: the identity this brain stamps as `owner` on its own
+  // work — its Workspace email, else its agent id (a Prime has no email). Every brain
+  // under a prime polls the same approvals, so a poller with no identity used to resume
+  // EVERY agent's gates: Prime resumed a fleet agent's approved delivery on its own host,
+  // where that agent's Drive and Docs tools do not exist, and re-planned it until it blocked.
+  const selves = [agentEmail, agentId].filter(Boolean);
+  if (selves.length === 0) {
+    log('WARN', 'Approval poller has no agent identity (no AGENT_USER_EMAIL, no AGENT_ID) — it will resume nothing');
+  }
 
   // Firestore REST base for approval queries (uses direct REST, not firestoreQuery,
   // because approvals need single-field filter queries)
@@ -133,19 +149,21 @@ export function createApprovalChecker(deps) {
 
           if (!envelopeId || processed) continue;
 
-          // ---- Owner scope ----
+          // ---- Owner scope (strict) ----
           // EVERY agent's brain runs this poller against the prime-wide `approvals`
-          // collection. Resume only THIS agent's OWN missions — the owning agent's
-          // poller resumes theirs. Skip a non-owned approval WITHOUT marking it
-          // _processed, so the owner still picks it up. (Approval docs carry `owner`
-          // since the approval-scope fix; older docs fall back to the envelope owner.)
-          if (agentEmail && apprOwner && apprOwner !== agentEmail) continue;
+          // collection. Resume only THIS agent's OWN gates — the owning agent's poller
+          // resumes theirs. Skip a non-owned approval WITHOUT marking it _processed, so
+          // the owner still picks it up. Checked before the envelope read, so another
+          // agent's gate costs nothing.
+          if (apprOwner && !ownsApproval({ owner: apprOwner }, null, selves)) continue;
 
           // Load the paused envelope
           const envDoc = await firestoreRead('work', envelopeId);
 
-          // Fallback owner scope for pre-stamp approval docs (no `owner` field).
-          if (agentEmail && envDoc && envDoc.owner && envDoc.owner !== agentEmail) continue;
+          // An approval doc written before the owner stamp falls back to the envelope's
+          // owner. A gate whose envelope is gone resumes nothing, so whoever sees it may
+          // retire it (below) — there is no work to run on the wrong host.
+          if (envDoc && !ownsApproval({ owner: apprOwner }, envDoc, selves)) continue;
 
           log('INFO', `Approval ${approvalId} ${targetStatus} — resuming envelope ${envelopeId}`);
 
@@ -319,4 +337,44 @@ export function scopeApprovalsToAgent(approvals, ctx = {}) {
   }
 
   return scoped;
+}
+
+/**
+ * Whether the brain whose identities are `selves` owns an approval — and so is the one
+ * to resume it. The owner is the approval doc's `owner` stamp, else (a doc written before
+ * the stamp) the paused envelope's owner. No owner, or no identity, means "not mine":
+ * leaving a gate for its owner is recoverable, while resuming someone else's runs their
+ * work on the wrong host.
+ *
+ * @param {object|null} approval - the approval doc (its `owner`, if stamped)
+ * @param {object|null} envelope - the paused envelope (its `owner`), or null when not read yet
+ * @param {string[]} selves      - this brain's identities: AGENT_EMAIL, AGENT_ID
+ * @returns {boolean}
+ */
+export function ownsApproval(approval, envelope, selves) {
+  const ids = (Array.isArray(selves) ? selves : []).filter(Boolean);
+  const owner = (approval && approval.owner) || (envelope && envelope.owner) || '';
+  return Boolean(owner) && ids.includes(owner);
+}
+
+/**
+ * The description an approval gate carries: what runs once it is approved, in the plan's
+ * own words, so the operator can see what they are saying yes to. Never the gate's
+ * accept_criteria — a planner writes that as the gate's own pass condition ("Approval
+ * granted."), which the dashboard then showed as the request's description while the
+ * request was still pending.
+ *
+ * @param {object} p
+ * @param {string}   [p.message]       - an explicit approval message the plan carries; wins when present
+ * @param {string[]} [p.next]          - the instructions that run after the gate, in order
+ * @param {number}   [p.maxChars=1000]
+ * @returns {string}
+ */
+export function describeApprovalGate({ message = '', next = [], maxChars = 1000 } = {}) {
+  const clip = (s) => (s.length > maxChars ? `${s.slice(0, maxChars - 1).trimEnd()}…` : s);
+  const explicit = String(message || '').trim();
+  if (explicit) return clip(explicit);
+  const steps = (Array.isArray(next) ? next : []).map(s => String(s || '').trim()).filter(Boolean);
+  if (steps.length === 0) return 'If approved, the mission finishes and reports — nothing else waits on this approval.';
+  return clip(`If approved, this runs next: ${steps.join(' Then: ')}`);
 }

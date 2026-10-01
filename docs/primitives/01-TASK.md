@@ -49,7 +49,8 @@ When a Task is stamped from the agent's checkpoint_plan, `source_meta` carries:
   "agent": "motor",               // Target agent for dispatch
   "optional": false,              // If true, failure doesn't fail the checkpoint
   "specialty": null,              // Required agent specialty (if any)
-  "approval_message": null        // Custom approval message (for approval_gate)
+  "approval_message": null        // Custom approval message (for approval_gate); without one, the
+                                  // approval describes what runs once it is approved
 }
 ```
 
@@ -101,7 +102,7 @@ The brain daemon dispatches Tasks to agents via HTTP calls to the neural gateway
 |--------|----------|
 | `execute` | Full execution — agent may modify files, run commands, create resources |
 | `research` | Read-only — agent examines systems but must not modify anything |
-| `approval_gate` | Not dispatched to an agent — pauses for human approval |
+| `approval_gate` | Not dispatched to an agent — pauses for human approval; only the owning agent resumes it ([CULTURE_OF_WORK](../CULTURE_OF_WORK.md#the-approval-gate-mechanism)) |
 
 ---
 
