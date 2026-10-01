@@ -253,6 +253,27 @@ describe('shipped responsibilities', () => {
     assert.match(playbook, /Never fold in an older week/);
   });
 
+  it('the weekly exec update writes in the template\'s shape, with checked names, and reports only what it did', () => {
+    // 2026-10-01: a thin briefing (no time boxes, per-area status folded away, "Paragrin 3")
+    // and a report claiming a trash that never happened. The shape now lives in ONE place —
+    // the project's template doc, which the operator edits — and the playbook says how to think.
+    const r = JSON.parse(readFileSync(EXEC_RECORD, 'utf8')).responsibilities.find((x) => x.id === 'r-weekly-exec-update');
+    const text = JSON.stringify(r);
+    assert.match(text, /BRIEFING TEMPLATE/);
+    assert.match(text, /READ THE TEMPLATE/);
+    assert.match(text, /never copy one into the briefing/, 'guidance is replaced, not copied');
+    assert.match(text, /Do NOT put the document title in the JSON/, 'the title was printed twice');
+    assert.match(text, /names and terms/i);
+    assert.match(text, /Report only what you actually did/);
+    assert.doesNotMatch(text, /Paragon 3 is|is Paragon 3/, 'the product is peregrine3');
+    const playbook = JSON.parse(readFileSync(join(repo, 'operator', 'processes', 'p-weekly-exec-update.json'), 'utf8'));
+    assert.equal(playbook.version, 7);
+    assert.match(playbook.narrative, /peregrine3 — lowercase, one word/);
+    assert.match(playbook.narrative, /Write by area, never meeting by meeting/);
+    assert.match(playbook.narrative, /so what\?/);
+    assert.doesNotMatch(playbook.narrative, /"Paragrin"\/"Paragon 3" is Paragon 3/);
+  });
+
   it('a product specialty ships no one deployment\'s duty — a concrete project id is deployment data', () => {
     // 2026-09-24/26: the weekly exec update (one company's four meetings, project exec-briefing)
     // shipped in specialties/assistant, so every change to it needed a repo commit AND an upgrade

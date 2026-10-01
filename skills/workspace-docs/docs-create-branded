@@ -123,6 +123,34 @@ if brand_doc:
 with open(content_file, 'r', encoding='utf-8') as f:
     sections = json.load(f)
 
+# Section types are checked BEFORE anything is created. An unknown type used to be skipped
+# with a stderr line nobody read: a weekly briefing written with "bullet_list" lost every
+# bulleted section — its status, its blockers, its decisions — and still reported
+# success. Common aliases now map to the real type; anything else refuses the whole
+# document, naming the valid types, so content is never silently lost.
+SECTION_ALIASES = {
+    'bullet_list': 'bullets', 'bulleted_list': 'bullets', 'bullet': 'bullets', 'list': 'bullets', 'ul': 'bullets',
+    'numbered_list': 'numbered', 'ordered_list': 'numbered', 'ol': 'numbered',
+    'text': 'paragraph', 'p': 'paragraph', 'note': 'callout', 'hr': 'divider',
+}
+VALID_TYPES = ('callout', 'heading', 'paragraph', 'table', 'bullets', 'numbered', 'divider', 'footer')
+if not isinstance(sections, list):
+    print(json.dumps({'status': 'invalid_content', 'message': 'content must be a JSON array of section objects — nothing was created'}))
+    sys.exit(1)
+unknown = []
+for i, sec in enumerate(sections):
+    if not isinstance(sec, dict):
+        unknown.append(f'#{i} ({type(sec).__name__})')
+        continue
+    sec['type'] = SECTION_ALIASES.get(sec.get('type', ''), sec.get('type', ''))
+    if sec['type'] not in VALID_TYPES:
+        unknown.append(f'#{i} ({sec["type"] or "no type"})')
+if unknown:
+    print(json.dumps({'status': 'invalid_content',
+                      'message': f'unknown section type(s): {", ".join(unknown)} — nothing was created. '
+                                 f'Valid types: {", ".join(VALID_TYPES)}'}))
+    sys.exit(1)
+
 def esc(text):
     return html_mod.escape(str(text))
 

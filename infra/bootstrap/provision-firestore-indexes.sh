@@ -84,6 +84,29 @@ done <<< "$INDEX_SPECS"
 
 info "Applied ${APPLIED} index declaration(s)"
 
+# ---- TTL policies (fieldOverrides with "ttl": true) ----
+# The same file is the authority for document expiry. tool_results/<id> holds the full
+# text of large tool results (platform/context/tool-record.mjs) and expires on its
+# `expire_at` timestamp. Re-applying an enabled policy is a no-op, so this stays idempotent.
+TTL_SPECS="$(python3 - "$INDEX_FILE" <<'PYEOF'
+import json, sys
+doc = json.load(open(sys.argv[1], encoding="utf-8"))
+for o in doc.get("fieldOverrides", []):
+    if o.get("ttl") is True and o.get("collectionGroup") and o.get("fieldPath"):
+        print(f'{o["collectionGroup"]}\t{o["fieldPath"]}')
+PYEOF
+)"
+while IFS=$'\t' read -r collection field; do
+  [[ -n "$collection" ]] || continue
+  info "TTL: ${collection}.${field}"
+  gcloud firestore fields ttls update "${field}" \
+    --collection-group="${collection}" \
+    --enable-ttl \
+    --database="${DB}" \
+    --project="${GCP_PROJECT_ID}" \
+    --async --quiet >/dev/null 2>&1 || info "  (already enabled or in progress)"
+done <<< "$TTL_SPECS"
+
 # ---- Wait for READY ----
 if [[ "$INDEX_WAIT_SECONDS" -le 0 ]]; then
   echo "==> Skipping readiness wait (INDEX_WAIT_SECONDS=0)"

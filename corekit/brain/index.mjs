@@ -310,6 +310,10 @@ const server = createServer(async (req, res) => {
         }],
         usage: result.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 },
         ...(sessionEcho ? { session: sessionEcho } : {}),
+        // Large tool results, in full (platform/context/tool-record.mjs): the brain stores
+        // each one and swaps its excerpt in the log for a digest + ref. Additive, like the
+        // session echo — a caller that ignores it still gets an honest, marked excerpt.
+        ...(result.toolRecords?.length ? { tool_records: result.toolRecords } : {}),
       }));
     } catch (err) {
       console.error(`[brain] #${rid} error:`, err.message);

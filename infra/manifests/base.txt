@@ -186,6 +186,7 @@ platform/control-plane/project-bootstrap.mjs platform/control-plane/project-boot
 platform/control-plane/deploy-target.mjs platform/control-plane/deploy-target.mjs
 platform/work/plan-lint.mjs platform/work/plan-lint.mjs
 platform/context/prompt-blocks.mjs platform/context/prompt-blocks.mjs
+platform/context/tool-record.mjs platform/context/tool-record.mjs
 platform/work/thread-ledger.mjs platform/work/thread-ledger.mjs
 platform/providers/to-str.mjs platform/providers/to-str.mjs
 platform/work/agent-output.mjs platform/work/agent-output.mjs

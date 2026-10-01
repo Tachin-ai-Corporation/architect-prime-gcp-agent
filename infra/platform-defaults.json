@@ -27,7 +27,18 @@
     "output_tail_chars": 20000,
     "timeout_ms": 120000,
     "max_buffer_bytes": 4194304,
-    "binary_guard": true
+    "binary_guard": true,
+    "record": {
+      "_comment": "The RECORD of a tool call — what the [TOOL EXECUTION LOG] keeps of each result for everyone after the organ that ran it: the verifier, Cortex, the evidence-floor checks (B-28; platform/context/tool-record.mjs). A result up to verbatim_chars is kept word for word. A larger one is stored in full in Firestore tool_results/<id> (expiring after store_ttl_days via the TTL policy in firestore.indexes.json) and replaced in the log by a utility-model digest of about digest_target_chars (hard cap digest_max_chars) plus the ref; if the digest fails, an excerpt with its cut stated. Never cut silently: it kept 500 chars of every result, unmarked, and a verifier promised complete evidence never saw past an agenda. The verifier re-check and Cortex request_context fetch the full result by ref. arg_chars / terminal_arg_chars bound the arguments shown (terminal tools carry the verdict payload).",
+      "verbatim_chars": 4000,
+      "digest_target_chars": 3000,
+      "digest_max_chars": 4000,
+      "digest_timeout_ms": 15000,
+      "store_full": true,
+      "store_ttl_days": 30,
+      "arg_chars": 200,
+      "terminal_arg_chars": 4000
+    }
   },
   "env": {
     "GOOGLE_GENAI_USE_VERTEXAI": "True",

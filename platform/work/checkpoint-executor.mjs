@@ -20,6 +20,7 @@ import { markCheckpoint, spineSummary, checkpointFailureHalts } from './checkpoi
 import { deployTargetLine } from '../control-plane/deploy-target.mjs';
 import { checkpointAssignee, sameAgent, missionOriginator, handoffPatch, handoffModelEnabled } from './baton.mjs';
 import { isMemoryScoped, fenceMemoryTask } from './memory-scope.mjs';
+import { expandToolResults, TOOL_RESULTS_COLLECTION } from '../context/tool-record.mjs';
 
 const VALID_TASK_AGENTS = new Set(['motor', 'temporal-research', 'temporal-memory']);
 
@@ -1630,8 +1631,22 @@ export async function executeCheckpoints(checkpoints, opts) {
               const fullEvBudget = Math.min(FULL_EVIDENCE_MAX, Math.max(3000, VERIFY_PROMPT_MAX - fullEvCritText.length - BOILERPLATE));
               // Keep every tool's RESULT (shape-aware), not a head+tail clip that drops the middle
               // where a command's output lives — this is exactly the evidence B-28 re-derives from.
-              const fullEvidenceText = cpFullOutputs.length > 0
-                ? packToolEvidence(cpFullOutputs, fullEvBudget)
+              // A large tool result rides the log as a digest + ref (platform/context/
+              // tool-record.mjs). This re-check is on COMPLETE evidence, so put the stored
+              // full results back in place of their digests, as far as each task's share of
+              // the budget allows — a digest is a finding aid, the stored result is the proof.
+              const shareBudget = Math.floor(fullEvBudget / Math.max(1, cpFullOutputs.length));
+              const readToolResult = async (ref) => {
+                if (!firestoreRead || !ref.startsWith(`${TOOL_RESULTS_COLLECTION}/`)) return null;
+                const doc = await firestoreRead(TOOL_RESULTS_COLLECTION, ref.slice(TOOL_RESULTS_COLLECTION.length + 1));
+                return doc?.result ? String(doc.result) : null;
+              };
+              const expandedOutputs = await Promise.all(cpFullOutputs.map(async (it) => ({
+                ...it,
+                output: await expandToolResults(toStr(it.output), { read: readToolResult, budget: shareBudget }),
+              })));
+              const fullEvidenceText = expandedOutputs.length > 0
+                ? packToolEvidence(expandedOutputs, fullEvBudget)
                 : smartTruncate(cpOutcomeFull || '(no output)', fullEvBudget);
               const fullReq = {
                 instruction: [

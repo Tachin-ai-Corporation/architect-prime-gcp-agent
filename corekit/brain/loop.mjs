@@ -6,6 +6,7 @@
 import { getGoogleClient, getAnthropicClient, parseModel } from './router.mjs';
 import { toGoogleSchema } from './tools.mjs';
 import { computeBreakpointLayout, estimateTokens } from '../../platform/context/prompt-blocks.mjs';
+import { buildToolLog, recordPolicy } from '../../platform/context/tool-record.mjs';
 import { createHash } from 'node:crypto';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
@@ -59,10 +60,11 @@ function resolveSystemBlocks(systemBlocks, systemPrompt, catalog) {
   return blocks.filter(b => typeof b === 'string' && b.length > 0);
 }
 
-// Terminal tools carry their payload THROUGH the tool log (verdict.mjs parses it) —
-// they get a generous cap; ordinary tools keep the tight one.
-const TERMINAL_LOG_TOOLS = new Set(['report_pass', 'report_fail', 'request_probe']);
-const argLogCap = (name) => (TERMINAL_LOG_TOOLS.has(name) ? 4000 : 200);
+// The record of each tool call — what the [TOOL EXECUTION LOG] keeps of a result — is
+// contracts.tools.record, applied by platform/context/tool-record.mjs: a result up to
+// verbatim_chars word for word; a larger one as a marked excerpt the brain replaces with
+// a digest + a ref to the stored full result. It kept 500 chars of every result, silently.
+const RECORD_POLICY = recordPolicy(CONTRACTS);
 
 // ---- Retry with exponential backoff for rate-limited model calls ----
 const MAX_RETRIES = 3;
@@ -720,13 +722,12 @@ async function runGoogleTurnSync({ modelId, systemPrompt, systemBlocks, messages
     step++;
   }
 
-  // Append ground-truth tool execution log — cannot be fabricated by the LLM
+  // Append ground-truth tool execution log — cannot be fabricated by the LLM.
+  // toolRecords: the large results, returned to the brain to store and digest.
+  let toolRecords = [];
   if (turnToolCalls.length > 0) {
-    const toolLog = turnToolCalls.map(tc =>
-      `[TOOL] ${tc.toolName}(${JSON.stringify(tc.args).substring(0, argLogCap(tc.toolName))}) → ${(
-        typeof tc.result === 'string' ? tc.result : JSON.stringify(tc.result)
-      ).substring(0, 500)}`
-    ).join('\n');
+    const { log: toolLog, large } = buildToolLog(turnToolCalls, RECORD_POLICY);
+    toolRecords = large;
     text += `\n\n---\n[TOOL EXECUTION LOG]\n${toolLog}\n[END TOOL LOG]`;
 
     // Detect tool errors that motor may have masked as SUCCESS
@@ -767,6 +768,7 @@ async function runGoogleTurnSync({ modelId, systemPrompt, systemBlocks, messages
   return {
     text,
     toolCalls: turnToolCalls,
+    toolRecords,
     usage: finalizeUsage(usageAcc),
     finishReason: finalFinishReason,
   };
@@ -940,13 +942,12 @@ async function runAnthropicTurnSync({ modelId, systemPrompt, systemBlocks, messa
     step++;
   }
 
-  // Append ground-truth tool execution log — cannot be fabricated by the LLM
+  // Append ground-truth tool execution log — cannot be fabricated by the LLM.
+  // toolRecords: the large results, returned to the brain to store and digest.
+  let toolRecords = [];
   if (turnToolCalls.length > 0) {
-    const toolLog = turnToolCalls.map(tc =>
-      `[TOOL] ${tc.toolName}(${JSON.stringify(tc.args).substring(0, argLogCap(tc.toolName))}) → ${(
-        typeof tc.result === 'string' ? tc.result : JSON.stringify(tc.result)
-      ).substring(0, 500)}`
-    ).join('\n');
+    const { log: toolLog, large } = buildToolLog(turnToolCalls, RECORD_POLICY);
+    toolRecords = large;
     text += `\n\n---\n[TOOL EXECUTION LOG]\n${toolLog}\n[END TOOL LOG]`;
 
     // Detect tool errors that motor may have masked as SUCCESS
@@ -960,6 +961,7 @@ async function runAnthropicTurnSync({ modelId, systemPrompt, systemBlocks, messa
   return {
     text,
     toolCalls: turnToolCalls,
+    toolRecords,
     usage: finalizeUsage(usageAcc),
     finishReason: finalFinishReason,
   };

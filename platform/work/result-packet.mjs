@@ -85,25 +85,51 @@ function proseOutsideToolLog(text) {
 }
 
 // Digest the [TOOL EXECUTION LOG] into its RESULTS, packed into `budget`. Each entry is
-// `[TOOL] name(args) → result` (loop.mjs; result already ~500-capped). When the tool results
-// ARE the answer — a discovery mission enumerating data, where the prose outside the log is
-// thin — these must be kept, not elided to a marker. Splits per call, drops the args noise,
-// keeps the head of each result (a listing's columns + first rows), fair-shares the budget.
-// Pure and deterministic. Returns '' when there is nothing to digest.
+// `[TOOL] name(args) → result`, where the result is the gateway's record of it
+// (platform/context/tool-record.mjs): word for word up to tools.record.verbatim_chars,
+// else a digest + ref. When the tool results ARE the answer — a discovery mission
+// enumerating data, or a read-back the verifier must confirm — these must be kept, not
+// elided to a marker. Splits per call, drops the args noise, and fills the budget smallest
+// first: as many results as fit are kept whole, and the rest share what remains — so a
+// short read-back is never cut to make room for an even split with long listings (those
+// carry a digest + ref anyway). A cut is stated. Pure and deterministic. Returns '' when
+// there is nothing to digest.
 export function digestToolResults(text, budget) {
   const block = (String(text || '').match(/\[TOOL EXECUTION LOG\]([\s\S]*?)(?:\[END TOOL LOG\]|$)/) || [])[1] || '';
   if (!block.trim() || budget < 48) return '';
   // Split BEFORE each `[TOOL] ` marker (lookahead) so a multi-line result stays with its call.
   const entries = block.split(/(?=\[TOOL\]\s)/).map(s => s.trim()).filter(s => s.startsWith('[TOOL]'));
   if (entries.length === 0) return '';
-  const per = Math.max(48, Math.floor(budget / entries.length));
-  const lines = entries.map((e) => {
+  const parsed = entries.map((e) => {
     const body = e.replace(/^\[TOOL\]\s*/, '');
     const arrow = body.indexOf('→');
     const name = (arrow >= 0 ? body.slice(0, arrow) : body).split('(')[0].trim().slice(0, 48);
-    const result = (arrow >= 0 ? body.slice(arrow + 1) : '').trim();
-    const shown = result.length > per ? result.slice(0, per - 1).trimEnd() + '…' : (result || '(no output)');
-    return `• ${name}: ${shown}`;
+    const result = (arrow >= 0 ? body.slice(arrow + 1) : '').trim() || '(no output)';
+    return { prefix: `• ${name}: `, result };
+  });
+  const fixed = parsed.reduce((n, p) => n + p.prefix.length, 0) + (parsed.length - 1);
+  let remaining = Math.max(48 * parsed.length, budget - fixed);
+  const alloc = parsed.map(() => 0);
+  const order = parsed.map((_, i) => i).sort((a, b) => parsed[a].result.length - parsed[b].result.length || a - b);
+  for (let k = 0; k < order.length; k += 1) {
+    const i = order[k];
+    const reserve = 48 * (order.length - k - 1); // a floor for every result still to place
+    if (parsed[i].result.length <= remaining - reserve) {
+      alloc[i] = parsed[i].result.length;
+      remaining -= alloc[i];
+      continue;
+    }
+    // This result and every longer one share what is left.
+    const rest = order.slice(k);
+    const share = Math.max(48, Math.floor(remaining / rest.length));
+    for (const j of rest) alloc[j] = share;
+    break;
+  }
+  const lines = parsed.map((p, i) => {
+    const cap = Math.max(48, alloc[i]);
+    if (p.result.length <= cap) return p.prefix + p.result;
+    const keep = Math.max(24, cap - 24);
+    return `${p.prefix}${p.result.slice(0, keep).trimEnd()}…[+${p.result.length - keep} chars]`;
   });
   const out = lines.join('\n');
   return out.length > budget ? clip(out, budget) : out;

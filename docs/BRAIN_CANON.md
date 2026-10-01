@@ -295,7 +295,10 @@ stored anywhere but the envelope.
 wrong answers pass. A claim is verified only by rebuilding it from ground truth via a
 path that does not share the original's assumptions: recompute by a different route,
 run the code, locate the exact source, construct the counterexample. The tool log is
-ground truth over any narrative. Where in-band re-derivation is impossible, cerebellum
+ground truth over any narrative — so **the record of a tool call is ground truth too: kept
+whole, or digested with the full result stored and referenced; never cut silently; and the
+verifier can always reach the full result** (`contracts.tools.record`,
+`platform/context/tool-record.mjs`). Where in-band re-derivation is impossible, cerebellum
 requests a **verification probe** — a fresh motor session given only the claim and the
 probe instruction, never the original transcript — and the daemon owns the dispatch,
 the context stripping, and the single re-verdict round. Probe depth follows stakes:
@@ -305,7 +308,9 @@ re-derivation.
 claim before it ships.
 **Worse looks like:** a PASS justified by plausibility; a verifier that reads only what
 the executor wrote; probes burned on trivia while the kill-shot claim rides through
-unexamined.
+unexamined; a record that silently keeps the first few hundred characters of a result, so
+the verifier fails a document it was never shown (2026-10-01: a correct briefing blocked
+because its read-back was cut after the agenda).
 
 ### B-29 · Every claim carries its epistemic bin
 Three bins, claim-level, visible end-to-end: **verified** (checked; the check can be

@@ -50,7 +50,7 @@ platform/       VM runtime, one package per concern:
                   security/       workload identity, DWD auth
                   persistence/    firestore, git-store, artifacts
                   providers/      channel, notifications, vertex, json-repair
-                  context/        memory, compaction, prompt budgets
+                  context/        memory, compaction, prompt budgets, tool records
                   control-plane/  projects, deploy targets
                   work/           envelopes, delegation, checkpoints, scheduler
                   deployment/     registry, compiler, content-sync, rollout

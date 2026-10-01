@@ -40,6 +40,7 @@ import { createProjectRegistry } from '../control-plane/projects.mjs';
 import { createProcessRegistry } from '../work/process-registry.mjs';
 import { createScheduler } from '../work/scheduler.mjs';
 import { storeParent, resolvePolicy, STORE_COLLECTION } from '../work/responsibility-store.mjs';
+import { completeToolLog, recordPolicy, digestInstruction, TOOL_RESULTS_COLLECTION } from '../context/tool-record.mjs';
 import { createApprovalChecker, scopeApprovalsToAgent } from '../work/approvals.mjs';
 import { createArchivalSweeper } from '../persistence/archival.mjs';
 import { createArtifactManager } from '../persistence/artifacts.mjs';
@@ -870,6 +871,9 @@ const DEPLOYMENT_ROOTED = new Set([
   // channel (like `work`): the introspect daemon writes them at the documents
   // root and the brain's checkResponsibilityTriggers reads/claims them there.
   'responsibility_triggers',
+  // The full text of large tool results, referenced from the [TOOL EXECUTION LOG]
+  // (platform/context/tool-record.mjs). Root-level so a ref resolves from any agent.
+  'tool_results',
 ]);
 
 function collectionParent(collection) {
@@ -1857,6 +1861,42 @@ async function summarizeForDelivery(type, rawText, context) {
   if (!_notifier) _initNotifier();
   return _notifier.summarizeForDelivery(type, rawText, context);
 }
+// ---- The record of a tool call (platform/context/tool-record.mjs) ----
+// A result over tools.record.verbatim_chars is kept in full here and digested by the
+// utility model; the log carries the digest and this ref. Objects before refs (C-24):
+// storeToolResult resolves only after the write, so a ref never points at nothing.
+const TOOL_RECORD_POLICY = recordPolicy(CONTRACTS);
+
+async function storeToolResult(rec, { missionId, organ }) {
+  const id = generateId('tr');
+  const now = new Date();
+  await _db.write(`${TOOL_RESULTS_COLLECTION}/${id}`, {
+    id,
+    mission_id: missionId,
+    organ,
+    tool: rec.tool,
+    args: rec.args,
+    chars: rec.chars,
+    result: rec.result,
+    owner: AGENT_EMAIL || AGENT_ID,
+    prime_id: PRIME_ID,
+    created_at: now.toISOString(),
+    // A Firestore timestamp, so the TTL policy (firestore.indexes.json) can expire it.
+    expire_at: new Date(now.getTime() + TOOL_RECORD_POLICY.store_ttl_days * 86_400_000),
+  }, { strict: true });
+  return `${TOOL_RESULTS_COLLECTION}/${id}`;
+}
+
+// Utility work, not an organ's judgement (C-6): the brain's own cheap model condenses.
+async function digestToolResult(rec) {
+  return _vtx.transform(rec.result, digestInstruction(TOOL_RECORD_POLICY), {
+    maxTokens: Math.ceil(TOOL_RECORD_POLICY.digest_max_chars / 3),
+    temperature: 0.1,
+    disableThinking: true,
+    timeoutMs: TOOL_RECORD_POLICY.digest_timeout_ms,
+  });
+}
+
 async function callAgent(agentId, envelope) {
   const agentInfo = REGISTRY.agents[agentId];
   if (!agentInfo) {
@@ -1952,6 +1992,22 @@ async function callAgent(agentId, envelope) {
       content = msg.content;
     } else if (Array.isArray(msg?.content)) {
       content = msg.content.filter(c => c.type === 'text').map(c => c.text || '').join('\n');
+    }
+
+    // The record of each large tool result: store it in full, then swap the gateway's
+    // excerpt for a utility-model digest + the ref (platform/context/tool-record.mjs).
+    // Every organ call passes through here, so every agent's log is complete.
+    if (Array.isArray(data.tool_records) && data.tool_records.length > 0) {
+      const missionId = envelope._missionId || envelope.parent_id || envelope.id || null;
+      const { text, recorded } = await completeToolLog(content, data.tool_records, {
+        policy: TOOL_RECORD_POLICY,
+        store: (rec) => storeToolResult(rec, { missionId, organ: agentId }),
+        digest: (rec) => digestToolResult(rec),
+      });
+      content = text;
+      for (const r of recorded) {
+        log('INFO', `[TELEMETRY] tool_record mission=${missionId || '-'} organ=${agentId} tool=${r.tool} chars=${r.chars} digested=${r.digested} ref=${r.ref || 'none'}`);
+      }
     }
 
     log('INFO', `Agent ${agentId} responded (${content.length} chars, ${durationMs}ms)`);
@@ -4385,8 +4441,14 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId, _skipBat
         for (const ref of toFetch) {
           let full = '';
           try {
-            const doc = await firestoreRead('work', ref);
-            full = toStr(doc?.output || doc?.error || '');
+            if (ref.startsWith(`${TOOL_RESULTS_COLLECTION}/`)) {
+              // A large tool result's ref from the [TOOL EXECUTION LOG]: its stored full text.
+              const doc = await firestoreRead(TOOL_RESULTS_COLLECTION, ref.slice(TOOL_RESULTS_COLLECTION.length + 1));
+              full = toStr(doc?.result || '');
+            } else {
+              const doc = await firestoreRead('work', ref);
+              full = toStr(doc?.output || doc?.error || '');
+            }
           } catch (e) { full = `[hydration error for ${ref}: ${e.message}]`; }
           envelope._hydrated_refs.push(ref);
           priorResults.push({

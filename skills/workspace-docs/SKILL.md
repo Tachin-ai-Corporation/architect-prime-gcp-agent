@@ -383,6 +383,10 @@ command. Do NOT split "read brand guide" and "create document" into separate tas
 
 Section types: `callout`, `heading` (level 1-6), `paragraph`, `table` (headers + rows),
 `bullets`, `numbered`, `divider`, `footer`.
+Common aliases are accepted (`bullet_list`/`list` → `bullets`, `numbered_list` → `numbered`, `text` → `paragraph`).
+Any other type refuses the whole document with `"status": "invalid_content"` and the valid types —
+nothing is created, so fix the type and run it again. (An unknown type used to be dropped silently:
+a briefing lost every bulleted section and still reported success.)
 
 **Text markup** (use in any text/content field — the tool renders them as styled HTML):
 - `**bold text**` → strong/bold
