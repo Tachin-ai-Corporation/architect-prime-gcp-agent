@@ -1,4 +1,4 @@
-// test/release-view.test.mjs — the P6 exit gate, as a testable structure
+// test/dashboard/release-view.test.mjs — the P6 exit gate, as a testable structure
 //
 // The gate is seven questions: what changed, why, who authored it, where it is
 // active, how it performed, what approval occurred, how to undo it. Encoding
@@ -15,8 +15,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { answerOperatorQuestions, unanswered } from '../app/src/lib/release-view.ts';
-import { deriveCoordinates } from '../app/src/lib/coordinates.ts';
+import { answerOperatorQuestions, unanswered } from '../../app/src/lib/release-view.ts';
+import { deriveCoordinates } from '../../app/src/lib/coordinates.ts';
 
 const DIGEST = 'sha256:f9a980797b8d5a381e2f6daea1a6cbd27100f348d587a3e4fe6620d5c2e00269';
 const PLATFORM = 'a5e8138769563ca2c458dbca3665cea856b7daec';

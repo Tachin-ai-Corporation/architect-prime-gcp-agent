@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main]
 
+# Every check below that can run on its own carries `if: ${{ !cancelled() }}`. By default a
+# failing step skips every later step in its job, and the skipped ones are not reported as
+# failures. That is how CI was red from 2026-08-15 while tests/ and fourteen Manifest
+# Integrity checks never ran at all.
+
 jobs:
   lint:
     name: Lint
@@ -44,6 +49,7 @@ jobs:
       # otherwise pass as "all clear", which is the same defect one level up.
       # Proven by narrowing ls-files to one directory: COUNT 3, exit 1.
       - name: Check shell scripts parse
+        if: ${{ !cancelled() }}
         run: |
           set -uo pipefail
           FAILED=0
@@ -62,6 +68,7 @@ jobs:
           [ "$FAILED" -eq 0 ] || exit 1
 
       - name: Validate JSON configs
+        if: ${{ !cancelled() }}
         run: |
           echo "Validating JSON files..."
           FAILED=0
@@ -95,6 +102,7 @@ jobs:
         run: node corekit/system/compile-contracts
 
       - name: Validate contracts
+        if: ${{ !cancelled() }}
         run: bash corekit/system/validate-contracts --repo
 
   manifest-integrity:
@@ -112,22 +120,26 @@ jobs:
       # says so with arithmetic rather than confidence, and fails the moment a
       # reorganisation changes installed content instead of just its address.
       - name: Installed surface matches the lock
+        if: ${{ !cancelled() }}
         run: node --test test/install-surface.test.mjs
 
       # Parsing a file does not resolve its imports. Without this, a specifier
       # pointing at nothing clears the syntax check and is found by a VM that
       # will not restart.
       - name: Installed tree resolves
+        if: ${{ !cancelled() }}
         run: node --test test/module-resolution.test.mjs
 
       # What a VM executes is the stored blob. A launcher stored with CRLF has a
       # shebang ending in CR and Linux calls the interpreter missing.
       - name: Shipped files are stored with LF
+        if: ${{ !cancelled() }}
         run: node --test test/line-endings.test.mjs
 
       # bootstrap runs only on a fresh deploy, so a path it reads that the
       # manifests stopped installing keeps working everywhere until the next hire.
       - name: Bootstrap reads only what is installed
+        if: ${{ !cancelled() }}
         run: node --test test/bootstrap-paths.test.mjs
 
       # A living document that names a path it cannot produce teaches the wrong
@@ -137,29 +149,27 @@ jobs:
       # records (docs/plans, the changelog, .agents/rules/project-context.md)
       # are out of scope by design.
       - name: Living docs and shipped skills cite files that exist
+        if: ${{ !cancelled() }}
         run: node --test test/doc-paths.test.mjs
 
       # A fixed /tmp filename is owned by whoever runs the tool first; every later
       # run by another user fails curl with exit 23 and set -e swallows the message.
       - name: Shell tools use per-run temp files
+        if: ${{ !cancelled() }}
         run: node --test test/tool-hygiene.test.mjs
-
-      # A deployment with no sign-in configured must LOCK, not open a public
-      # administrative mode. The setup wizard can rewrite OAuth config, read
-      # Secret Manager and update the running service.
-      - name: First-run setup surface is token-gated
-        run: node --test test/setup-gate.test.mjs
 
       # A release id must mean ONE set of bytes. The daemon used to compile the
       # mutable branch tip and stamp it with the pinned release, so an agent could
       # run content nobody approved while every coordinate read correct.
       - name: A release resolves to fixed bytes
+        if: ${{ !cancelled() }}
         run: node --test test/release-bytes.test.mjs
 
       # A release that drops a skill must remove it. The planner was correct and
       # fed a desired-only inventory, so its removal set was structurally empty
       # and a retired skill stayed installed while the sync reported success.
       - name: Retired content is retired
+        if: ${{ !cancelled() }}
         run: node --test test/retired-content.test.mjs
 
       # The installer must not delete what a release owns. install.sh's orphan
@@ -167,6 +177,7 @@ jobs:
       # true before the Fleet Definition plane existed, and after it the sweep
       # deleted precisely the skills Prime is for, on every platform upgrade.
       - name: The installer respects content-plane ownership
+        if: ${{ !cancelled() }}
         run: node --test test/content-plane-ownership.test.mjs
 
       # Reading the ownership record correctly is not the same as respecting it.
@@ -175,6 +186,7 @@ jobs:
       # the release-owned skill IS deleted, which is what makes the survival a
       # proof rather than a coincidence.
       - name: The orphan sweep keeps release content and still removes orphans
+        if: ${{ !cancelled() }}
         run: node --test test/orphan-sweep.test.mjs
 
       # An APPLIED release must be a LIVE release. SKILL_INDEX and the capability
@@ -183,6 +195,7 @@ jobs:
       # release added reached neither. Every other property in the release path
       # sits upstream of this step.
       - name: An applied release is a live release
+        if: ${{ !cancelled() }}
         run: node --test test/capability-refresh.test.mjs
 
       # A storage outage must not read as an empty world. read() returned null for
@@ -192,6 +205,7 @@ jobs:
       # the transform that added them first nested it inside pathFor(), where it
       # parsed, read correctly in a grep, and did nothing.
       - name: The lifecycle fails closed on a storage failure
+        if: ${{ !cancelled() }}
         run: node --test test/storage-fails-closed.test.mjs
 
       # A planted regression must fail the gate. `evaluate` compiled ONE spec from
@@ -200,6 +214,7 @@ jobs:
       # fire. compareRuns was always correct — the defect was entirely at the call
       # site, which is why a unit test of the pure function stayed green.
       - name: Evaluation compares two real runs
+        if: ${{ !cancelled() }}
         run: node --test test/evaluation-compares-two-runs.test.mjs
 
       # The one verb the system exists for. The registry could release, assign,
@@ -209,6 +224,7 @@ jobs:
       # resolves the base revision and createChange seals it. The shell never
       # writes a definition.
       - name: Prime can author a definition
+        if: ${{ !cancelled() }}
         run: node --test test/authoring-verb.test.mjs
 
       # The Change lifecycle was implicit across three writers, and
@@ -217,6 +233,7 @@ jobs:
       # the evidence a release claims to carry. Structurally empty, same class as
       # the removal set in Finding D.
       - name: The change lifecycle is a table, and evidence is attached
+        if: ${{ !cancelled() }}
         run: node --test test/change-lifecycle.test.mjs
 
       # A storage failure is not a mission verdict. agent-brain read an unreadable
@@ -225,6 +242,7 @@ jobs:
       # than throwing; the durable claim failed OPEN. Comments documented
       # null == absent and the client silently violated it.
       - name: A storage failure is not a mission verdict
+        if: ${{ !cancelled() }}
         run: node --test test/storage-failure-is-not-a-verdict.test.mjs
 
       # Motor runs inside the brain and holds exec/shell/python3, as root. A path
@@ -233,18 +251,21 @@ jobs:
       # guards the unit CONTENTS; a dropped directive fails open and nothing else
       # would notice. The live both-directions proof is in scripts/rollout-gate.sh.
       - name: Motor cannot write Foundation
+        if: ${{ !cancelled() }}
         run: node --test test/motor-cannot-write-foundation.test.mjs
 
       # A responsibility authored through the registry used to validate, release,
       # reach the agent and never fire — the compiler emitted a trigger OBJECT while
       # the scheduler read a schedule STRING nothing produced. v2 splits the field.
       - name: A registry-authored responsibility can fire
+        if: ${{ !cancelled() }}
         run: node --test test/responsibility-convergence.test.mjs
 
       # And a process reached the agent through no path at all: compileAgentSpec
       # never took processes and emitted no process file, while the runtime read
       # local files plus a Firestore collection that overrides by id.
       - name: A release delivers its processes
+        if: ${{ !cancelled() }}
         run: node --test test/process-delivery.test.mjs
 
       # The gate on Phase D item 11. Every legacy authority is deleted on the
@@ -252,6 +273,7 @@ jobs:
       # checked. Its own worst failure would be reporting MATCH when the release
       # delivered nothing — the shape this program keeps finding.
       - name: Parity gates the migration
+        if: ${{ !cancelled() }}
         run: node --test test/parity.test.mjs
 
   codeowners:
@@ -313,17 +335,45 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # Node 20 on purpose: it is what the VMs run (infra/bootstrap installs
+      # nodesource setup_20.x). An API newer than that in platform/ or corekit/
+      # fails here instead of on a VM that will not restart. Local development is
+      # usually on a newer Node, so this job is the only place that is checked.
       - uses: actions/setup-node@v4
         with:
           node-version: '20'
 
       # Both suites run. `tests/` (426 assertions) was outside CI entirely until
       # v2026.08.15 — a green build proved nothing about a third of the codebase.
+      # Dashboard logic (test/dashboard/) is not in these globs: it runs in the
+      # Dashboard Logic job, on the dashboard's own Node.
       - name: Run test/ suite
         run: node --test test/*.test.mjs
 
       - name: Run tests/ suite
+        if: ${{ !cancelled() }}
         run: node --test tests/*.test.mjs
+
+  dashboard-logic:
+    name: Dashboard Logic
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # The dashboard's pure modules (app/src/lib) are tested by importing their
+      # TypeScript directly, which Node can do natively only from 22.6. Node 20
+      # cannot load a .ts file at all, so these tests failed on every push from
+      # 2026-08-15. They run on the Node the dashboard image uses
+      # (app/Dockerfile: node:22-alpine). test/ci-node-parity.test.mjs keeps the
+      # versions here, in that Dockerfile, and in the bootstraps from drifting apart.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      # Includes the first-run setup gate: a deployment with no sign-in configured
+      # must LOCK, not open a public administrative mode. The setup wizard can
+      # rewrite OAuth config, read Secret Manager and update the running service.
+      - name: Dashboard modules — setup gate, coordinates, release view, deployed ref
+        run: node --test test/dashboard/*.test.mjs
 
   dashboard:
     name: Dashboard Gates
@@ -333,9 +383,10 @@ jobs:
         working-directory: app
     steps:
       - uses: actions/checkout@v4
+      # The Node the dashboard image builds and runs on (app/Dockerfile).
       - uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: npm
           cache-dependency-path: app/package-lock.json
 
@@ -343,9 +394,13 @@ jobs:
       # silently resolves a different dependency tree than the one reviewed is
       # not reproducible (C-35 in spirit — the same immutability argument).
       - name: Install dependencies
+        id: install
         run: npm ci
 
+      # The three gates are independent once dependencies are installed. Lint
+      # failed from late August and the Build after it had not run since.
       - name: Typecheck
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npx tsc --noEmit
 
       # A GATE, as of CLEANUP. It reported 57 errors and ran with `|| true`,
@@ -360,9 +415,11 @@ jobs:
       # behaviour on a dashboard behind NextAuth that CI cannot sign into — so
       # they are visible and tracked rather than swept.
       - name: Lint
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npm run lint
 
       - name: Build
+        if: ${{ !cancelled() && steps.install.outcome == 'success' }}
         run: npm run build
         env:
           NEXT_TELEMETRY_DISABLED: '1'

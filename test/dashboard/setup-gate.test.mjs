@@ -1,4 +1,4 @@
-// test/setup-gate.test.mjs — the first-run setup surface may not be an open door.
+// test/dashboard/setup-gate.test.mjs — the first-run setup surface may not be an open door.
 //
 // A fresh deployment has no OAuth, so the setup wizard cannot be protected by a
 // session. It was therefore protected by nothing: on an --allow-unauthenticated
@@ -16,7 +16,7 @@
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import { setupGate, bootstrapTokenMatches, presentedToken, BOOTSTRAP_HEADER, BOOTSTRAP_QUERY }
-  from '../app/src/lib/setup-gate.ts';
+  from '../../app/src/lib/setup-gate.ts';
 
 const TOKEN = 'a'.repeat(32);
 

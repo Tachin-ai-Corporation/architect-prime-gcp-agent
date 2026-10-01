@@ -32,6 +32,16 @@
 - PowerShell doesn't support `&&` — use `;` to chain commands
 - Use `--command=` flag, not `-- "command"` (Plink parsing issues)
 
+## Tests
+- Three suites — run all three before committing: `node --test test/*.test.mjs`,
+  `node --test test/dashboard/*.test.mjs`, `node --test tests/*.test.mjs`
+- CI runs each on the Node its code runs on: the VM runtime on Node 20 (the bootstraps install
+  `setup_20.x`), the dashboard on Node 22 (`app/Dockerfile`). Local Node is usually newer, so CI is
+  the only place the VM's Node is checked — `node --no-experimental-strip-types` reproduces Node 20's
+  inability to load TypeScript locally
+- Only `test/dashboard/` may import the dashboard's TypeScript (`app/src/**.ts`). Elsewhere, read the
+  source as text; `test/ci-node-parity.test.mjs` enforces both rules
+
 ## General
 - No secrets in repo — runtime injection via env vars and GCE metadata
 - Prefer ADC + REST/SDK over `gcloud` CLI where possible

@@ -89,7 +89,7 @@ test('setup mode is narrowed to the onboarding surface', () => {
   //
   // The allowlist is still asserted structurally, because a bounded surface is
   // the property that matters. The DECISION is asserted against the pure module
-  // in test/setup-gate.test.mjs, where it can be exercised rather than read.
+  // in test/dashboard/setup-gate.test.mjs, where it can be exercised rather than read.
   const src = read('app/src/middleware.ts');
 
   assert.match(src, /function isSetupSurface/, 'setup mode must be an explicit, bounded allowlist');
@@ -104,14 +104,13 @@ test('setup mode is narrowed to the onboarding surface', () => {
   assert.match(src, /gate\.state === "locked"/, 'a deployment with no auth and no token must lock');
 });
 
-test('the setup gate locks rather than opening, and both enforcers agree', async () => {
-  // The property the audit asked for: missing auth configuration must LOCK the
-  // application, not create a public administrative mode.
-  const { setupGate } = await import('../app/src/lib/setup-gate.ts');
-  assert.equal(setupGate({}).state, 'locked');
-  assert.equal(setupGate({ SETUP_BOOTSTRAP_TOKEN: 'z'.repeat(40) }).state, 'bootstrap');
-  assert.equal(setupGate({ GOOGLE_CLIENT_ID: 'x' }).state, 'configured');
-
+test('the setup handler checks the bootstrap token itself, as well as the middleware', () => {
+  // The property the audit asked for — missing auth configuration LOCKS the
+  // application rather than creating a public administrative mode — is exercised
+  // against the gate module in test/dashboard/setup-gate.test.mjs. That suite runs
+  // on the dashboard's Node, which loads the module's TypeScript; this one runs on
+  // the VMs' Node 20, which cannot, so it reads source only.
+  //
   // Defence in depth: the handler that can rewrite OAuth config, read Secret
   // Manager and update the running service must check the token ITSELF, not rely
   // on a middleware matcher staying correct.

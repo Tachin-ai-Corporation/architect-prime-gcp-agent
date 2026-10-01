@@ -1,4 +1,4 @@
-// test/deployed-ref.test.mjs — showing what is running, not what main says
+// test/dashboard/deployed-ref.test.mjs — showing what is running, not what main says
 //
 // The dashboard's catalog views fetch from GitHub `main`, which answers "what
 // would a fresh install get today". That is a different question from "what is
@@ -14,7 +14,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { resolveDeployedRef, contentUrlAt } from '../app/src/lib/deployed-ref.ts';
+import { resolveDeployedRef, contentUrlAt } from '../../app/src/lib/deployed-ref.ts';
 
 const SHA = 'a5e8138769563ca2c458dbca3665cea856b7daec';
 

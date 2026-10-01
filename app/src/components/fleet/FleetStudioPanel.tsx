@@ -69,7 +69,8 @@ export function FleetStudioPanel() {
   const [coords, setCoords] = useState<FleetCoordinate[] | null>(null);
   const [summary, setSummary] = useState<DriftSummary | null>(null);
   const [releases, setReleases] = useState<ReleaseRecord[] | null>(null);
-  const [selected, setSelected] = useState<string | null>(null);
+  // The release the operator clicked; until they click one, the default below.
+  const [picked, setPicked] = useState<string | null>(null);
   const [detail, setDetail] = useState<ReleaseDetail | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [showDrafts, setShowDrafts] = useState(false);
@@ -114,11 +115,14 @@ export function FleetStudioPanel() {
 
   // Default the drill-down to a release that means something — the active one,
   // else the first surfaced — never a random newest draft (which answers nothing).
-  useEffect(() => {
-    if (selected || !releases || releases.length === 0) return;
+  // Derived during render rather than copied into state by an effect, which
+  // rendered once with nothing selected and again with the default.
+  const defaultRelease = useMemo(() => {
+    if (!releases || releases.length === 0) return null;
     const active = releases.find((r) => r.status === "active");
-    setSelected(active?.id ?? surfaced[0]?.id ?? releases[0]?.id ?? null);
-  }, [releases, surfaced, selected]);
+    return active?.id ?? surfaced[0]?.id ?? releases[0]?.id ?? null;
+  }, [releases, surfaced]);
+  const selected = picked ?? defaultRelease;
 
   useEffect(() => {
     if (!selected) return;
@@ -142,7 +146,7 @@ export function FleetStudioPanel() {
     <button
       key={r.id}
       className={`${styles.releaseChip} ${selected === r.id ? styles.chipActive : ""} ${dim ? styles.chipDraft : ""}`}
-      onClick={() => setSelected(r.id)}
+      onClick={() => setPicked(r.id)}
     >
       <span className={styles.mono}>{r.id}</span>
       <span className={styles.chipStatus}>{inUse.has(r.id) && r.status !== "active" ? "in use" : r.status ?? "unknown"}</span>

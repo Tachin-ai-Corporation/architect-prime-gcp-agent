@@ -1,4 +1,4 @@
-// test/coordinates.test.mjs — what an agent is running, said plainly
+// test/dashboard/coordinates.test.mjs — what an agent is running, said plainly
 //
 // The dashboard has no test runner of its own; `tsc --noEmit` and lint are the
 // whole of its coverage, so its logic has been judged on whether it compiles.
@@ -17,7 +17,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
-import { deriveCoordinates, summarize } from '../app/src/lib/coordinates.ts';
+import { deriveCoordinates, summarize } from '../../app/src/lib/coordinates.ts';
 
 const DIGEST = 'sha256:f9a980797b8d5a381e2f6daea1a6cbd27100f348d587a3e4fe6620d5c2e00269';
 const OTHER = 'sha256:' + 'b'.repeat(64);
