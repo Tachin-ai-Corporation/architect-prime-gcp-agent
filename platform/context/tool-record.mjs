@@ -169,6 +169,21 @@ export async function completeToolLog(text, large, { store, digest, policy = DEF
 const REF_HEADER = /\[(?:digest|excerpt) of (\d+) chars — [^\n\]]*?full result: (tool_results\/[A-Za-z0-9_-]+)\]\n/g;
 
 /**
+ * The stored full results a log's digests and excerpts point at, in order and each once —
+ * so whoever reads a digest can ask for the whole result instead of re-running the work.
+ *
+ * @param {string} text
+ * @returns {string[]} refs of the form `tool_results/<id>`
+ */
+export function storedResultRefs(text) {
+  const refs = [];
+  for (const m of String(text ?? '').matchAll(REF_HEADER)) {
+    if (!refs.includes(m[2])) refs.push(m[2]);
+  }
+  return refs;
+}
+
+/**
  * Put stored full results back in place of their digests, as far as `budget` allows —
  * for the verifier's re-check on complete evidence. Each block's body runs to the next
  * [TOOL] line or the end of the log. A result that does not fit keeps its digest.

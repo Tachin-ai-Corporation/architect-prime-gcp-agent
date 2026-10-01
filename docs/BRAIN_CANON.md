@@ -297,8 +297,10 @@ path that does not share the original's assumptions: recompute by a different ro
 run the code, locate the exact source, construct the counterexample. The tool log is
 ground truth over any narrative — so **the record of a tool call is ground truth too: kept
 whole, or digested with the full result stored and referenced; never cut silently; and the
-verifier can always reach the full result** (`contracts.tools.record`,
-`platform/context/tool-record.mjs`). Where in-band re-derivation is impossible, cerebellum
+verifier — and the cortex, when it asks for a task's output — can always reach the full
+result** (`contracts.tools.record`, `platform/context/tool-record.mjs`). A digest is a finding
+aid, not a cut: a cortex that read one as "truncated" re-planned a mission whose every
+checkpoint had passed, so verified work is delivered, never re-shaped. Where in-band re-derivation is impossible, cerebellum
 requests a **verification probe** — a fresh motor session given only the claim and the
 probe instruction, never the original transcript — and the daemon owns the dispatch,
 the context stripping, and the single re-verdict round. Probe depth follows stakes:

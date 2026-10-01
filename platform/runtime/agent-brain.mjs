@@ -40,7 +40,7 @@ import { createProjectRegistry } from '../control-plane/projects.mjs';
 import { createProcessRegistry } from '../work/process-registry.mjs';
 import { createScheduler } from '../work/scheduler.mjs';
 import { storeParent, resolvePolicy, STORE_COLLECTION } from '../work/responsibility-store.mjs';
-import { completeToolLog, recordPolicy, digestInstruction, TOOL_RESULTS_COLLECTION } from '../context/tool-record.mjs';
+import { completeToolLog, recordPolicy, digestInstruction, expandToolResults, TOOL_RESULTS_COLLECTION } from '../context/tool-record.mjs';
 import { createApprovalChecker, scopeApprovalsToAgent } from '../work/approvals.mjs';
 import { createArchivalSweeper } from '../persistence/archival.mjs';
 import { createArtifactManager } from '../persistence/artifacts.mjs';
@@ -4448,6 +4448,18 @@ async function _processEnvelopeInner(envelope, memoryContext, _claimId, _skipBat
             } else {
               const doc = await firestoreRead('work', ref);
               full = toStr(doc?.output || doc?.error || '');
+              // A task's log carries each large tool result as a digest plus its ref. Asked for
+              // the FULL output, give the full results back in place, as far as the budget
+              // allows — the same expansion the verifier's re-check uses. A digested read-back
+              // read as "truncated" sent a mission that had passed every checkpoint back to
+              // planning four times.
+              full = await expandToolResults(full, {
+                read: async (r) => {
+                  const stored = await firestoreRead(TOOL_RESULTS_COLLECTION, r.slice(TOOL_RESULTS_COLLECTION.length + 1));
+                  return stored?.result ? String(stored.result) : null;
+                },
+                budget: HYDRATE_MAX_CHARS,
+              });
             }
           } catch (e) { full = `[hydration error for ${ref}: ${e.message}]`; }
           envelope._hydrated_refs.push(ref);

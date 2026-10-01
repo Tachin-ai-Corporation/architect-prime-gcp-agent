@@ -10,7 +10,7 @@ import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   buildSpine, firstIncompleteIndex, markCheckpoint, applyReplan, rebuildFromSpine, spineSummary,
-  finalizeBlockedBySpine, checkpointFailureHalts, probeGatedFinalizeAction,
+  finalizeBlockedBySpine, checkpointFailureHalts, probeGatedFinalizeAction, passedThisRun,
 } from '../platform/work/checkpoint-spine.mjs';
 
 const PLAN = [
@@ -284,5 +284,40 @@ describe('probeGatedFinalizeAction — FC-A false-negative refinement (#237)', (
 
   it('empty-arg edge is a safe block', () => {
     assert.equal(probeGatedFinalizeAction(), 'block');
+  });
+});
+
+// 2026-10-01: a weekly briefing passed every checkpoint, then its cortex planned the whole
+// mission again — four times — because a plain checkpoint_plan on an all-complete spine was
+// never treated as a re-plan. passedThisRun is the state in which a new plan can only
+// re-shape verified work.
+describe('passedThisRun', () => {
+  const done = () => PLAN.map((_, i) => ({ n: i + 1, status: 'complete' }));
+  const work = (step) => ({ agent: 'motor', checkpoint_step: step, success: true, result: 'ok' });
+
+  it('every checkpoint passed in this loop, nothing new from a human → true', () => {
+    assert.equal(passedThisRun(done(), [work('1.1'), work('2.1'), work('3.1'), { agent: 'system', result: 'nudge' }]), true);
+  });
+
+  it('a checkpoint still pending or failed → false (that is a scoped re-plan)', () => {
+    const s = done(); s[2].status = 'pending';
+    assert.equal(passedThisRun(s, [work('1.1')]), false);
+    s[2].status = 'failed';
+    assert.equal(passedThisRun(s, [work('1.1')]), false);
+  });
+
+  it('the spine passed before the mission paused, and a human has answered since → false', () => {
+    assert.equal(passedThisRun(done(), [{ agent: 'human', result: 'also add the board deck' }]), false);
+    assert.equal(passedThisRun(done(), [work('3.1'), { agent: 'human', result: 'one more thing' }]), false);
+  });
+
+  it('no checkpoint work in this loop (a fresh decide loop over an old spine) → false', () => {
+    assert.equal(passedThisRun(done(), []), false);
+    assert.equal(passedThisRun(done(), [{ agent: 'system', result: 'hydrated context' }]), false);
+  });
+
+  it('no spine → false', () => {
+    assert.equal(passedThisRun(null, [work('1.1')]), false);
+    assert.equal(passedThisRun([], [work('1.1')]), false);
   });
 });

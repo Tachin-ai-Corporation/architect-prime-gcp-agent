@@ -3,8 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { normalizeTargetEmail } from '../../work/delegation.mjs';
 import {
-  buildSpine, firstIncompleteIndex, applyReplan, rebuildFromSpine, spineSummary,
+  buildSpine, firstIncompleteIndex, applyReplan, rebuildFromSpine, spineSummary, passedThisRun,
 } from '../../work/checkpoint-spine.mjs';
+import { storedResultRefs } from '../../context/tool-record.mjs';
 import { handoffModelEnabled, deriveHandoffCheckpoints } from '../../work/baton.mjs';
 import { renderResources, repairIds, seedFromProse } from '../../work/resource-ledger.mjs';
 import { findBackReferences, formatBackReference } from '../../work/plan-lint.mjs';
@@ -161,15 +162,26 @@ export async function handleCheckpointPlan(ctx, deps) {
   const REJECT_PASSING_REPLAN = CONTRACTS?.dispatch?.reject_full_replan_when_passing !== false;
   const spineHasFailure = Array.isArray(existingSpine) && existingSpine.some(s => s && s.status === 'failed');
   const spineHasComplete = Array.isArray(existingSpine) && existingSpine.some(s => s && s.status === 'complete');
-  if (SPINE_ENABLED && existingSpine && forceFullReplan && REJECT_PASSING_REPLAN && spineHasComplete && !spineHasFailure) {
+  // The same re-shape also arrives WITHOUT saying so. Once every checkpoint has passed there
+  // is nothing left to re-task, so a plain checkpoint_plan skipped the refusal above and fell
+  // through to full structuring: a weekly briefing passed every checkpoint, the cortex read a
+  // digested read-back as "truncated", and it planned the whole mission again — four times.
+  // A plan that passed in THIS decide loop, with no new human input, is verified work to deliver.
+  const implicitReshape = !forceFullReplan && passedThisRun(existingSpine, priorResults);
+  if (SPINE_ENABLED && existingSpine && (forceFullReplan || implicitReshape) && REJECT_PASSING_REPLAN && spineHasComplete && !spineHasFailure) {
     const passRefs = [...new Set((priorResults || []).filter(r => r && r.ref && r.success).map(r => r.ref))].slice(0, 6);
-    log('WARN', `[TELEMETRY] full_replan_refused mission=${envelope.id} spine=${spineSummary(existingSpine)} reason=${String(decision.replan_reason || '').slice(0, 160)}`);
+    const fullRefs = [...new Set((priorResults || []).flatMap(r => storedResultRefs(toStr(r?.result))))].slice(0, 8);
+    log('WARN', `[TELEMETRY] full_replan_refused mission=${envelope.id} spine=${spineSummary(existingSpine)} implicit=${implicitReshape} reason=${String(decision.replan_reason || '').slice(0, 160)}`);
     return {
       continue: true,
       priorResultsAppend: [{
         agent: 'system',
-        result: `[SYSTEM] Full mission re-plan refused: every checkpoint has PASSED verification, so re-shaping would discard verified work. Return "synthesize" and write the answer now. If a passed task's summary is not enough to write it, name its ref in "request_context"${passRefs.length ? ` (${passRefs.join(', ')})` : ''} to fetch the full output — do NOT re-plan to re-observe a result you can read.`,
+        result: `[SYSTEM] Re-plan refused: every checkpoint has PASSED verification, so a new plan would discard verified work and run the mission again. Return "synthesize" and write the answer now — or "synthesize_with_failure" if the verified work does not meet the request. If a passed task's summary is not enough to write it, name its ref in "request_context"${passRefs.length ? ` (${passRefs.join(', ')})` : ''} to fetch the full output. A large tool result inside a task's log is a DIGEST of a stored result, not a cut: its own ref returns it word for word${fullRefs.length ? ` (${fullRefs.join(', ')})` : ''}. Do NOT re-plan to re-observe a result you can read.`,
       }],
+      // Forces synthesize if the cortex asks to plan again. A turn that fetches context does
+      // not use it up (the decide loop hydrates and re-decides before it checks a guard), and
+      // any later refusal re-arms it, because the spine still says every checkpoint passed.
+      activeGuard: { forbidden: 'checkpoint_plan', fallback: 'synthesize', injectedAt: iteration, context: {} },
     };
   }
 
@@ -714,9 +726,10 @@ export async function handleCheckpointPlan(ctx, deps) {
   const PASS_NUDGE = CONTRACTS?.dispatch?.pass_synthesize_nudge_enabled !== false;
   if (PASS_NUDGE && !planFailed && !allReplayed) {
     const passRefs = [...new Set(allResults.filter(r => r && r.ref && r.success).map(r => r.ref))].slice(0, 6);
+    const fullRefs = [...new Set(allResults.flatMap(r => storedResultRefs(toStr(r?.result))))].slice(0, 8);
     priorResultsAppend.push({
       agent: 'system',
-      result: `[SYSTEM] All ${checkpoints.length} checkpoint(s) PASSED verification — the work is DONE. Return "synthesize" now and write the answer from your result summaries. If you need a task's FULL output to write it, name its ref in "request_context"${passRefs.length ? ` (${passRefs.join(', ')})` : ''} and it will be fetched for you. Do NOT re-plan or re-run verified work to re-observe a result you can already read.`,
+      result: `[SYSTEM] All ${checkpoints.length} checkpoint(s) PASSED verification — the work is DONE. Return "synthesize" now and write the answer from your result summaries. If you need a task's FULL output to write it, name its ref in "request_context"${passRefs.length ? ` (${passRefs.join(', ')})` : ''} and it will be fetched for you. A large tool result inside a task's log is a DIGEST of a stored result, not a cut: its own ref returns it word for word${fullRefs.length ? ` (${fullRefs.join(', ')})` : ''}. Do NOT re-plan or re-run verified work to re-observe a result you can already read.`,
     });
   }
 

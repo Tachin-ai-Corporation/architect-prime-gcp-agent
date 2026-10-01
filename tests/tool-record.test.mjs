@@ -13,7 +13,7 @@ import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
-  buildToolLog, completeToolLog, expandToolResults, recordPolicy, excerpt, digestInstruction,
+  buildToolLog, completeToolLog, expandToolResults, storedResultRefs, recordPolicy, excerpt, digestInstruction,
   DEFAULT_RECORD_POLICY, TOOL_RESULTS_COLLECTION,
 } from '../platform/context/tool-record.mjs';
 import { packToolEvidence, digestToolResults } from '../platform/work/result-packet.mjs';
@@ -127,6 +127,21 @@ describe('the verifier and Cortex can reach the full result by ref', () => {
     assert.match(out, /\[END TOOL LOG\]$/, 'the log stays well formed');
   });
 
+  it('storedResultRefs lists each stored result a log points at, in order, once', () => {
+    const log = [
+      '[TOOL] readFile({}) → [digest of 5336 chars — full result: tool_results/tr-1-readback]',
+      'Sections: Sources, Agenda',
+      '[TOOL] readFile({}) → [excerpt of 9000 chars — digest unavailable; full result: tool_results/tr-2-template]',
+      'excerpt',
+      '[TOOL] readFile({}) → [digest of 5336 chars — full result: tool_results/tr-1-readback]',
+      'again',
+      '[TOOL] docs-cat({}) → a short result, kept whole',
+    ].join('\n');
+    assert.deepEqual(storedResultRefs(motorOutput(log)), ['tool_results/tr-1-readback', 'tool_results/tr-2-template']);
+    assert.deepEqual(storedResultRefs('[digest of 10 chars — full result not stored]\nx'), [], 'an unstored result has no ref');
+    assert.deepEqual(storedResultRefs(undefined), []);
+  });
+
   it('an unreadable ref keeps its digest', async () => {
     const log = '[TOOL] x({}) → [digest of 10 chars — full result: tool_results/gone]\nkept';
     const out = await expandToolResults(motorOutput(log), { read: async () => null, budget: 9000 });
@@ -143,6 +158,9 @@ describe('the verifier and Cortex can reach the full result by ref', () => {
     assert.match(brain, /'tool_results',\n\]\);/, 'tool_results is deployment-rooted');
     assert.match(brain, /ref\.startsWith\(`\$\{TOOL_RESULTS_COLLECTION\}\/`\)/, 'Cortex request_context hydrates a tool-result ref');
     assert.match(read('platform', 'work', 'checkpoint-executor.mjs'), /expandToolResults\(toStr\(it\.output\)/, 'the re-check expands refs');
+    // Asked for a task's full output, Cortex gets the stored results back in place of their
+    // digests — it read a digested read-back as "truncated" and re-planned a passed mission.
+    assert.match(brain, /full = await expandToolResults\(full, \{[\s\S]{0,400}?budget: HYDRATE_MAX_CHARS/, 'hydrating a work ref expands its digests');
     assert.equal(TOOL_RESULTS_COLLECTION, 'tool_results');
   });
 });

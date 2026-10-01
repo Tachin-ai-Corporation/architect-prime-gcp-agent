@@ -239,6 +239,29 @@ export function checkpointFailureHalts({ isTerminal, taskFailure } = {}) {
 }
 
 /**
+ * Whether every checkpoint has passed, IN this decide loop, with nothing new from a human
+ * since — the one state in which a new plan can only re-shape verified work. A decide loop's
+ * prior results start empty and a resumed mission's first entry is the human's answer, so:
+ * checkpoint results present (`checkpoint_step`) and no `human` entry after the last one.
+ * A spine that passed before the mission paused for input does not count — the answer may
+ * ask for more, so that mission stays plannable.
+ *
+ * @param {Array} spine
+ * @param {Array} priorResults - this decide loop's results, oldest first
+ * @returns {boolean}
+ */
+export function passedThisRun(spine, priorResults) {
+  if (!Array.isArray(spine) || spine.length === 0 || !spine.every(isComplete)) return false;
+  let lastWork = -1;
+  let lastHuman = -1;
+  (Array.isArray(priorResults) ? priorResults : []).forEach((r, i) => {
+    if (r && r.checkpoint_step) lastWork = i;
+    if (r && r.agent === 'human') lastHuman = i;
+  });
+  return lastWork >= 0 && lastHuman < lastWork;
+}
+
+/**
  * One-line shape for logs and telemetry, e.g. "3cp 1✓ 1▸ 1·".
  *
  * @param {Array} spine
