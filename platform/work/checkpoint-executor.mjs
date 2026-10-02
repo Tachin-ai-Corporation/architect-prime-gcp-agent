@@ -1822,9 +1822,12 @@ export async function executeCheckpoints(checkpoints, opts) {
     // knows whether a milestone actually passed, so it owns this write — and it is
     // what stops a later checkpoint's failure from costing this one's verdict.
     if (SPINE_PINNING_ENABLED && Array.isArray(envelope._cp_spine)) {
+      // A proceed-past checkpoint is complete but NOT verified, and the spine says so: the
+      // guard against re-planning verified work read every `complete` as a pass and refused
+      // a consolidation the re-plan that could have fixed three failed milestones.
       envelope._cp_spine = markCheckpoint(
         envelope._cp_spine, ci, (cpFailed && !proceedPastFail) ? 'failed' : 'complete',
-        { now: new Date().toISOString() },
+        { now: new Date().toISOString(), unconfirmed: proceedPastFail },
       );
       log('INFO', `[TELEMETRY] spine_status mission=${envelope.id} cp=${cpNum} status=${(cpFailed && !proceedPastFail) ? 'failed' : 'complete'}${proceedPastFail ? ' (milestone-unconfirmed, proceeding)' : ''} spine=${spineSummary(envelope._cp_spine)}`);
     }

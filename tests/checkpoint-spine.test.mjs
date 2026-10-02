@@ -8,6 +8,9 @@
 // A CP2 failure must never cost CP1's verdict.
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import {
   buildSpine, firstIncompleteIndex, markCheckpoint, applyReplan, rebuildFromSpine, spineSummary,
   finalizeBlockedBySpine, checkpointFailureHalts, probeGatedFinalizeAction, passedThisRun,
@@ -319,5 +322,39 @@ describe('passedThisRun', () => {
   it('no spine → false', () => {
     assert.equal(passedThisRun(null, [work('1.1')]), false);
     assert.equal(passedThisRun([], [work('1.1')]), false);
+  });
+
+  it('a checkpoint only PROCEEDED past (milestone unconfirmed) is not verified work → false', () => {
+    const s = done();
+    s[0].milestone_unconfirmed = true;
+    assert.equal(passedThisRun(s, [work('1.1'), work('2.1'), work('3.1')]), false);
+  });
+});
+
+describe('markCheckpoint — complete is not the same as verified', () => {
+  const fresh = () => buildSpine(PLAN, { now: 'T0' });
+
+  it('records a milestone the executor proceeded past without confirming', () => {
+    const s = markCheckpoint(fresh(), 0, 'complete', { now: 'T1', unconfirmed: true });
+    assert.equal(s[0].status, 'complete');
+    assert.equal(s[0].milestone_unconfirmed, true);
+  });
+
+  it('a later verified pass clears the mark', () => {
+    let s = markCheckpoint(fresh(), 0, 'complete', { now: 'T1', unconfirmed: true });
+    s = markCheckpoint(s, 0, 'complete', { now: 'T2', unconfirmed: false });
+    assert.equal(s[0].milestone_unconfirmed, false);
+  });
+
+  it('a re-mark with no verdict (the banked-tasks skip) keeps the mark — it cannot launder it', () => {
+    let s = markCheckpoint(fresh(), 0, 'complete', { now: 'T1', unconfirmed: true });
+    s = markCheckpoint(s, 0, 'complete', { now: 'T2' });
+    assert.equal(s[0].milestone_unconfirmed, true);
+  });
+
+  it('the executor passes its proceed-past decision to the spine', () => {
+    // Source-level, because the proceed-past path sits behind a full cerebellum verdict cycle.
+    const src = readFileSync(join(dirname(fileURLToPath(import.meta.url)), '..', 'platform', 'work', 'checkpoint-executor.mjs'), 'utf8');
+    assert.match(src, /markCheckpoint\(\s*envelope\._cp_spine, ci, \(cpFailed && !proceedPastFail\) \? 'failed' : 'complete',\s*\{ now: new Date\(\)\.toISOString\(\), unconfirmed: proceedPastFail \},/);
   });
 });

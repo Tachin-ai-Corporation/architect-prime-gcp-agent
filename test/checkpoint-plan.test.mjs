@@ -171,7 +171,7 @@ describe('a plan that passed is delivered, not re-planned', () => {
     assert.equal(calls.executeCheckpoints.length, 0, 'the passed mission must not run again');
     assert.equal(calls.callAgent.length, 0, 'nothing may be structured');
     assert.ok(res.continue);
-    assert.match(res.priorResultsAppend[0].result, /Re-plan refused: every checkpoint has PASSED/);
+    assert.match(res.priorResultsAppend[0].result, /Re-plan refused: the checkpoints run so far all PASSED verification/);
     assert.deepEqual(
       { forbidden: res.activeGuard?.forbidden, fallback: res.activeGuard?.fallback, injectedAt: res.activeGuard?.injectedAt },
       { forbidden: 'checkpoint_plan', fallback: 'synthesize', injectedAt: 3 },
@@ -210,6 +210,24 @@ describe('a plan that passed is delivered, not re-planned', () => {
     const { calls } = await run({ decision: { action: 'checkpoint_plan' }, priorResults: thisRun(), spine });
     const scoped = calls.callAgent.filter(c => c.agentId === 'prefrontal' && String(c.payload?.instruction).includes('SINGLE CHECKPOINT'));
     assert.equal(scoped.length, 1, 'the failed checkpoint gets a scoped re-plan');
+  });
+
+  // 2026-10-02, the night after the fix above shipped: a memory consolidation's first three
+  // milestones all FAILED verification, but its tasks had "succeeded", so the executor proceeded
+  // past them (FC-D) and recorded them complete. The cortex rightly asked to re-plan the mission
+  // and was refused — "every checkpoint passed" — and the consolidation blocked with nothing done.
+  it('REPRODUCES the consolidation: checkpoints only proceeded past are not verified work — the re-plan goes ahead', async () => {
+    const spine = passedSpine().map((s, i) => (i < 3 ? { ...s, milestone_unconfirmed: true } : s));
+    spine.push({ n: 4, outcome: 'CP4', accept_criteria: '', tasks: [], status: 'complete' });
+    for (const decision of [
+      { action: 'checkpoint_plan', replan_scope: 'mission', replan_reason: 'the earlier checkpoints never produced the plan file' },
+      { action: 'checkpoint_plan', checkpoints: [{ instruction: 'Consolidate in one pass', tasks: [{ agent: 'motor', task: 'Consolidate' }] }] },
+    ]) {
+      const { res, calls } = await run({ decision, priorResults: thisRun(), spine: structuredClone(spine) });
+      assert.equal(calls.executeCheckpoints.length, 1, `${decision.replan_scope ? 'explicit' : 'plain'}: a mission whose milestones were never confirmed may be re-planned`);
+      assert.equal(res.activeGuard, undefined, 'and nothing forces it to synthesize');
+      assert.ok(!calls.log.some(l => /full_replan_refused/.test(l.msg)));
+    }
   });
 
   it('with reject_full_replan_when_passing off, the old behaviour returns', async () => {

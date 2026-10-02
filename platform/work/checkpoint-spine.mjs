@@ -14,8 +14,16 @@
 //
 // Pure: no I/O, no clock, no randomness (B-19). The caller supplies `now`.
 
-/** A checkpoint is complete when its milestone was verified. */
+/** A checkpoint is complete when its milestone was verified — or proceeded past (below). */
 const isComplete = s => s && s.status === 'complete';
+
+/**
+ * Complete AND verified. A checkpoint the executor only PROCEEDED past — its milestone
+ * failed verification, its tasks succeeded, and it is not the deliverable checkpoint
+ * (FC-D) — is recorded complete so the spine advances, with `milestone_unconfirmed`.
+ * That is not verified work, and nothing may treat it as verified work.
+ */
+const isVerified = s => isComplete(s) && !s.milestone_unconfirmed;
 
 /**
  * Build the spine from a freshly structured plan.
@@ -66,14 +74,20 @@ export function firstIncompleteIndex(spine) {
  * @param {number} index - 0-based
  * @param {'complete'|'failed'} status
  * @param {Object} [opts]
+ * @param {boolean} [opts.unconfirmed] - complete only because the executor proceeded past an
+ *   unverified milestone. Given → recorded (true or false); omitted → an existing mark is kept,
+ *   so a path that re-marks a checkpoint complete without a verdict cannot launder it.
  * @returns {Array} new spine (input not mutated)
  */
 export function markCheckpoint(spine, index, status, opts = {}) {
   if (!Array.isArray(spine) || index < 0 || index >= spine.length) return spine || [];
   const now = opts.now || '';
-  return spine.map((s, i) => (i === index
-    ? { ...s, status, [status === 'complete' ? 'completed_at' : 'failed_at']: now }
-    : s));
+  return spine.map((s, i) => {
+    if (i !== index) return s;
+    const next = { ...s, status, [status === 'complete' ? 'completed_at' : 'failed_at']: now };
+    if (status === 'complete' && typeof opts.unconfirmed === 'boolean') next.milestone_unconfirmed = opts.unconfirmed;
+    return next;
+  });
 }
 
 /**
@@ -244,14 +258,15 @@ export function checkpointFailureHalts({ isTerminal, taskFailure } = {}) {
  * prior results start empty and a resumed mission's first entry is the human's answer, so:
  * checkpoint results present (`checkpoint_step`) and no `human` entry after the last one.
  * A spine that passed before the mission paused for input does not count — the answer may
- * ask for more, so that mission stays plannable.
+ * ask for more, so that mission stays plannable. Nor does a checkpoint the executor only
+ * proceeded past: its milestone was never verified, so re-planning it re-shapes nothing.
  *
  * @param {Array} spine
  * @param {Array} priorResults - this decide loop's results, oldest first
  * @returns {boolean}
  */
 export function passedThisRun(spine, priorResults) {
-  if (!Array.isArray(spine) || spine.length === 0 || !spine.every(isComplete)) return false;
+  if (!Array.isArray(spine) || spine.length === 0 || !spine.every(isVerified)) return false;
   let lastWork = -1;
   let lastHuman = -1;
   (Array.isArray(priorResults) ? priorResults : []).forEach((r, i) => {
