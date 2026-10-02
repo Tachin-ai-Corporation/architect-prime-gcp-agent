@@ -64,7 +64,7 @@ The fields of a responsibility, whether it's shipped, released or in the agent's
 | `locked` | `boolean` | Platform upkeep: changes only through a platform release; no store record applies. Set only in the platform files |
 | `singleton` | `boolean` | Refuse to fire while a previous firing is still in progress |
 | `triggerable` | `boolean` | A user may ask the agent to run it out of turn |
-| `effect_scope` | `'world' \| 'memory'` | Default `world`. `memory` means a firing writes ONLY the agent's memory layers (the nightly consolidation). Its tasks run on temporal-memory, and delegations and approval gates are refused (`platform/work/memory-scope.mjs`) |
+| `effect_scope` | `'world' \| 'memory'` | Default `world`. `memory` means a firing writes ONLY the agent's memory layers (the nightly consolidation). The daemon plans it as ONE pass: a single temporal-memory task that carries the whole process, never a planner's split, because a split has no way to hand its triage forward. Delegations and approval gates are refused (`platform/work/memory-scope.mjs`) |
 | `min_spacing_minutes` | `number \| null` | Minimum minutes between firings, independent of the cron |
 | `instruction` | `string` | What the agent should do when it fires |
 | `success_criteria` | `string` | How the agent knows a firing succeeded. It becomes the Mission's `accept_criteria`, and `context.success_criteria` is the legacy fallback |

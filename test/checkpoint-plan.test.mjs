@@ -258,3 +258,74 @@ describe('a plan that passed is delivered, not re-planned', () => {
     assert.ok(nudge.result.includes('w-task-9'));
   });
 });
+
+// 2026-10-02 08:00Z, Millie's nightly consolidation: the plan split the cycle into four
+// checkpoints that handed their triage forward through `consolidation_plan.json`. Every task ran
+// on temporal-memory, which may not write that file, so CP2 wrote nothing, CP3 and CP4 found
+// nothing, and the mission blocked with memory untouched — the third such night in a row.
+describe('a memory-scoped mission is planned by the daemon, as one pass', () => {
+  const memoryEnvelope = (extra = {}) => ({
+    id: 'm-consolidate',
+    instruction: 'Execute the nightly memory consolidation cycle.',
+    accept_criteria: 'MEMORY.md contains only active context; a structured report is produced.',
+    context_summary: 'PROCESS:\n1. STEP 1 — GATHER WORKING MEMORY\n2. STEP 2 — GATHER SESSIONS',
+    source_meta: { effect_scope: 'memory', responsibility_id: 'r-memory-consolidation' },
+    ...extra,
+  });
+  const fourCheckpointPlan = {
+    action: 'checkpoint_plan',
+    checkpoints: [
+      { instruction: 'Gather all memory', tasks: [{ agent: 'motor', task: 'Read all memory layers' }] },
+      { instruction: 'Plan', tasks: [{ agent: 'motor', task: 'Write the plan to consolidation_plan.json' }] },
+      { instruction: 'Execute the plan', tasks: [{ agent: 'motor', task: 'Apply consolidation_plan.json' }] },
+      { instruction: 'Report', tasks: [{ agent: 'motor', task: 'Write consolidation_report.md from consolidation_plan.json' }] },
+    ],
+  };
+  const run = async (envelope, decision, priorResults = []) => {
+    const { deps, calls } = createMockDeps();
+    const res = await handleCheckpointPlan({
+      envelope, decision, priorResults, iteration: 1,
+      _tokenUsage: { totalInput: 0, totalOutput: 0, totalCached: 0, totalCacheWrites: 0, callCount: 0 },
+    }, deps);
+    return { res, calls, envelope };
+  };
+
+  it('REPRODUCES 10-02: a four-checkpoint plan-file plan is replaced by ONE temporal-memory task', async () => {
+    const { calls, envelope } = await run(memoryEnvelope(), fourCheckpointPlan);
+    assert.equal(calls.callAgent.length, 0, 'no planner is called for a memory mission');
+    assert.equal(calls.executeCheckpoints.length, 1);
+    const cps = calls.executeCheckpoints[0];
+    assert.equal(cps.length, 1, 'one checkpoint');
+    assert.equal(cps[0].tasks.length, 1, 'one task');
+    assert.equal(cps[0].tasks[0].agent, 'temporal-memory');
+    assert.doesNotMatch(cps[0].tasks[0].task, /consolidation_plan\.json/);
+    assert.match(cps[0].tasks[0].task, /STEP 2 — GATHER SESSIONS/, 'the task carries the process');
+    assert.equal(cps[0].accept_criteria, envelope.accept_criteria);
+    assert.equal(envelope._cp_spine?.length, 1, 'the pinned spine is the one pass');
+    assert.ok(calls.log.some(l => /plan_structuring: .*"source":"memory_scope"/.test(l.msg)));
+  });
+
+  it('with no plan from the cortex at all, it still does not call the planner', async () => {
+    const { calls } = await run(memoryEnvelope(), { action: 'checkpoint_plan', goal: 'consolidate' });
+    assert.equal(calls.callAgent.length, 0);
+    assert.equal(calls.executeCheckpoints[0][0].tasks[0].agent, 'temporal-memory');
+  });
+
+  it('a failed pass is retried as the same pass, told which clauses were unmet', async () => {
+    const spine = [{ n: 1, outcome: 'Execute the nightly memory consolidation cycle.', accept_criteria: 'MEMORY.md contains only active context; a structured report is produced.', tasks: [], status: 'failed', criteria_revisions: 0 }];
+    const { calls, envelope } = await run(memoryEnvelope({ _cp_spine: spine }), { action: 'checkpoint_plan' }, [
+      { agent: 'system', result: '[CHECKPOINT VERIFICATION FAILED] - The report omits the final MEMORY.md character count.' },
+    ]);
+    assert.equal(calls.callAgent.length, 0, 'no single-checkpoint planner call either');
+    const task = calls.executeCheckpoints[0][0].tasks[0];
+    assert.equal(task.agent, 'temporal-memory');
+    assert.match(task.task, /The report omits the final MEMORY\.md character count\./);
+    assert.equal(envelope._cp_spine[0].status, 'pending', 'the pinned checkpoint is runnable again');
+    assert.equal(envelope._cp_spine[0].accept_criteria, spine[0].accept_criteria, 'criteria stay pinned');
+  });
+
+  it('a mission that is not memory-scoped is planned as before', async () => {
+    const { calls } = await run({ id: 'm-other', instruction: 'Do the task' }, fourCheckpointPlan);
+    assert.equal(calls.executeCheckpoints[0].length, 4);
+  });
+});

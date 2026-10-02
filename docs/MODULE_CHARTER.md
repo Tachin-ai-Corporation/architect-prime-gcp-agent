@@ -216,7 +216,9 @@ Enforced in the runtime rather than by the gate:
   Mechanism: Temporal-Memory tooled to consolidate holds only `MEMORY_TOOLSET`
   (`corekit/brain/config.mjs` — the memory CLIs + read-only definition views, its own memory files, no
   shell); a responsibility with `effect_scope: "memory"` fires missions whose tasks run only on
-  Temporal-Memory (`platform/work/memory-scope.mjs`); the lesson reflex appends to working memory,
+  Temporal-Memory (`platform/work/memory-scope.mjs`), planned by the daemon as ONE pass — memory
+  writes only `MEMORY.md` and the report, so a split plan has nothing to carry its triage between
+  tasks (`memoryMissionPlan`); the lesson reflex appends to working memory,
   never to a definition. `tests/memory-boundary.test.mjs` holds the CLI set, the tool set and
   `corekit/memory/` in agreement. A deployment-specific binding a responsibility depends on (a folder
   id, a brand doc) is a **project resource**, not memory — memory may hold what was *learned*, and

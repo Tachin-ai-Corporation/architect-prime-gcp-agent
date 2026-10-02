@@ -6,6 +6,7 @@ import {
   buildSpine, firstIncompleteIndex, applyReplan, rebuildFromSpine, spineSummary, passedThisRun,
 } from '../../work/checkpoint-spine.mjs';
 import { storedResultRefs } from '../../context/tool-record.mjs';
+import { isMemoryScoped, memoryMissionPlan } from '../../work/memory-scope.mjs';
 import { handoffModelEnabled, deriveHandoffCheckpoints } from '../../work/baton.mjs';
 import { renderResources, repairIds, seedFromProse } from '../../work/resource-ledger.mjs';
 import { findBackReferences, formatBackReference } from '../../work/plan-lint.mjs';
@@ -319,8 +320,10 @@ export async function handleCheckpointPlan(ctx, deps) {
     }
   }
 
-  // B-28: Irreversibility guard — warn when destructive_or_public parts lack approval gates
-  if (checkpoints && checkpoints.length > 0 && envelope._brief?.parts) {
+  // B-28: Irreversibility guard — warn when destructive_or_public parts lack approval gates.
+  // Not for a memory mission: it may not open a gate at all (memory-scope.mjs), and nothing it
+  // does leaves the memory layers.
+  if (checkpoints && checkpoints.length > 0 && envelope._brief?.parts && !isMemoryScoped(envelope)) {
     const destructiveParts = envelope._brief.parts.filter(p => p.risk === 'destructive_or_public');
     if (destructiveParts.length > 0) {
       const hasApprovalGate = checkpoints.some(cp =>
@@ -406,7 +409,42 @@ export async function handleCheckpointPlan(ctx, deps) {
   // work that satisfied the earlier ones — which is how a milestone came to FAIL for
   // "folder ids are identified" one round after its own prior verdict had quoted them.
   let bankedResults = [];
-  if (SPINE_ENABLED && isScopedReplan && !forceFullReplan) {
+
+  // ---- A memory mission is ONE pass by the memory authority (memory-scope.mjs) ----
+  // Its tasks all run on temporal-memory, which writes only MEMORY.md and the consolidation
+  // report, so a plan split into checkpoints cannot hand its triage forward — and four nightly
+  // consolidations in a row blocked on a planner-invented plan FILE. The plan's shape is fixed,
+  // so the daemon writes it (C-4) and no planner is called; a retry is the same pass, told which
+  // clauses the verifier found unmet.
+  const memoryMission = isMemoryScoped(envelope);
+  if (memoryMission) {
+    const unmet = (SPINE_ENABLED && isScopedReplan && !forceFullReplan)
+      ? ((priorResults || [])
+        .filter(r => typeof r.result === 'string' && r.result.includes('[CHECKPOINT VERIFICATION FAILED]'))
+        .slice(-1)[0]?.result || decision.failure_summary || '')
+      : '';
+    const plan = memoryMissionPlan(envelope, { unmet });
+    if (SPINE_ENABLED && isScopedReplan && !forceFullReplan && existingSpine.length === 1) {
+      const { spine } = applyReplan(existingSpine, scopedIdx, plan[0].tasks, {
+        pinCriteria: PIN_CRITERIA,
+        maxCriteriaRevisions: MAX_CRITERIA_REV,
+        now: new Date().toISOString(),
+      });
+      envelope._cp_spine = spine;
+      const rebuilt = rebuildFromSpine(spine);
+      checkpoints = rebuilt.checkpoints;
+      startCpIndexOverride = rebuilt.startCpIndex;
+      spineScope = 'checkpoint';
+    } else {
+      // The first plan — or a spine from before this rule, still holding a planner's checkpoints.
+      if (existingSpine) envelope._cp_spine = null;
+      checkpoints = plan;
+    }
+    planSource = 'memory_scope';
+    log('INFO', `[TELEMETRY] memory_plan mission=${envelope.id} retry=${spineScope === 'checkpoint'} unmet=${unmet ? 'yes' : 'no'}`);
+  }
+
+  if (!memoryMission && SPINE_ENABLED && isScopedReplan && !forceFullReplan) {
     const target = existingSpine[scopedIdx];
     log('INFO', `Checkpoint plan: SCOPED re-plan of CP${target.n} only (spine ${spineSummary(existingSpine)}) — completed checkpoints keep their verdicts`);
     try {

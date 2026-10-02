@@ -45,7 +45,26 @@ for _id, name, hasn, desc in sorted(rows):
     ;;
   get)
     ID="${1:?usage: process-ops get <id>}"
-    curl -sf -H "Authorization: Bearer ${TOKEN}" "${BASE}/${ID}" | python3 -c "
+    # The id is the argument itself. `get --name <id>` looked up a playbook literally named
+    # "--name", and the empty 404 body reached json.load as a bare JSONDecodeError — which a
+    # nightly consolidation read as "the tool is broken" and blocked on.
+    if [[ "$ID" == -* ]]; then
+      echo "process-ops get takes the playbook id itself: process-ops get <id>  (got '${ID}' — process-ops list shows the ids)" >&2
+      exit 2
+    fi
+    RESP=$(curl -s -w '\n%{http_code}' -H "Authorization: Bearer ${TOKEN}" "${BASE}/${ID}") \
+      || { echo "process-ops: could not reach the playbook library" >&2; exit 1; }
+    CODE="${RESP##*$'\n'}"
+    BODY="${RESP%$'\n'*}"
+    if [[ "$CODE" == "404" ]]; then
+      echo "process-ops: no playbook '${ID}' in the library — process-ops list shows the ids" >&2
+      exit 1
+    fi
+    if [[ "$CODE" != "200" ]]; then
+      echo "process-ops: reading '${ID}' failed (HTTP ${CODE})" >&2
+      exit 1
+    fi
+    printf '%s' "$BODY" | python3 -c "
 import sys, json
 d = json.load(sys.stdin); f = d.get('fields', {})
 g = lambda k: f.get(k, {}).get('stringValue', '')

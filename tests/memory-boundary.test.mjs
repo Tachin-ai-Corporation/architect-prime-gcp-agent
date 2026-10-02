@@ -16,7 +16,7 @@ import {
   MEMORY_CLIS, MEMORY_READ_VIEWS, MEMORY_FILES,
   splitCommandLine, checkMemoryCommand, memoryFileTarget, getFilteredTools, writeMemoryFile,
 } from '../corekit/brain/tools.mjs';
-import { isMemoryScoped, fenceMemoryTask } from '../platform/work/memory-scope.mjs';
+import { isMemoryScoped, fenceMemoryTask, memoryMissionPlan } from '../platform/work/memory-scope.mjs';
 import { createScheduler } from '../platform/work/scheduler.mjs';
 
 const repo = join(dirname(fileURLToPath(import.meta.url)), '..');
@@ -221,6 +221,58 @@ describe('a memory-scoped mission dispatches no other hand', () => {
   it('the nightly consolidation declares itself memory-scoped', () => {
     const r = JSON.parse(read('corekit/config/responsibilities.json')).responsibilities.find((x) => x.id === 'r-memory-consolidation');
     assert.equal(r.effect_scope, 'memory');
+  });
+});
+
+// ── A memory mission is one pass ──────────────────────────────────────────────
+// 2026-09-27, 10-01, 10-02: three nightly consolidations planned "write the plan to
+// consolidation_plan.json / reconciliation_plan.md, then execute it" across checkpoints. Every
+// task runs on temporal-memory, a fresh session each time, and memory writes only MEMORY.md and the
+// report — the plan file was refused, each later checkpoint found nothing, and the mission blocked.
+// 09-30 blocked differently: its verifier failed a pass that changed nothing, for rewriting
+// MEMORY.md with its own content, after the success criteria had demanded a rewrite.
+
+describe('a memory mission is one pass by the memory authority', () => {
+  const mission = () => ({
+    instruction: 'Execute the nightly memory consolidation cycle.',
+    accept_criteria: 'MEMORY.md contains only active context; a structured report is produced.',
+    context_summary: 'PURPOSE: keep memory lean.\n\nPROCESS:\n1. STEP 1 — GATHER WORKING MEMORY\n2. STEP 2 — GATHER SESSIONS: Run `session-summary --hours 24 --limit 20`',
+    source_meta: { effect_scope: 'memory' },
+  });
+
+  it('is ONE checkpoint with ONE task, run by temporal-memory — which the fence allows', () => {
+    const plan = memoryMissionPlan(mission());
+    assert.equal(plan.length, 1);
+    assert.equal(plan[0].tasks.length, 1);
+    assert.equal(plan[0].tasks[0].agent, 'temporal-memory');
+    assert.deepEqual(fenceMemoryTask({ stepType: 'standard', taskAgent: plan[0].tasks[0].agent }), { action: 'allow' });
+  });
+
+  it('the task carries the whole process — a task does not see the mission\'s context', () => {
+    const { task } = memoryMissionPlan(mission())[0].tasks[0];
+    assert.match(task, /Execute the nightly memory consolidation cycle\./);
+    assert.match(task, /session-summary --hours 24 --limit 20/, 'the process steps travel with the task');
+    assert.match(task, /writes only MEMORY\.md and consolidation_report\.md/);
+    assert.match(task, /never in a file of your own/, 'no plan file to hand forward');
+    assert.match(task, /Changing nothing is a valid outcome/);
+  });
+
+  it('the checkpoint is judged on the mission\'s own success criteria, not a planner\'s', () => {
+    assert.equal(memoryMissionPlan(mission())[0].accept_criteria, mission().accept_criteria);
+  });
+
+  it('a retry is the same pass, told what the verifier found unmet', () => {
+    const { task } = memoryMissionPlan(mission(), { unmet: '[CHECKPOINT VERIFICATION FAILED] the report omits the MEMORY.md character count' })[0].tasks[0];
+    assert.match(task, /Address every one of these this time:\n\[CHECKPOINT VERIFICATION FAILED\] the report omits/);
+    assert.match(task, /session-summary --hours 24/, 'and still carries the process');
+  });
+
+  it('the success criteria accept a pass that changes nothing — the 09-30 conflict', () => {
+    const r = JSON.parse(read('corekit/config/responsibilities.json')).responsibilities.find((x) => x.id === 'r-memory-consolidation');
+    const criteria = r.success_criteria ?? r.context?.success_criteria;
+    assert.doesNotMatch(criteria, /MEMORY\.md is rewritten/, 'a no-op pass must not be required to rewrite');
+    assert.match(criteria, /finds nothing to change leaves it as it is/);
+    assert.match(read('skills/memory-consolidate/SKILL.md'), /\*\*One pass\.\*\*/);
   });
 });
 
