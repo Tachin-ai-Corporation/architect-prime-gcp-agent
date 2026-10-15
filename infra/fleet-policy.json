@@ -7,11 +7,11 @@
     "anthropicLocation": "us-east5",
     "models": {
       "cortex": "vertex-anthropic/claude-opus-4-6",
-      "cortexFallback": "vertex-google/gemini-3.6-flash",
-      "subagent": "vertex-google/gemini-3.6-flash",
-      "subagentStrong": "vertex-google/gemini-2.5-pro"
+      "cortexFallback": "vertex-google/gemini-3.8-flash",
+      "subagent": "vertex-google/gemini-3.8-flash",
+      "subagentStrong": "vertex-anthropic/claude-opus-4-6"
     },
-    "_strong_model_comment": "Phase E (CR-9): mechanism to route the planning/execution organs (prefrontal, motor) to the stronger `subagentStrong` (gemini-2.5-pro). Wired end-to-end (config.mjs picks subagentStrong when opts.strong; the gateway sets strong for agents in this list, or when a caller passes strong:true; a strong request wins over a per-agent workspace model pin). Currently DISABLED (empty list → whole fleet stays on flash): a live canary showed pro improves planning coherence (removed a hallucinated premise, correct state assessment) but adds ~10x latency and did NOT close a hard 2-agent code+deploy mission that is ALSO blocked by failure-memory over-planning (CR-8) and motor git/firebase command reliability. Re-enabling is a cost/latency decision — put the agent ids back in this list.",
+    "_strong_model_comment": "Phase E (CR-9): mechanism to route the planning/execution organs to the stronger `subagentStrong` model. Since v2026.10.15 that is Claude Opus (claude-opus-4-6, the cortex model; it was gemini-2.5-pro). Wired end-to-end (config.mjs picks subagentStrong when opts.strong; the gateway sets strong for agents in this list, for agents whose posture lists them — prime `unbound` and `focused` route prefrontal, motor and cerebellum — or when a caller passes strong:true; a strong request wins over any per-agent workspace model pin). This fleet-wide list is EMPTY (strict fleet agents stay on flash): a 2.5-pro canary improved planning coherence but added ~10x latency and did not close a hard 2-agent code+deploy mission. Adding ids here is a cost/latency decision.",
     "strong_model_agents": [],
     "anthropic_prompt_caching": true,
     "anthropic_cache_ttl_stable": "1h",
@@ -32,7 +32,7 @@
     "semantic_terminate_threshold": 16
   },
   "dispatch": {
-    "model": "gemini-3.6-flash",
+    "model": "gemini-3.8-flash",
     "poll_interval_ms": 3000,
     "max_iterations": 50,
     "gateway_timeout_ms": 300000,
@@ -141,14 +141,14 @@
     "mention_match": "annotation",
     "preprocess": {
       "enabled": true,
-      "model": "gemini-3.6-flash",
+      "model": "gemini-3.8-flash",
       "maxTokens": 2000,
       "temperature": 0
     }
   },
   "mouth": {
     "llm_enabled": true,
-    "model": "gemini-3.6-flash",
+    "model": "gemini-3.8-flash",
     "maxTokens": 2000,
     "temperature": 0.1,
     "fallback": "deliver_raw",
@@ -229,7 +229,7 @@
     "archive_completed_after_days": 30
   },
   "utility": {
-    "model": "gemini-3.6-flash",
+    "model": "gemini-3.8-flash",
     "location": "global",
     "maxTokens": {
       "summarize": 1024,

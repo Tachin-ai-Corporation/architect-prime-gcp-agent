@@ -28,7 +28,7 @@ describe('Vertex AI provider smoke tests', () => {
   it('Google (Gemini 3.6 Flash) via GoogleGenAI', async () => {
     const google = new GoogleGenAI({ vertexai: true, project, location: googleLocation });
     const response = await google.models.generateContent({
-      model: 'gemini-3.6-flash',
+      model: 'gemini-3.8-flash',
       contents: 'Reply with exactly the text: VERTEX_GOOGLE_OK',
       config: {
         maxOutputTokens: 20,

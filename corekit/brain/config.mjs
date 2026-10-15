@@ -68,17 +68,17 @@ export function loadAgentConfig(agentId, opts = {}) {
   }
 
   // Default model from contracts. Phase E (CR-9): a subagent may run on the stronger
-  // `subagentStrong` (gemini-2.5-pro) instead of `subagent` (flash) when opts.strong is set
+  // `subagentStrong` (Claude Opus since v2026.10.15) instead of `subagent` (flash) when opts.strong is set
   // — the gateway sets it for the planning/execution organs (prefrontal, motor) that churned
   // on a real code+deploy mission. Cortex is unaffected (always its own model).
   const vertexCfg = contracts.vertex || {};
   const models = vertexCfg.models || {};
   const defaultModel = agentId === 'cortex'
-    ? (models.cortex || 'vertex-google/gemini-3.6-flash')
-    : (models.subagent || 'vertex-google/gemini-3.6-flash');
-  const fallbackModel = models.cortexFallback || 'vertex-google/gemini-3.6-flash';
+    ? (models.cortex || 'vertex-google/gemini-3.8-flash')
+    : (models.subagent || 'vertex-google/gemini-3.8-flash');
+  const fallbackModel = models.cortexFallback || 'vertex-google/gemini-3.8-flash';
   // Phase E (CR-9): a strong-tier request routes a subagent to `subagentStrong`
-  // (gemini-2.5-pro). It must win over BOTH the contracts default AND any per-agent
+  // (Claude Opus). It must win over BOTH the contracts default AND any per-agent
   // workspace config.json `model` pin — workspace-motor/-prefrontal pin flash, and that
   // pin (applied via agentOverrides.model in the return) would otherwise silently defeat
   // the strong routing, which is exactly what happened on first deploy.

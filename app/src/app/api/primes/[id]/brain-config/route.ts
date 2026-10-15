@@ -21,13 +21,13 @@ export async function GET(req: NextRequest, ctx: RouteContext) {
 
     // 1. Fetch contracts.json for default subagent model
     const contractsUrl = contentUrlAt(getGitHubRawBase(), source, "infra/contracts.json");
-    let defaultDaemonModel = "gemini-3.6-flash";
+    let defaultDaemonModel = "gemini-3.8-flash";
     try {
       const contractsRes = await fetch(contractsUrl, { next: { revalidate: 300 } });
       if (contractsRes.ok) {
         const contracts = await contractsRes.json();
         const subagentRaw = contracts.vertex?.models?.subagent || "";
-        // Extract bare ID (e.g. vertex-google/gemini-3.6-flash -> gemini-3.6-flash)
+        // Extract bare ID (e.g. vertex-google/gemini-3.8-flash -> gemini-3.8-flash)
         const slashIdx = subagentRaw.indexOf("/");
         defaultDaemonModel = slashIdx >= 0 ? subagentRaw.slice(slashIdx + 1) : subagentRaw || defaultDaemonModel;
       }

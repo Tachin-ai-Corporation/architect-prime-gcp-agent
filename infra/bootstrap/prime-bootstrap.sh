@@ -294,13 +294,14 @@ for AGENT_ID in cortex ${C_SUBAGENT_IDS}; do
   fi
   mkdir -p "${AGENT_DIR}"
   
-  # config.json: model, fallback, maxSteps
+  # config.json: maxSteps only. NO model or fallbackModel: the gateway prefers a workspace pin
+  # over the contract, so a model copied here at hire time froze the agent on that day's model
+  # and later contract changes never reached it (platform/deployment/model-pins.mjs retires
+  # the pins older agents were hired with).
   python3 -c "
 import json
 c = json.load(open('${CONTRACTS}'))
 agent_config = {
-  'model': c['vertex']['models'].get('cortex' if '${AGENT_ID}' == 'cortex' else 'subagent', 'vertex-google/gemini-3.6-flash'),
-  'fallbackModel': c['vertex']['models'].get('cortexFallback', 'vertex-google/gemini-3.6-flash'),
   'maxSteps': c['dispatch']['max_iterations'],
 }
 json.dump(agent_config, open('${AGENT_DIR}/config.json', 'w'), indent=2)

@@ -457,6 +457,17 @@ for (const [k,v] of Object.entries(ws)) { if (k !== '_comment') console.log(v); 
       "$SKILL_SETUP" --all || echo "  ⚠️  Skill setup had errors"
     fi
 
+    # ---- Retire hire-time model pins ----
+    # The bootstraps used to copy the contract's models into each organ's workspace config.json,
+    # and the gateway prefers that pin — so agents kept the model they were hired with and a
+    # contract change reached almost none of them. Pins that restate a shipped default are
+    # removed (backup kept); anything else is a deliberate override and is left alone.
+    PINS="${CORE_ROOT}/platform/deployment/model-pins.mjs"
+    if [[ -f "$PINS" ]]; then
+      echo "==> Retiring hire-time model pins..."
+      node "$PINS" "$CORE_ROOT" || echo "  ⚠️  Model pin migration had errors — pins left as they were"
+    fi
+
     # ---- Restart services ----
     echo "==> Managing services..."
 

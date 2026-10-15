@@ -3,7 +3,8 @@
     "context_windows": {
       "claude-opus-4-6": 200000,
       "gemini-2.5-pro": 1048576,
-      "gemini-3.6-flash": 1048576
+      "gemini-3.6-flash": 1048576,
+      "gemini-3.8-flash": 1048576
     }
   },
   "agents": {

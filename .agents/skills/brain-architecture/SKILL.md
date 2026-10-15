@@ -11,12 +11,14 @@ description: Use when working on the brain agent system — creating/editing age
 
 | Agent | Model | Role | Workspace |
 |-------|-------|------|-----------|
-| **cortex** | gemini-3.1-pro-preview | JSON Decide Loop — envelope coordinator (DEFAULT) | `/opt/corekit/workspace` |
-| **temporal-research** | gemini-3.6-flash | Web search (Vertex AI grounding) | `/opt/corekit/workspace-temporal-research` |
-| **temporal-memory** | gemini-3.6-flash | Pure memory/context recall (NO external APIs) | `/opt/corekit/workspace-temporal-memory` |
-| **prefrontal** | gemini-3.6-flash | Planning + dispatch (two-mode: simple + advisory) | `/opt/corekit/workspace-prefrontal` |
-| **motor** | gemini-3.6-flash | Execution — ALL Google Workspace tools + advisory mode | `/opt/corekit/workspace-motor` |
-| **cerebellum** | gemini-3.6-flash | Verification + validation-rule checking | `/opt/corekit/workspace-cerebellum` |
+| **cortex** | `vertex.models.cortex` (claude-opus-4-6) | JSON Decide Loop — envelope coordinator (DEFAULT) | `/opt/corekit/workspace` |
+| **temporal-research** | `subagent` (gemini-3.8-flash) | Web search (Vertex AI grounding) | `/opt/corekit/workspace-temporal-research` |
+| **temporal-memory** | `subagent` (gemini-3.8-flash) | Pure memory/context recall (NO external APIs) | `/opt/corekit/workspace-temporal-memory` |
+| **prefrontal** | `subagent`; `subagentStrong` (claude-opus-4-6) under `focused`/`unbound` | Planning + dispatch (two-mode: simple + advisory) | `/opt/corekit/workspace-prefrontal` |
+| **motor** | `subagent`; `subagentStrong` under `focused`/`unbound` | Execution — ALL Google Workspace tools + advisory mode | `/opt/corekit/workspace-motor` |
+| **cerebellum** | `subagent`; `subagentStrong` under `focused`/`unbound` | Verification + validation-rule checking | `/opt/corekit/workspace-cerebellum` |
+
+Models come from the contract (`vertex.models`), never from the workspace: until v2026.10.15 the bootstraps copied the day's models into each `workspace*/config.json`, the gateway preferred that pin, and seven of ten agents were still on gemini-2.5-flash. `upgrade-corekit` now runs `platform/deployment/model-pins.mjs`, which removes pins that restate a shipped default (backup `config.json.pre-model-migration`) and keeps anything else as a deliberate override.
 
 > **Model source of truth:** the per-organ model is resolved at runtime from `infra/contracts.json` → `vertex.models` (the `subagent` tier for the five subagent organs; the `cortex` tier for cortex). The registry files (`corekit/config/agent-registry*.json`) carry routes + sampling params only — not model selection. To change a model, edit `contracts.vertex.models`.
 

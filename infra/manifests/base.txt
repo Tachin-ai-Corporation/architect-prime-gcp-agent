@@ -144,6 +144,7 @@ platform/deployment/parity.mjs platform/deployment/parity.mjs
 platform/deployment/content-sync.mjs platform/deployment/content-sync.mjs
 platform/deployment/metrics.mjs platform/deployment/metrics.mjs
 platform/deployment/rollout.mjs platform/deployment/rollout.mjs
+platform/deployment/model-pins.mjs platform/deployment/model-pins.mjs
 # Deterministic structural evals — grade a candidate spec BEFORE any agent runs
 # on it. `observe` is honest and late; this asks the same question of the
 # artifact. Suites are seed content a deployment then owns.
