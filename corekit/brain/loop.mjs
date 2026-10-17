@@ -5,7 +5,7 @@
 
 import { getGoogleClient, getAnthropicClient, parseModel } from './router.mjs';
 import { toGoogleSchema } from './tools.mjs';
-import { computeBreakpointLayout, estimateTokens } from '../../platform/context/prompt-blocks.mjs';
+import { computeBreakpointLayout, estimateTokens, apiContentBlock, isTextOnly } from '../../platform/context/prompt-blocks.mjs';
 import { buildToolLog, recordPolicy } from '../../platform/context/tool-record.mjs';
 import { createHash } from 'node:crypto';
 import { readFileSync, existsSync, readdirSync } from 'node:fs';
@@ -460,12 +460,14 @@ function convertMessagesToAnthropic(messages) {
 /**
  * Place cache_control on the first user message's content parts per the
  * pure layout arithmetic (SESSION_CONTEXT_PLAN Phase 2). Non-standard `tier`
- * hints are stripped here — nothing non-API ever reaches the provider.
+ * hints are stripped here — nothing non-API ever reaches the provider — and
+ * tool_use / tool_result blocks pass through intact (apiContentBlock).
  * Logs part token estimates so sub-floor misses (Opus caches only prefixes
  * over ~4,096 tokens) are explainable from telemetry.
  */
 function applyMessageBreakpoints(anthropicMessages, { systemBreakpointsUsed }) {
-  const first = anthropicMessages.find(m => m.role === 'user' && Array.isArray(m.content));
+  // The daemon's content parts, never a tool_result turn.
+  const first = anthropicMessages.find(m => m.role === 'user' && isTextOnly(m.content));
   for (const msg of anthropicMessages) {
     if (!Array.isArray(msg.content)) continue;
     if (msg === first) {
@@ -482,7 +484,7 @@ function applyMessageBreakpoints(anthropicMessages, { systemBreakpointsUsed }) {
         return bp ? { ...clean, cache_control: cacheControl(bp.ttl) } : clean;
       });
     } else {
-      msg.content = msg.content.map(p => ({ type: 'text', text: p.text }));
+      msg.content = msg.content.map(apiContentBlock);
     }
   }
 }
@@ -496,21 +498,21 @@ function applyMessageBreakpoints(anthropicMessages, { systemBreakpointsUsed }) {
  * the 4 cap). The boundary message may be an assistant STRING turn (a coerced
  * decision) or a USER content-parts array (the open turn / a prior delta) —
  * handle both; tier hints are stripped from every array-content message so
- * nothing non-API reaches the provider.
+ * nothing non-API reaches the provider (tool blocks pass through intact).
  */
 function applySessionBoundaryBreakpoint(anthropicMessages, boundaryIndex) {
   const idx = boundaryIndex - 1; // last frozen (cached) message
   anthropicMessages.forEach((msg, i) => {
     if (i === idx) {
       if (Array.isArray(msg.content)) {
-        const parts = msg.content.map(p => ({ type: 'text', text: p.text }));
+        const parts = msg.content.map(apiContentBlock);
         parts[parts.length - 1] = { ...parts[parts.length - 1], cache_control: cacheControl(CACHE_TTL_MISSION) };
         msg.content = parts;
       } else {
         msg.content = [{ type: 'text', text: msg.content || '', cache_control: cacheControl(CACHE_TTL_MISSION) }];
       }
     } else if (Array.isArray(msg.content)) {
-      msg.content = msg.content.map(p => ({ type: 'text', text: p.text }));
+      msg.content = msg.content.map(apiContentBlock);
     }
   });
   console.log(`[loop] session cache breakpoint at frozen-prefix boundary (msg ${idx}, ttl=${CACHE_TTL_MISSION})`);

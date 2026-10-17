@@ -1,7 +1,8 @@
 // tests/prompt-blocks.test.mjs — pure-core tests for platform/context/prompt-blocks.mjs (B-19)
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { renderBlocks, toContentParts, computeBreakpointLayout, estimateTokens } from '../platform/context/prompt-blocks.mjs';
+import { readFileSync } from 'node:fs';
+import { renderBlocks, toContentParts, computeBreakpointLayout, estimateTokens, apiContentBlock, isTextOnly } from '../platform/context/prompt-blocks.mjs';
 
 const blocks = [
   { label: 'BOOT-STABLE CONTEXT', text: '{"skill_index":[]}', tier: 'boot' },
@@ -85,5 +86,47 @@ describe('estimateTokens', () => {
   it('chars/4 heuristic', () => {
     assert.equal(estimateTokens('x'.repeat(4096 * 4)), 4096);
     assert.equal(estimateTokens(''), 0);
+  });
+});
+
+// The step after any Claude tool call: the assistant turn carries [text, tool_use] and the
+// next user turn [tool_result]. Rebuilding those as text parts sent
+// `messages.1.content.1 = {type:'text'}` with no text, and the provider 400'd every
+// strong-tier tool turn into a whole-turn Flash fallback (live, 2026-10-17).
+describe('apiContentBlock — what reaches the Anthropic API', () => {
+  const toolUse = { type: 'tool_use', id: 'toolu_1', name: 'readFile', input: { path: '/x' } };
+  const toolResult = { type: 'tool_result', tool_use_id: 'toolu_1', content: 'body' };
+
+  it('passes tool_use and tool_result blocks through unchanged', () => {
+    assert.equal(apiContentBlock(toolUse), toolUse);
+    assert.equal(apiContentBlock(toolResult), toolResult);
+  });
+
+  it('strips the tier hint from a text part and keeps its text', () => {
+    assert.deepEqual(apiContentBlock({ type: 'text', text: 'hi', tier: 'boot' }), { type: 'text', text: 'hi' });
+    assert.deepEqual(apiContentBlock({ text: 'hi', tier: 'mission' }), { type: 'text', text: 'hi' });
+  });
+
+  it('an assistant tool turn keeps every block its own payload', () => {
+    const out = [{ type: 'text', text: 'Reading both files.' }, toolUse].map(apiContentBlock);
+    assert.deepEqual(out, [{ type: 'text', text: 'Reading both files.' }, toolUse]);
+    for (const b of out) if (b.type === 'text') assert.equal(typeof b.text, 'string');
+  });
+
+  it('isTextOnly tells the daemon payload from a tool_result turn', () => {
+    assert.equal(isTextOnly([{ type: 'text', text: 'a', tier: 'boot' }, { type: 'text', text: 'b' }]), true);
+    assert.equal(isTextOnly([toolResult]), false);
+    assert.equal(isTextOnly([{ type: 'text', text: 'a' }, toolUse]), false);
+    assert.equal(isTextOnly('a string turn'), false);
+  });
+
+  it('the gateway shapes every array-content block through it', () => {
+    const loop = readFileSync(new URL('../corekit/brain/loop.mjs', import.meta.url), 'utf8');
+    const body = name => loop.slice(loop.indexOf(`function ${name}(`), loop.indexOf('\n}\n', loop.indexOf(`function ${name}(`)));
+    for (const fn of ['applyMessageBreakpoints', 'applySessionBoundaryBreakpoint']) {
+      assert.match(body(fn), /\.map\(apiContentBlock\)/, `${fn} must keep tool blocks intact`);
+      assert.doesNotMatch(body(fn), /map\(p => \(\{ type: 'text', text: p\.text \}\)\)/, `${fn} rebuilds every block as text`);
+    }
+    assert.match(body('applyMessageBreakpoints'), /isTextOnly\(m\.content\)/, 'the tier layout targets the daemon payload, not a tool_result turn');
   });
 });

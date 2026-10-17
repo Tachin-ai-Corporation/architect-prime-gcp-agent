@@ -98,3 +98,22 @@ export function computeBreakpointLayout(parts, {
   }
   return out;
 }
+
+/**
+ * The API shape of one Anthropic content block. A text part is rebuilt bare,
+ * which strips the daemon's `tier` hint (nothing non-API reaches the
+ * provider). Every other block — tool_use, tool_result — passes through
+ * unchanged: rebuilding one as a text part drops its payload, and the provider
+ * rejects the whole request ("text: Field required") on the step after any
+ * tool call.
+ * @param {{type?: string, text?: string}} part
+ */
+export function apiContentBlock(part) {
+  if (part && part.type && part.type !== 'text') return part;
+  return { type: 'text', text: part?.text };
+}
+
+/** True when every block of an array-content message is a text part. */
+export function isTextOnly(content) {
+  return Array.isArray(content) && content.every(p => !p?.type || p.type === 'text');
+}
